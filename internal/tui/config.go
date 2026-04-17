@@ -41,22 +41,22 @@ func (m model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			return m, saveConfigCmd(m.store, m.resolveAcctID(), m.configRows)
+			return m, saveConfigCmd(m.store, m.resolveAcctID(), m.config.rows)
 		case "j", "down":
-			if m.configCursor < len(m.configRows)-1 {
-				m.configCursor++
+			if m.config.cursor < len(m.config.rows)-1 {
+				m.config.cursor++
 			}
 		case "k", "up":
-			if m.configCursor > 0 {
-				m.configCursor--
+			if m.config.cursor > 0 {
+				m.config.cursor--
 			}
 		case "d":
-			if len(m.configRows) > 0 {
-				m.configRows[m.configCursor].DaysToSync = nextDayPreset(m.configRows[m.configCursor].DaysToSync)
+			if len(m.config.rows) > 0 {
+				m.config.rows[m.config.cursor].DaysToSync = nextDayPreset(m.config.rows[m.config.cursor].DaysToSync)
 			}
 		case "a":
-			if len(m.configRows) > 0 {
-				m.configRows[m.configCursor].FetchAttachments = !m.configRows[m.configCursor].FetchAttachments
+			if len(m.config.rows) > 0 {
+				m.config.rows[m.config.cursor].FetchAttachments = !m.config.rows[m.config.cursor].FetchAttachments
 			}
 		}
 	}
@@ -67,15 +67,15 @@ func (m model) renderConfig() string {
 	var sb strings.Builder
 	sb.WriteString("  " + boldStyle.Render("Sync Configuration") + "\n\n")
 
-	if len(m.configRows) == 0 {
+	if len(m.config.rows) == 0 {
 		sb.WriteString(dimStyle.Render("  No labels found. Run sync first to populate labels.") + "\n")
 		return sb.String()
 	}
 
 	header := fmt.Sprintf("  %-26s  %-8s  %s", "Label", "Days", "Attachments")
 	sb.WriteString(dimStyle.Render(header) + "\n")
-	sep := "  " + strings.Repeat("─", m.width-6)
-	if m.width < 10 {
+	sep := "  " + strings.Repeat("─", m.layout.width-6)
+	if m.layout.width < 10 {
 		sep = "  ──────────────────────────────"
 	}
 	sb.WriteString(separatorStyle.Render(sep) + "\n")
@@ -86,16 +86,16 @@ func (m model) renderConfig() string {
 		maxRows = 1
 	}
 	start := 0
-	if m.configCursor >= maxRows {
-		start = m.configCursor - maxRows + 1
+	if m.config.cursor >= maxRows {
+		start = m.config.cursor - maxRows + 1
 	}
 	end := start + maxRows
-	if end > len(m.configRows) {
-		end = len(m.configRows)
+	if end > len(m.config.rows) {
+		end = len(m.config.rows)
 	}
 
 	for i := start; i < end; i++ {
-		row := m.configRows[i]
+		row := m.config.rows[i]
 
 		att := dimStyle.Render("✗")
 		if row.FetchAttachments {
@@ -104,8 +104,8 @@ func (m model) renderConfig() string {
 
 		line := fmt.Sprintf("  %-26s  %-8s  %s", truncStr(row.LabelName, 26), fmtDays(row.DaysToSync), att)
 
-		if i == m.configCursor {
-			sb.WriteString(selectedStyle.Width(m.width).Render(line) + "\n")
+		if i == m.config.cursor {
+			sb.WriteString(selectedStyle.Width(m.layout.width).Render(line) + "\n")
 		} else {
 			sb.WriteString(line + "\n")
 		}

@@ -16,31 +16,31 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "esc":
-			if len(m.threadMsgs) > 0 {
-				m.view = viewThread
+			if len(m.thread.messages) > 0 {
+				m.nav.view = viewThread
 			} else {
-				m.view = viewInbox
+				m.nav.view = viewInbox
 			}
-			m.vpReady = false
+			m.reader.ready = false
 			return m, nil
 		case "r":
-			replyTo := m.message
-			m.replyTo = &replyTo
-			m.composeFocus = 2 // start in body; To+Subject pre-filled
-			m.composeTo.SetValue(m.message.FromAddr)
-			m.composeSubject.SetValue("Re: " + strings.TrimPrefix(m.message.Subject, "Re: "))
-			m.composeTo.Blur()
-			m.composeSubject.Blur()
-			m.composeBody.Focus()
-			m.view = viewCompose
+			replyTo := m.reader.current
+			m.compose.replyTo = &replyTo
+			m.compose.focus = composeFocusBody // start in body; To+Subject pre-filled
+			m.compose.to.SetValue(m.reader.current.FromAddr)
+			m.compose.subject.SetValue("Re: " + strings.TrimPrefix(m.reader.current.Subject, "Re: "))
+			m.compose.to.Blur()
+			m.compose.subject.Blur()
+			m.compose.body.Focus()
+			m.nav.view = viewCompose
 			return m, nil
 		}
 	}
 
 	// Forward all other messages to the viewport for scrolling.
-	if m.vpReady {
+	if m.reader.ready {
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
+		m.reader.viewport, cmd = m.reader.viewport.Update(msg)
 		return m, cmd
 	}
 
@@ -48,10 +48,10 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderMessage() string {
-	if !m.vpReady {
+	if !m.reader.ready {
 		return dimStyle.Render("\n  Loading message...")
 	}
-	return m.viewport.View()
+	return m.reader.viewport.View()
 }
 
 // formatMessageBody builds the full text of a message for display in the viewport.

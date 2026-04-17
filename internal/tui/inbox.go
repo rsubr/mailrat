@@ -16,41 +16,41 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "j", "down":
-			if m.cursor < len(m.threads)-1 {
-				m.cursor++
+			if m.inbox.cursor < len(m.inbox.threads)-1 {
+				m.inbox.cursor++
 			}
 		case "k", "up":
-			if m.cursor > 0 {
-				m.cursor--
+			if m.inbox.cursor > 0 {
+				m.inbox.cursor--
 			}
 		case "enter":
-			if len(m.threads) == 0 {
+			if len(m.inbox.threads) == 0 {
 				return m, nil
 			}
-			sel := m.threads[m.cursor]
+			sel := m.inbox.threads[m.inbox.cursor]
 			return m, loadThreadCmd(m.store, sel.AccountID, sel.ThreadID)
 		case "s":
-			if !m.syncing && len(m.allAccounts) > 0 {
-				m.syncing = true
-				m.status = "Syncing..."
-				return m, syncAllCmd(m.store, m.accMgr, m.allAccounts)
+			if !m.status.syncing && len(m.nav.allAccounts) > 0 {
+				m.status.syncing = true
+				m.status.text = "Syncing..."
+				return m, syncAllCmd(m.store, m.accMgr, m.nav.allAccounts)
 			}
 		case "c":
-			m.view = viewCompose
-			m.replyTo = nil
-			m.composeFocus = 0
-			m.composeTo.Focus()
-			m.composeSubject.Blur()
-			m.composeBody.Blur()
+			m.nav.view = viewCompose
+			m.compose.replyTo = nil
+			m.compose.focus = composeFocusTo
+			m.compose.to.Focus()
+			m.compose.subject.Blur()
+			m.compose.body.Blur()
 			return m, nil
 		case "a":
-			m.view = viewAccounts
-			m.acctCursor = 0
+			m.nav.view = viewAccounts
+			m.account.cursor = 0
 			return m, nil
 		case "?":
 			acctID := m.resolveAcctID()
 			if acctID == "" {
-				m.status = "No account configured"
+				m.status.text = "No account configured"
 				return m, nil
 			}
 			return m, loadConfigCmd(m.store, acctID)
@@ -60,7 +60,7 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderInbox() string {
-	if len(m.threads) == 0 {
+	if len(m.inbox.threads) == 0 {
 		return dimStyle.Render("\n  No messages. Press 's' to sync.")
 	}
 
@@ -70,17 +70,17 @@ func (m model) renderInbox() string {
 	}
 
 	start := 0
-	if m.cursor >= maxRows {
-		start = m.cursor - maxRows + 1
+	if m.inbox.cursor >= maxRows {
+		start = m.inbox.cursor - maxRows + 1
 	}
 	end := start + maxRows
-	if end > len(m.threads) {
-		end = len(m.threads)
+	if end > len(m.inbox.threads) {
+		end = len(m.inbox.threads)
 	}
 
 	var sb strings.Builder
 	for i := start; i < end; i++ {
-		sb.WriteString(m.renderThreadRow(m.threads[i], i == m.cursor))
+		sb.WriteString(m.renderThreadRow(m.inbox.threads[i], i == m.inbox.cursor))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
@@ -124,7 +124,7 @@ func (m model) renderThreadRow(t storage.ThreadSummary, selected bool) string {
 
 	switch {
 	case selected:
-		return selectedStyle.Width(m.width).Render(line)
+		return selectedStyle.Width(m.layout.width).Render(line)
 	case t.UnreadCount > 0:
 		return boldStyle.Render(line)
 	default:
@@ -188,24 +188,24 @@ func padRight(s string, width int) string {
 func (m model) renderHeader() string {
 	title := "mailrat"
 	switch {
-	case m.activeAcct != "":
-		for _, a := range m.allAccounts {
-			if a.ID == m.activeAcct {
+	case m.nav.activeAcct != "":
+		for _, a := range m.nav.allAccounts {
+			if a.ID == m.nav.activeAcct {
 				title = "mailrat — " + a.Email
 				break
 			}
 		}
-	case len(m.allAccounts) > 1:
+	case len(m.nav.allAccounts) > 1:
 		title = "mailrat — unified inbox"
-	case len(m.allAccounts) == 1:
-		title = "mailrat — " + m.allAccounts[0].Email
+	case len(m.nav.allAccounts) == 1:
+		title = "mailrat — " + m.nav.allAccounts[0].Email
 	}
-	return headerStyle.Width(m.width).Render(title)
+	return headerStyle.Width(m.layout.width).Render(title)
 }
 
 func (m model) renderHelp() string {
 	var keys string
-	switch m.view {
+	switch m.nav.view {
 	case viewInbox:
 		keys = "j/k:move  enter:open  c:compose  s:sync  a:accounts  ?:config  q:quit"
 	case viewThread:
@@ -220,8 +220,8 @@ func (m model) renderHelp() string {
 		keys = "j/k:move  d:cycle days  a:toggle attachments  esc:save & close"
 	}
 
-	right := m.status
-	if m.syncing {
+	right := m.status.text
+	if m.status.syncing {
 		right = "Syncing..."
 	}
 

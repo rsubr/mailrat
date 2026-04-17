@@ -16,21 +16,21 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "esc":
-			m.view = viewInbox
+			m.nav.view = viewInbox
 			return m, nil
 		case "j", "down":
-			if m.threadCur < len(m.threadMsgs)-1 {
-				m.threadCur++
+			if m.thread.cursor < len(m.thread.messages)-1 {
+				m.thread.cursor++
 			}
 		case "k", "up":
-			if m.threadCur > 0 {
-				m.threadCur--
+			if m.thread.cursor > 0 {
+				m.thread.cursor--
 			}
 		case "enter":
-			if len(m.threadMsgs) == 0 {
+			if len(m.thread.messages) == 0 {
 				return m, nil
 			}
-			sel := m.threadMsgs[m.threadCur]
+			sel := m.thread.messages[m.thread.cursor]
 			return m, loadMessageCmd(m.store, m.accMgr, sel.AccountID, sel.ID)
 		}
 	}
@@ -38,7 +38,7 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) renderThread() string {
-	if len(m.threadMsgs) == 0 {
+	if len(m.thread.messages) == 0 {
 		return dimStyle.Render("\n  No messages in thread.")
 	}
 
@@ -49,23 +49,23 @@ func (m model) renderThread() string {
 	}
 
 	start := 0
-	if m.threadCur >= maxRows {
-		start = m.threadCur - maxRows + 1
+	if m.thread.cursor >= maxRows {
+		start = m.thread.cursor - maxRows + 1
 	}
 	end := start + maxRows
-	if end > len(m.threadMsgs) {
-		end = len(m.threadMsgs)
+	if end > len(m.thread.messages) {
+		end = len(m.thread.messages)
 	}
 
-	subject := truncStr(m.threadMsgs[0].Subject, m.width-30)
-	header := dimStyle.Render(fmt.Sprintf("  %s  (%d messages)", subject, len(m.threadMsgs)))
+	subject := truncStr(m.thread.messages[0].Subject, m.layout.width-30)
+	header := dimStyle.Render(fmt.Sprintf("  %s  (%d messages)", subject, len(m.thread.messages)))
 
 	var sb strings.Builder
 	sb.WriteString(header)
 	sb.WriteByte('\n')
 
 	for i := start; i < end; i++ {
-		sb.WriteString(m.renderThreadMsg(m.threadMsgs[i], i, i == m.threadCur))
+		sb.WriteString(m.renderThreadMsg(m.thread.messages[i], i, i == m.thread.cursor))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
@@ -93,7 +93,7 @@ func (m model) renderThreadMsg(msg storage.Message, idx int, selected bool) stri
 
 	switch {
 	case selected:
-		return selectedStyle.Width(m.width).Render(line)
+		return selectedStyle.Width(m.layout.width).Render(line)
 	case msg.IsUnread:
 		return boldStyle.Render(line)
 	default:

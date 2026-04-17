@@ -15,12 +15,12 @@ func (m model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			m.view = viewInbox
+			m.nav.view = viewInbox
 			m = clearCompose(m)
 			return m, nil
 		case "tab":
 			// Cycle focus: To → Subject → Body → To
-			m.composeFocus = (m.composeFocus + 1) % 3
+			m.compose.focus = (m.compose.focus + 1) % 3
 			m = applyComposeFocus(m)
 			return m, nil
 		case "ctrl+s":
@@ -30,57 +30,57 @@ func (m model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Route key/other events to the focused field.
 	var cmd tea.Cmd
-	switch m.composeFocus {
-	case 0:
-		m.composeTo, cmd = m.composeTo.Update(msg)
-	case 1:
-		m.composeSubject, cmd = m.composeSubject.Update(msg)
-	case 2:
-		m.composeBody, cmd = m.composeBody.Update(msg)
+	switch m.compose.focus {
+	case composeFocusTo:
+		m.compose.to, cmd = m.compose.to.Update(msg)
+	case composeFocusSubject:
+		m.compose.subject, cmd = m.compose.subject.Update(msg)
+	case composeFocusBody:
+		m.compose.body, cmd = m.compose.body.Update(msg)
 	}
 	return m, cmd
 }
 
 func applyComposeFocus(m model) model {
-	switch m.composeFocus {
-	case 0:
-		m.composeTo.Focus()
-		m.composeSubject.Blur()
-		m.composeBody.Blur()
-	case 1:
-		m.composeTo.Blur()
-		m.composeSubject.Focus()
-		m.composeBody.Blur()
-	case 2:
-		m.composeTo.Blur()
-		m.composeSubject.Blur()
-		m.composeBody.Focus()
+	switch m.compose.focus {
+	case composeFocusTo:
+		m.compose.to.Focus()
+		m.compose.subject.Blur()
+		m.compose.body.Blur()
+	case composeFocusSubject:
+		m.compose.to.Blur()
+		m.compose.subject.Focus()
+		m.compose.body.Blur()
+	case composeFocusBody:
+		m.compose.to.Blur()
+		m.compose.subject.Blur()
+		m.compose.body.Focus()
 	}
 	return m
 }
 
 func (m model) submitCompose() (tea.Model, tea.Cmd) {
-	to := strings.TrimSpace(m.composeTo.Value())
-	subject := strings.TrimSpace(m.composeSubject.Value())
-	body := strings.TrimSpace(m.composeBody.Value())
+	to := strings.TrimSpace(m.compose.to.Value())
+	subject := strings.TrimSpace(m.compose.subject.Value())
+	body := strings.TrimSpace(m.compose.body.Value())
 
 	if to == "" {
-		m.status = "To: field is required"
+		m.status.text = "To: field is required"
 		return m, nil
 	}
 
 	// Pick account: active account or first available.
-	acctID := m.activeAcct
-	if acctID == "" && len(m.allAccounts) > 0 {
-		acctID = m.allAccounts[0].ID
+	acctID := m.nav.activeAcct
+	if acctID == "" && len(m.nav.allAccounts) > 0 {
+		acctID = m.nav.allAccounts[0].ID
 	}
 	if acctID == "" {
-		m.status = "No account configured"
+		m.status.text = "No account configured"
 		return m, nil
 	}
 
 	var fromEmail string
-	for _, a := range m.allAccounts {
+	for _, a := range m.nav.allAccounts {
 		if a.ID == acctID {
 			fromEmail = a.Email
 			break
@@ -93,19 +93,19 @@ func (m model) submitCompose() (tea.Model, tea.Cmd) {
 		Subject: subject,
 		Body:    body,
 	}
-	if m.replyTo != nil {
-		outMsg.InReplyTo = m.replyTo.ID
-		outMsg.ThreadID = m.replyTo.ThreadID
+	if m.compose.replyTo != nil {
+		outMsg.InReplyTo = m.compose.replyTo.ID
+		outMsg.ThreadID = m.compose.replyTo.ThreadID
 	}
 
-	m.status = "Sending..."
+	m.status.text = "Sending..."
 	return m, sendEmailCmd(m.accMgr, acctID, outMsg)
 }
 
 func (m model) renderCompose() string {
 	title := "New Message"
-	if m.replyTo != nil {
-		title = fmt.Sprintf("Reply to %s", truncStr(m.replyTo.FromAddr, 40))
+	if m.compose.replyTo != nil {
+		title = fmt.Sprintf("Reply to %s", truncStr(m.compose.replyTo.FromAddr, 40))
 	}
 
 	labelStyle := dimStyle
@@ -116,35 +116,35 @@ func (m model) renderCompose() string {
 
 	// To
 	toLabel := "  To:      "
-	if m.composeFocus == 0 {
+	if m.compose.focus == composeFocusTo {
 		toLabel = focusedLabelStyle.Render(toLabel)
 	} else {
 		toLabel = labelStyle.Render(toLabel)
 	}
-	sb.WriteString(toLabel + m.composeTo.View() + "\n")
+	sb.WriteString(toLabel + m.compose.to.View() + "\n")
 
 	// Subject
 	subjLabel := "  Subject: "
-	if m.composeFocus == 1 {
+	if m.compose.focus == composeFocusSubject {
 		subjLabel = focusedLabelStyle.Render(subjLabel)
 	} else {
 		subjLabel = labelStyle.Render(subjLabel)
 	}
-	sb.WriteString(subjLabel + m.composeSubject.View() + "\n")
+	sb.WriteString(subjLabel + m.compose.subject.View() + "\n")
 
 	// Separator
-	sep := separatorStyle.Render("  " + strings.Repeat("─", m.width-4))
+	sep := separatorStyle.Render("  " + strings.Repeat("─", m.layout.width-4))
 	sb.WriteString(sep + "\n")
 
 	// Body
 	bodyLabel := "  Body:\n"
-	if m.composeFocus == 2 {
+	if m.compose.focus == composeFocusBody {
 		bodyLabel = focusedLabelStyle.Render(bodyLabel)
 	} else {
 		bodyLabel = labelStyle.Render(bodyLabel)
 	}
 	sb.WriteString(bodyLabel)
-	sb.WriteString(m.composeBody.View())
+	sb.WriteString(m.compose.body.View())
 
 	return sb.String()
 }
