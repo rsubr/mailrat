@@ -15,6 +15,30 @@ const (
 	CacheAttachmentCached CacheState = "attachments_cached"
 )
 
+const (
+	messageSelectColumns = `id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
+	       internal_date, is_unread, cache_state, has_attachments`
+	messageOrderDesc = ` ORDER BY internal_date DESC`
+	messageOrderAsc  = ` ORDER BY internal_date ASC`
+	messageUpsertSQL = `
+		INSERT INTO messages
+			(id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
+			 internal_date, is_unread, cache_state, has_attachments)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id, account_id) DO UPDATE SET
+			thread_id       = excluded.thread_id,
+			subject         = excluded.subject,
+			from_addr       = excluded.from_addr,
+			to_addr         = excluded.to_addr,
+			snippet         = excluded.snippet,
+			body            = CASE WHEN excluded.cache_state != 'metadata_only' THEN excluded.body ELSE messages.body END,
+			internal_date   = excluded.internal_date,
+			is_unread       = excluded.is_unread,
+			cache_state     = CASE WHEN excluded.cache_state > messages.cache_state THEN excluded.cache_state ELSE messages.cache_state END,
+			has_attachments = CASE WHEN excluded.has_attachments = 1 THEN 1 ELSE messages.has_attachments END
+	`
+)
+
 type Message struct {
 	ID             string
 	ThreadID       string
@@ -31,32 +55,7 @@ type Message struct {
 }
 
 func (s *Store) UpsertMessage(m Message) error {
-	isUnread := 0
-	if m.IsUnread {
-		isUnread = 1
-	}
-	hasAttachments := 0
-	if m.HasAttachments {
-		hasAttachments = 1
-	}
-	_, err := s.db.Exec(`
-		INSERT INTO messages
-			(id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-			 internal_date, is_unread, cache_state, has_attachments)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(id, account_id) DO UPDATE SET
-			thread_id       = excluded.thread_id,
-			subject         = excluded.subject,
-			from_addr       = excluded.from_addr,
-			to_addr         = excluded.to_addr,
-			snippet         = excluded.snippet,
-			body            = CASE WHEN excluded.cache_state != 'metadata_only' THEN excluded.body ELSE messages.body END,
-			internal_date   = excluded.internal_date,
-			is_unread       = excluded.is_unread,
-			cache_state     = CASE WHEN excluded.cache_state > messages.cache_state THEN excluded.cache_state ELSE messages.cache_state END,
-			has_attachments = CASE WHEN excluded.has_attachments = 1 THEN 1 ELSE messages.has_attachments END
-	`, m.ID, m.ThreadID, m.AccountID, m.Subject, m.FromAddr, m.ToAddr, m.Snippet,
-		m.Body, m.InternalDate, isUnread, string(m.CacheState), hasAttachments)
+	_, err := s.db.Exec(messageUpsertSQL, messageUpsertArgs(m)...)
 	return err
 }
 
@@ -64,8 +63,7 @@ func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 	var m Message
 	var isUnread, hasAttachments int
 	err := s.db.QueryRow(`
-		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-		       internal_date, is_unread, cache_state, has_attachments
+		SELECT `+messageSelectColumns+`
 		FROM messages WHERE id = ? AND account_id = ?
 	`, messageID, accountID).Scan(
 		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
@@ -80,107 +78,51 @@ func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 }
 
 func (s *Store) ListMessages(accountID string, limit int) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-		       internal_date, is_unread, cache_state, has_attachments
+	return s.queryMessages(`
+		SELECT `+messageSelectColumns+`
 		FROM messages
-		WHERE account_id = ?
-		ORDER BY internal_date DESC
+		WHERE account_id = ?`+messageOrderDesc+`
 		LIMIT ?
 	`, accountID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
 }
 
 func (s *Store) ListMessagesByThread(accountID, threadID string) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-		       internal_date, is_unread, cache_state, has_attachments
+	return s.queryMessages(`
+		SELECT `+messageSelectColumns+`
 		FROM messages
-		WHERE account_id = ? AND thread_id = ?
-		ORDER BY internal_date ASC
-	`, accountID, threadID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
+		WHERE account_id = ? AND thread_id = ?`+messageOrderAsc,
+		accountID, threadID,
+	)
 }
 
 // ListMessagesByLabel returns messages that have the given label (by name or ID),
 // newest first. labelQuery is matched case-insensitively against both the label
 // ID (e.g. "SENT") and the label name (e.g. "Sent").
 func (s *Store) ListMessagesByLabel(accountID, labelQuery string, limit int) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
-		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state, m.has_attachments
-		FROM messages m
-		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
-		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
-		WHERE m.account_id = ?
-		  AND (UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?))
-		ORDER BY m.internal_date DESC
-		LIMIT ?
-	`, accountID, labelQuery, labelQuery, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
+	return s.queryMessages(labelFilteredMessagesSQL(true), accountID, labelQuery, labelQuery, limit)
 }
 
 // ListAllMessagesByLabel is the cross-account version of ListMessagesByLabel.
 func (s *Store) ListAllMessagesByLabel(labelQuery string, limit int) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
-		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state, m.has_attachments
-		FROM messages m
-		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
-		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
-		WHERE UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?)
-		ORDER BY m.internal_date DESC
-		LIMIT ?
-	`, labelQuery, labelQuery, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
+	return s.queryMessages(labelFilteredMessagesSQL(false), labelQuery, labelQuery, limit)
 }
 
 // ListAllMessages returns messages across all accounts, newest first.
 func (s *Store) ListAllMessages(limit int) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-		       internal_date, is_unread, cache_state, has_attachments
-		FROM messages
-		ORDER BY internal_date DESC
+	return s.queryMessages(`
+		SELECT `+messageSelectColumns+`
+		FROM messages`+messageOrderDesc+`
 		LIMIT ?
 	`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
 }
 
 func (s *Store) ListUncachedBodies(accountID string, limit int) ([]Message, error) {
-	rows, err := s.db.Query(`
-		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-		       internal_date, is_unread, cache_state, has_attachments
+	return s.queryMessages(`
+		SELECT `+messageSelectColumns+`
 		FROM messages
-		WHERE account_id = ? AND cache_state = 'metadata_only'
-		ORDER BY internal_date DESC
+		WHERE account_id = ? AND cache_state = ?`+messageOrderDesc+`
 		LIMIT ?
-	`, accountID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanMessages(rows)
+	`, accountID, CacheMetadataOnly, limit)
 }
 
 // ListUncachedBodiesForLabels returns metadata-only messages that have at
@@ -189,33 +131,81 @@ func (s *Store) ListUncachedBodiesForLabels(accountID string, labelIDs []string,
 	if len(labelIDs) == 0 {
 		return nil, nil
 	}
-	placeholders := strings.Repeat("?,", len(labelIDs))
-	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
 
-	args := []any{accountID}
-	for _, id := range labelIDs {
-		args = append(args, id)
-	}
-	args = append(args, limit)
+	query, args := buildUncachedBodiesForLabelsQuery(accountID, labelIDs, limit)
+	return s.queryMessages(query, args...)
+}
 
-	q := fmt.Sprintf(`
-		SELECT DISTINCT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
-		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state, m.has_attachments
-		FROM messages m
-		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
-		WHERE m.account_id = ?
-		  AND m.cache_state = 'metadata_only'
-		  AND ml.label_id IN (%s)
-		ORDER BY m.internal_date DESC
-		LIMIT ?
-	`, placeholders)
-
-	rows, err := s.db.Query(q, args...)
+func (s *Store) queryMessages(query string, args ...any) ([]Message, error) {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return scanMessages(rows)
+}
+
+func labelFilteredMessagesSQL(scopedToAccount bool) string {
+	where := `WHERE UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?)`
+	if scopedToAccount {
+		where = `WHERE m.account_id = ?
+		  AND (UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?))`
+	}
+
+	return `
+		SELECT m.` + strings.ReplaceAll(messageSelectColumns, ", ", ", m.") + `
+		FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
+		` + where + messageOrderDesc + `
+		LIMIT ?
+	`
+}
+
+func buildUncachedBodiesForLabelsQuery(accountID string, labelIDs []string, limit int) (string, []any) {
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(labelIDs)), ",")
+	args := make([]any, 0, len(labelIDs)+3)
+	args = append(args, accountID, CacheMetadataOnly)
+	for _, id := range labelIDs {
+		args = append(args, id)
+	}
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT DISTINCT m.%s
+		FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		WHERE m.account_id = ?
+		  AND m.cache_state = ?
+		  AND ml.label_id IN (%s)`+messageOrderDesc+`
+		LIMIT ?
+	`, strings.ReplaceAll(messageSelectColumns, ", ", ", m."), placeholders)
+
+	return query, args
+}
+
+func messageUpsertArgs(m Message) []any {
+	return []any{
+		m.ID,
+		m.ThreadID,
+		m.AccountID,
+		m.Subject,
+		m.FromAddr,
+		m.ToAddr,
+		m.Snippet,
+		m.Body,
+		m.InternalDate,
+		boolToInt(m.IsUnread),
+		string(m.CacheState),
+		boolToInt(m.HasAttachments),
+	}
+}
+
+func boolToInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func scanMessages(rows *sql.Rows) ([]Message, error) {

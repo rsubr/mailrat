@@ -92,7 +92,7 @@ func TestMessageCRUD(t *testing.T) {
 func TestLabelCRUD(t *testing.T) {
 	s := openTestStore(t)
 	s.UpsertAccount(storage.Account{ID: "acc1", Email: "test@example.com", TokenJSON: `{}`}) //nolint:errcheck
-	s.UpsertMessage(storage.Message{ID: "msg1", ThreadID: "thr1", AccountID: "acc1"})         //nolint:errcheck
+	s.UpsertMessage(storage.Message{ID: "msg1", ThreadID: "thr1", AccountID: "acc1"})        //nolint:errcheck
 
 	l := storage.Label{ID: "INBOX", AccountID: "acc1", Name: "INBOX", LabelType: "system"}
 	if err := s.UpsertLabel(l); err != nil {

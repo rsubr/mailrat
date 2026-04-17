@@ -9,164 +9,85 @@ import (
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
+const bodyFetchLimit = 200
+
 // Manager orchestrates sync operations for an account.
 type Manager struct {
-	store  *storage.Store
-	client *gmail.Client
+	store    *storage.Store
+	client   *gmail.Client
+	reporter progressReporter
 }
 
 // NewManager creates a SyncManager.
 func NewManager(store *storage.Store, client *gmail.Client) *Manager {
-	return &Manager{store: store, client: client}
+	return &Manager{
+		store:    store,
+		client:   client,
+		reporter: stdoutReporter{},
+	}
 }
 
 // InitialSync fetches historical messages for the account.
 // configs controls per-label behaviour (days_to_sync=0 means all mail).
 // defaultDays is used for labels without a config entry.
 func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays int, configs []storage.SyncConfig) error {
-	// Sync labels first so label rows exist before we reference them.
 	if err := m.syncLabels(ctx, accountID); err != nil {
 		return fmt.Errorf("sync labels: %w", err)
 	}
 
-	// Partition configs: "all mail" labels vs "limited days" labels.
-	allMailLabels := make(map[string]storage.SyncConfig)
-	maxDays := defaultDays
-	for _, c := range configs {
-		if c.DaysToSync == 0 {
-			allMailLabels[c.LabelID] = c
-		} else if c.DaysToSync > maxDays {
-			maxDays = c.DaysToSync
-		}
-	}
+	plan := buildInitialSyncPlan(defaultDays, configs)
+	m.reporter.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, plan.maxDays)
 
-	fmt.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, maxDays)
-
-	seen := make(map[string]bool)
-
-	// Base query: everything within the day window (covers all limited labels).
-	baseQuery := fmt.Sprintf("newer_than:%dd", maxDays)
-	if err := m.fetchAndStore(ctx, accountID, baseQuery, 500, seen); err != nil {
+	seen := make(seenMessages)
+	if err := m.fetchAndStore(ctx, accountID, initialSyncQuery(plan.maxDays), 500, seen); err != nil {
 		return fmt.Errorf("base sync: %w", err)
 	}
 
-	// Per "all mail" label: unlimited queries.
-	for labelID, cfg := range allMailLabels {
-		q := labelIDToGmailQuery(labelID, cfg.LabelName)
-		if q == "" {
-			continue
-		}
-		fmt.Printf("Fetching all mail for label %q (%s)...\n", cfg.LabelName, q)
-		if err := m.fetchAndStore(ctx, accountID, q, 2000, seen); err != nil {
-			fmt.Printf("warning: failed to fetch label %q: %v\n", cfg.LabelName, err)
+	for _, labelPlan := range plan.allMailLabels {
+		m.reporter.Printf("Fetching all mail for label %q (%s)...\n", labelPlan.config.LabelName, labelPlan.query)
+		if err := m.fetchAndStore(ctx, accountID, labelPlan.query, 2000, seen); err != nil {
+			m.reporter.Warnf("failed to fetch label %q: %v\n", labelPlan.config.LabelName, err)
 		}
 	}
 
-	// Fetch bodies/attachments for labels that request it.
-	var attachLabelIDs []string
-	for _, c := range configs {
-		if c.FetchAttachments {
-			attachLabelIDs = append(attachLabelIDs, c.LabelID)
-		}
-	}
-	if len(attachLabelIDs) > 0 {
-		fmt.Printf("Fetching bodies/attachments for configured labels...\n")
-		if err := m.FetchBodiesForLabels(ctx, accountID, attachLabelIDs, 200); err != nil {
-			fmt.Printf("warning: fetch bodies for labels: %v\n", err)
-		}
+	if err := m.fetchConfiguredBodies(ctx, accountID, configs); err != nil {
+		m.reporter.Warnf("fetch bodies for labels: %v\n", err)
 	}
 
-	// Record the latest historyId.
-	histID, err := m.fetchHistoryID(ctx)
-	if err == nil {
-		if err := m.store.UpdateHistoryID(accountID, strconv.FormatUint(histID, 10)); err != nil {
-			return fmt.Errorf("update history id: %w", err)
-		}
+	if err := m.storeLatestHistoryID(ctx, accountID); err != nil {
+		return err
 	}
 
-	fmt.Printf("Initial sync complete: %d messages stored\n", len(seen))
+	m.reporter.Printf("Initial sync complete: %d messages stored\n", len(seen))
 	return nil
 }
 
 // IncrementalSync uses the historyId to fetch only changes since last sync.
 func (m *Manager) IncrementalSync(ctx context.Context, accountID string) error {
-	acc, err := m.store.GetAccount(accountID)
+	startHistoryID, err := m.storedHistoryID(accountID)
 	if err != nil {
 		return err
 	}
 
-	if acc.HistoryID == "" {
-		return fmt.Errorf("no history ID stored; run initial sync first")
-	}
-
-	startHistoryID, err := strconv.ParseUint(acc.HistoryID, 10, 64)
-	if err != nil {
-		return fmt.Errorf("parse history id: %w", err)
-	}
-
-	fmt.Printf("Incremental sync from historyId %d...\n", startHistoryID)
+	m.reporter.Printf("Incremental sync from historyId %d...\n", startHistoryID)
 
 	resp, err := m.client.GetHistoryList(ctx, startHistoryID)
 	if err != nil {
 		return fmt.Errorf("get history: %w", err)
 	}
 
-	added := 0
-	labelChanges := 0
-	for _, event := range resp.Events {
-		switch {
-		case event.MessageAdded != nil:
-			meta := event.MessageAdded
-			msg := storage.Message{
-				ID:           meta.ID,
-				ThreadID:     meta.ThreadID,
-				AccountID:    accountID,
-				Subject:      meta.Subject,
-				FromAddr:     meta.From,
-				ToAddr:       meta.To,
-				Snippet:      meta.Snippet,
-				InternalDate: meta.InternalDate,
-				IsUnread:     meta.IsUnread,
-				CacheState:   storage.CacheMetadataOnly,
-			}
-			if err := m.store.UpsertMessage(msg); err != nil {
-				return err
-			}
-			if err := m.store.UpsertThread(storage.Thread{
-				ID:              meta.ThreadID,
-				AccountID:       accountID,
-				LastMessageDate: meta.InternalDate,
-			}); err != nil {
-				return err
-			}
-			if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
-				return err
-			}
-			added++
-
-		case event.LabelsAdded != nil:
-			lc := event.LabelsAdded
-			existing, _ := m.store.GetMessageLabelIDs(accountID, lc.MessageID)
-			merged := mergeLabelIDs(existing, lc.LabelIDs)
-			_ = m.store.SetMessageLabels(accountID, lc.MessageID, merged)
-			labelChanges++
-
-		case event.LabelsRemoved != nil:
-			lc := event.LabelsRemoved
-			existing, _ := m.store.GetMessageLabelIDs(accountID, lc.MessageID)
-			updated := removeLabelIDs(existing, lc.LabelIDs)
-			_ = m.store.SetMessageLabels(accountID, lc.MessageID, updated)
-			labelChanges++
-		}
+	stats, err := m.applyHistoryEvents(accountID, resp.Events)
+	if err != nil {
+		return err
 	}
 
 	if resp.HistoryID > 0 {
-		if err := m.store.UpdateHistoryID(accountID, strconv.FormatUint(resp.HistoryID, 10)); err != nil {
-			return fmt.Errorf("update history id: %w", err)
+		if err := m.updateHistoryID(accountID, resp.HistoryID); err != nil {
+			return err
 		}
 	}
 
-	fmt.Printf("Incremental sync complete: %d new messages, %d label changes\n", added, labelChanges)
+	m.reporter.Printf("Incremental sync complete: %d new messages, %d label changes\n", stats.added, stats.labelChanges)
 	return nil
 }
 
@@ -177,22 +98,11 @@ func (m *Manager) FetchBodies(ctx context.Context, accountID string, limit int) 
 		return err
 	}
 
-	fmt.Printf("Fetching bodies for %d messages...\n", len(msgs))
-
-	for _, msg := range msgs {
-		full, err := m.client.GetMessage(ctx, msg.ID)
-		if err != nil {
-			fmt.Printf("warning: failed to fetch body for %s: %v\n", msg.ID, err)
-			continue
-		}
-		msg.Body = full.Body
-		msg.CacheState = storage.CacheBodyCached
-		if err := m.store.UpsertMessage(msg); err != nil {
-			return err
-		}
+	m.reporter.Printf("Fetching bodies for %d messages...\n", len(msgs))
+	if err := m.fetchBodiesIntoStore(ctx, accountID, msgs); err != nil {
+		return err
 	}
-
-	fmt.Printf("Body fetch complete\n")
+	m.reporter.Printf("Body fetch complete\n")
 	return nil
 }
 
@@ -201,77 +111,23 @@ func (m *Manager) FetchBodies(ctx context.Context, accountID string, limit int) 
 // A label is considered backfilled once we've run its historical query at least
 // once; the result is persisted so subsequent syncs skip it.
 func (m *Manager) BackfillFromConfigs(ctx context.Context, accountID string, configs []storage.SyncConfig) error {
-	// Seed defaults for INBOX and STARRED when the user hasn't explicitly
-	// configured them yet. Without this, BackfillFromConfigs is a no-op on a
-	// fresh install and the user only ever sees the initial 30-day window.
-	existing := make(map[string]bool, len(configs))
-	for _, c := range configs {
-		existing[c.LabelID] = true
+	configs, err := m.ensureDefaultBackfillConfigs(accountID, configs)
+	if err != nil {
+		return err
 	}
-	defaults := []storage.SyncConfig{
-		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
-		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
-	}
-	for _, d := range defaults {
-		if !existing[d.LabelID] {
-			if err := m.store.UpsertSyncConfig(d); err == nil {
-				configs = append(configs, d)
-			}
+
+	seen := make(seenMessages)
+	for _, plan := range buildBackfillPlans(configs) {
+		if err := m.runBackfillPlan(ctx, accountID, plan, seen); err != nil {
+			return err
 		}
 	}
 
-	seen := make(map[string]bool)
-	for _, c := range configs {
-		if c.Backfilled {
-			continue
-		}
-
-		q := buildBackfillQuery(c)
-		if q == "" {
-			// No meaningful query — mark done so we don't retry endlessly.
-			_ = m.store.MarkSyncConfigBackfilled(c.LabelID, accountID)
-			continue
-		}
-
-		fmt.Printf("Backfilling %q (%s)...\n", c.LabelName, q)
-		if err := m.fetchAndStore(ctx, accountID, q, 2000, seen); err != nil {
-			fmt.Printf("warning: backfill for %q failed: %v\n", c.LabelName, err)
-			continue
-		}
-
-		if err := m.store.MarkSyncConfigBackfilled(c.LabelID, accountID); err != nil {
-			return fmt.Errorf("mark backfilled %s: %w", c.LabelID, err)
-		}
-		fmt.Printf("Backfill complete for %q\n", c.LabelName)
-	}
-
-	// Fetch bodies/attachments for labels that request it (runs after messages land).
-	var attachLabelIDs []string
-	for _, c := range configs {
-		if c.FetchAttachments {
-			attachLabelIDs = append(attachLabelIDs, c.LabelID)
-		}
-	}
-	if len(attachLabelIDs) > 0 {
-		if err := m.FetchBodiesForLabels(ctx, accountID, attachLabelIDs, 200); err != nil {
-			fmt.Printf("warning: fetch bodies for labels: %v\n", err)
-		}
+	if err := m.fetchConfiguredBodies(ctx, accountID, configs); err != nil {
+		m.reporter.Warnf("fetch bodies for labels: %v\n", err)
 	}
 
 	return nil
-}
-
-// buildBackfillQuery returns the Gmail search query for a label's backfill.
-// Returns "" if no query is needed (label has no meaningful scope).
-func buildBackfillQuery(c storage.SyncConfig) string {
-	labelQ := labelIDToGmailQuery(c.LabelID, c.LabelName)
-	if labelQ == "" {
-		return ""
-	}
-	if c.DaysToSync == 0 {
-		return labelQ // all mail for this label
-	}
-	return fmt.Sprintf("%s newer_than:%dd", labelQ, c.DaysToSync)
 }
 
 // FetchBodiesForLabels fetches bodies/attachment metadata for metadata-only
@@ -282,66 +138,21 @@ func (m *Manager) FetchBodiesForLabels(ctx context.Context, accountID string, la
 		return err
 	}
 
-	fmt.Printf("Fetching bodies for %d messages (label-filtered)...\n", len(msgs))
-
-	for _, msg := range msgs {
-		full, err := m.client.GetMessage(ctx, msg.ID)
-		if err != nil {
-			fmt.Printf("warning: failed to fetch body for %s: %v\n", msg.ID, err)
-			continue
-		}
-		msg.Body = full.Body
-		msg.CacheState = storage.CacheBodyCached
-		if err := m.store.UpsertMessage(msg); err != nil {
-			return err
-		}
-		if len(full.Attachments) > 0 {
-			atts := make([]storage.Attachment, len(full.Attachments))
-			for i, a := range full.Attachments {
-				atts[i] = storage.Attachment{Name: a.Name, MimeType: a.MimeType, Size: a.Size}
-			}
-			_ = m.store.UpsertAttachments(accountID, msg.ID, atts)
-		}
-	}
-	return nil
+	m.reporter.Printf("Fetching bodies for %d messages (label-filtered)...\n", len(msgs))
+	return m.fetchBodiesIntoStore(ctx, accountID, msgs)
 }
 
-// fetchAndStore runs a Gmail query and upserts results, skipping IDs in seen.
-func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, maxResults int64, seen map[string]bool) error {
+func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, maxResults int64, seen seenMessages) error {
 	messages, err := m.client.ListMessages(ctx, query, maxResults)
 	if err != nil {
 		return fmt.Errorf("list messages (%s): %w", query, err)
 	}
 	for _, meta := range messages {
-		if seen[meta.ID] {
+		if seen.Skip(meta.ID) {
 			continue
 		}
-		seen[meta.ID] = true
-
-		msg := storage.Message{
-			ID:           meta.ID,
-			ThreadID:     meta.ThreadID,
-			AccountID:    accountID,
-			Subject:      meta.Subject,
-			FromAddr:     meta.From,
-			ToAddr:       meta.To,
-			Snippet:      meta.Snippet,
-			InternalDate: meta.InternalDate,
-			IsUnread:     meta.IsUnread,
-			CacheState:   storage.CacheMetadataOnly,
-		}
-		if err := m.store.UpsertMessage(msg); err != nil {
-			return fmt.Errorf("upsert message %s: %w", meta.ID, err)
-		}
-		if err := m.store.UpsertThread(storage.Thread{
-			ID:              meta.ThreadID,
-			AccountID:       accountID,
-			LastMessageDate: meta.InternalDate,
-		}); err != nil {
-			return fmt.Errorf("upsert thread %s: %w", meta.ThreadID, err)
-		}
-		if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
-			return fmt.Errorf("set labels on %s: %w", meta.ID, err)
+		if err := m.storeMessageMetadata(accountID, meta); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -373,54 +184,33 @@ func (m *Manager) fetchHistoryID(ctx context.Context) (uint64, error) {
 	return profile, nil
 }
 
-// labelIDToGmailQuery converts a Gmail label ID to a search query term.
-func labelIDToGmailQuery(id, name string) string {
-	switch id {
-	case "INBOX":
-		return "in:inbox"
-	case "STARRED":
-		return "is:starred"
-	case "SENT":
-		return "in:sent"
-	case "DRAFTS":
-		return "in:drafts"
-	case "SPAM":
-		return "in:spam"
-	case "TRASH":
-		return "in:trash"
-	default:
-		if name != "" {
-			return "label:" + name
-		}
-		return ""
+func (m *Manager) storedHistoryID(accountID string) (uint64, error) {
+	acc, err := m.store.GetAccount(accountID)
+	if err != nil {
+		return 0, err
 	}
+	if acc.HistoryID == "" {
+		return 0, fmt.Errorf("no history ID stored; run initial sync first")
+	}
+
+	startHistoryID, err := strconv.ParseUint(acc.HistoryID, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse history id: %w", err)
+	}
+	return startHistoryID, nil
 }
 
-func mergeLabelIDs(existing, add []string) []string {
-	set := make(map[string]struct{}, len(existing))
-	for _, id := range existing {
-		set[id] = struct{}{}
+func (m *Manager) storeLatestHistoryID(ctx context.Context, accountID string) error {
+	historyID, err := m.fetchHistoryID(ctx)
+	if err != nil {
+		return nil
 	}
-	for _, id := range add {
-		set[id] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for id := range set {
-		out = append(out, id)
-	}
-	return out
+	return m.updateHistoryID(accountID, historyID)
 }
 
-func removeLabelIDs(existing, remove []string) []string {
-	rem := make(map[string]struct{}, len(remove))
-	for _, id := range remove {
-		rem[id] = struct{}{}
+func (m *Manager) updateHistoryID(accountID string, historyID uint64) error {
+	if err := m.store.UpdateHistoryID(accountID, strconv.FormatUint(historyID, 10)); err != nil {
+		return fmt.Errorf("update history id: %w", err)
 	}
-	var out []string
-	for _, id := range existing {
-		if _, skip := rem[id]; !skip {
-			out = append(out, id)
-		}
-	}
-	return out
+	return nil
 }
