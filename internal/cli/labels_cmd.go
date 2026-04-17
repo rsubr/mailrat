@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newLabelsCmd() *cobra.Command {
 	var accountID string
 
 	labelsCmd := &cobra.Command{
@@ -17,25 +17,16 @@ func init() {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List labels",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
+		RunE: withApp(func(a *app) error {
+			aid, err := resolveAccount(a, accountID)
 			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			if accountID == "" {
-				accs, err := a.accounts.ListAccounts()
-				if err != nil {
-					return err
-				}
-				if len(accs) == 0 {
+				if accountID == "" {
 					return fmt.Errorf("no accounts configured")
 				}
-				accountID = accs[0].ID
+				return err
 			}
 
-			labels, err := a.store.ListLabels(accountID)
+			labels, err := a.store.ListLabels(aid)
 			if err != nil {
 				return err
 			}
@@ -50,10 +41,10 @@ func init() {
 				fmt.Printf("%-30s  %-15s  %s\n", l.Name, l.LabelType, l.ID)
 			}
 			return nil
-		},
+		}),
 	}
 
 	listCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	labelsCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(labelsCmd)
+	return labelsCmd
 }

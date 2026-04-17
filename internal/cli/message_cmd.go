@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newMessageCmd() *cobra.Command {
 	var accountID string
 
 	messageCmd := &cobra.Command{
@@ -20,33 +20,15 @@ func init() {
 		Use:   "read <message-id>",
 		Short: "Read a message",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 			messageID := args[0]
+			var err error
 
 			if accountID == "" {
-				// Find the account that owns this message.
-				accs, err := a.accounts.ListAccounts()
+				accountID, err = resolveMessageAccount(a, messageID)
 				if err != nil {
 					return err
 				}
-				for _, acc := range accs {
-					msg, err := a.store.GetMessage(acc.ID, messageID)
-					if err == nil {
-						accountID = acc.ID
-						_ = msg
-						break
-					}
-				}
-			}
-			if accountID == "" {
-				return fmt.Errorf("message %q not found in any account", messageID)
 			}
 
 			svc, err := a.inboxService(ctx, accountID)
@@ -66,11 +48,11 @@ func init() {
 			fmt.Printf("Date:    %s\n", date)
 			fmt.Printf("\n%s\n", msg.Body)
 			return nil
-		},
+		}),
 	}
 
 	readCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 
 	messageCmd.AddCommand(readCmd)
-	rootCmd.AddCommand(messageCmd)
+	return messageCmd
 }

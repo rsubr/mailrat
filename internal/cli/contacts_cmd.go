@@ -1,17 +1,12 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
-	"strings"
-
-	"github.com/mailrat/mailrat/internal/storage"
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newContactsCmd() *cobra.Command {
 	var accountID string
 
 	contactsCmd := &cobra.Command{
@@ -26,14 +21,7 @@ func init() {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List contacts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 			aid, err := resolveAccount(a, accountID)
 			if err != nil {
 				return err
@@ -68,7 +56,7 @@ func init() {
 				printContacts(results)
 			}
 			return nil
-		},
+		}),
 	}
 	listCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	listCmd.Flags().BoolVar(&syncFirst, "sync", false, "Sync from Google before listing")
@@ -80,29 +68,24 @@ func init() {
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Add a new contact",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 			aid, err := resolveAccount(a, accountID)
 			if err != nil {
 				return err
 			}
 
-			reader := bufio.NewReader(os.Stdin)
+			reader := newPromptReader()
 			if addName == "" {
-				fmt.Print("Name: ")
-				addName, _ = reader.ReadString('\n')
-				addName = strings.TrimSpace(addName)
+				addName, err = promptLine(reader, "Name: ")
+				if err != nil {
+					return err
+				}
 			}
 			if addEmail == "" {
-				fmt.Print("Email: ")
-				addEmail, _ = reader.ReadString('\n')
-				addEmail = strings.TrimSpace(addEmail)
+				addEmail, err = promptLine(reader, "Email: ")
+				if err != nil {
+					return err
+				}
 			}
 			if addEmail == "" {
 				return fmt.Errorf("email is required")
@@ -119,7 +102,7 @@ func init() {
 			}
 			fmt.Printf("✓ Contact created: %s <%s>  (id: %s)\n", c.Name, c.Email, c.ID)
 			return nil
-		},
+		}),
 	}
 	addCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	addCmd.Flags().StringVar(&addName, "name", "", "Contact name")
@@ -132,14 +115,7 @@ func init() {
 		Use:   "edit <contact-id>",
 		Short: "Edit a contact's name and/or email",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 			aid, err := resolveAccount(a, accountID)
 			if err != nil {
 				return err
@@ -158,25 +134,17 @@ func init() {
 				return fmt.Errorf("contact %q not found; run: mailrat contacts list --sync", id)
 			}
 
-			reader := bufio.NewReader(os.Stdin)
+			reader := newPromptReader()
 			if !cmd.Flags().Changed("name") {
-				fmt.Printf("Name [%s]: ", existing.Name)
-				input, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(input)
-				if input != "" {
-					editName = input
-				} else {
-					editName = existing.Name
+				editName, err = promptLineDefault(reader, "Name", existing.Name)
+				if err != nil {
+					return err
 				}
 			}
 			if !cmd.Flags().Changed("email") {
-				fmt.Printf("Email [%s]: ", existing.Email)
-				input, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(input)
-				if input != "" {
-					editEmail = input
-				} else {
-					editEmail = existing.Email
+				editEmail, err = promptLineDefault(reader, "Email", existing.Email)
+				if err != nil {
+					return err
 				}
 			}
 
@@ -186,7 +154,7 @@ func init() {
 			}
 			fmt.Printf("✓ Contact updated: %s <%s>\n", c.Name, c.Email)
 			return nil
-		},
+		}),
 	}
 	editCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	editCmd.Flags().StringVar(&editName, "name", "", "New name")
@@ -199,14 +167,7 @@ func init() {
 		Use:   "delete <contact-id>",
 		Short: "Delete a contact",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 			aid, err := resolveAccount(a, accountID)
 			if err != nil {
 				return err
@@ -220,10 +181,11 @@ func init() {
 			}
 
 			if !forceDelete {
-				fmt.Printf("Delete contact: %s <%s> ? [y/N] ", existing.Name, existing.Email)
-				reader := bufio.NewReader(os.Stdin)
-				input, _ := reader.ReadString('\n')
-				if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(input)), "y") {
+				ok, err := promptConfirm(newPromptReader(), fmt.Sprintf("Delete contact: %s <%s> ? [y/N] ", existing.Name, existing.Email))
+				if err != nil {
+					return err
+				}
+				if !ok {
 					fmt.Println("Cancelled.")
 					return nil
 				}
@@ -239,38 +201,11 @@ func init() {
 			}
 			fmt.Printf("✓ Contact deleted: %s <%s>\n", existing.Name, existing.Email)
 			return nil
-		},
+		}),
 	}
 	deleteCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	deleteCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 
 	contactsCmd.AddCommand(listCmd, addCmd, editCmd, deleteCmd)
-	rootCmd.AddCommand(contactsCmd)
-}
-
-// resolveAccount returns accountID if set, otherwise the first stored account.
-func resolveAccount(a *app, accountID string) (string, error) {
-	if accountID != "" {
-		return accountID, nil
-	}
-	accs, err := a.accounts.ListAccounts()
-	if err != nil {
-		return "", err
-	}
-	if len(accs) == 0 {
-		return "", fmt.Errorf("no accounts configured; run: mailrat accounts add")
-	}
-	return accs[0].ID, nil
-}
-
-func printContacts(contacts []storage.Contact) {
-	fmt.Printf("%-35s  %-30s  %s\n", "NAME", "EMAIL", "ID")
-	fmt.Println(strings.Repeat("─", 100))
-	for _, c := range contacts {
-		fmt.Printf("%-35s  %-30s  %s\n",
-			truncate(c.Name, 35),
-			truncate(c.Email, 30),
-			c.ID,
-		)
-	}
+	return contactsCmd
 }

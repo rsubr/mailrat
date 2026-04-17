@@ -6,16 +6,12 @@ import (
 )
 
 func launchTUI() error {
-	a, err := newApp()
-	if err != nil {
+	return runWithApp(func(a *app) error {
+		p := tea.NewProgram(
+			tui.New(a.store, a.accounts),
+			tea.WithAltScreen(),
+		)
+		_, err := p.Run()
 		return err
-	}
-	defer a.close()
-
-	p := tea.NewProgram(
-		tui.New(a.store, a.accounts),
-		tea.WithAltScreen(),
-	)
-	_, err = p.Run()
-	return err
+	})
 }

@@ -2,13 +2,12 @@ package cli
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/mailrat/mailrat/internal/storage"
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newInboxCmd() *cobra.Command {
 	var limit int
 	var accountID string
 	var label string
@@ -75,28 +74,5 @@ all available labels for your account.`,
 	listCmd.Flags().StringVar(&label, "label", "", "Filter by label name or ID (e.g. SENT, DRAFT, INBOX)")
 
 	inboxCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(inboxCmd)
-}
-
-func printMessageList(msgs []storage.Message) {
-	fmt.Printf("%-22s  %-30s  %-40s  %s\n", "DATE", "FROM", "SUBJECT", "SNIPPET")
-	fmt.Printf("%s\n", "------------------------------------------------------------")
-	for _, m := range msgs {
-		date := time.UnixMilli(m.InternalDate).Format("2006-01-02 15:04")
-		from := truncate(m.FromAddr, 30)
-		subject := truncate(m.Subject, 40)
-		snippet := truncate(m.Snippet, 60)
-		unread := " "
-		if m.IsUnread {
-			unread = "*"
-		}
-		fmt.Printf("%s %s  %-30s  %-40s  %s\n", unread, date, from, subject, snippet)
-	}
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n-1] + "…"
+	return inboxCmd
 }

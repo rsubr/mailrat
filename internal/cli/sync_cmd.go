@@ -7,21 +7,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newSyncCmd() *cobra.Command {
 	var days int
 	var accountID string
 
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync mail from Gmail",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
 
 			// Determine which accounts to sync.
 			accs, err := a.accounts.ListAccounts()
@@ -63,11 +56,11 @@ func init() {
 				}
 			}
 			return nil
-		},
+		}),
 	}
 
 	syncCmd.Flags().IntVar(&days, "days", 30, "Number of days to sync on initial sync")
 	syncCmd.Flags().StringVar(&accountID, "account", "", "Account ID to sync (default: all)")
 
-	rootCmd.AddCommand(syncCmd)
+	return syncCmd
 }

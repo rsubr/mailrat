@@ -11,28 +11,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newAccountsCmd() *cobra.Command {
 	accountsCmd := &cobra.Command{
 		Use:   "accounts",
 		Short: "Manage Gmail accounts",
 	}
 
-	accountsCmd.AddCommand(&cobra.Command{
-		Use:   "add",
-		Short: "Add a Gmail account via OAuth2 (guided setup)",
-		RunE:  runAccountsAdd,
-	})
-
+	accountsCmd.AddCommand(newAccountsAddCmd())
 	accountsCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List all authenticated accounts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
+		RunE: withApp(func(a *app) error {
 			accs, err := a.accounts.ListAccounts()
 			if err != nil {
 				return err
@@ -45,7 +34,7 @@ func init() {
 				fmt.Printf("  %s  (id: %s)\n", acc.Email, acc.ID)
 			}
 			return nil
-		},
+		}),
 	})
 
 	var forceRemove bool
@@ -54,13 +43,7 @@ func init() {
 		Use:   "remove <account-id|email>",
 		Short: "Remove an account and delete all its local data",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
+		RunE: withApp(func(a *app) error {
 			query := args[0]
 
 			// Resolve by ID or email.
@@ -84,11 +67,11 @@ func init() {
 			if !forceRemove {
 				fmt.Printf("Remove account %s and delete ALL local data?\n", matchEmail)
 				fmt.Println("This will delete all cached emails, labels, drafts, and contacts for this account.")
-				fmt.Print("Type the email address to confirm: ")
-				reader := bufio.NewReader(os.Stdin)
-				input, _ := reader.ReadString('\n')
-				input = strings.TrimSpace(input)
-				if input != matchEmail {
+				matched, err := promptExactMatch(newPromptReader(), "Type the email address to confirm: ", matchEmail)
+				if err != nil {
+					return err
+				}
+				if !matched {
 					fmt.Println("Input did not match. Cancelled.")
 					return nil
 				}
@@ -100,16 +83,24 @@ func init() {
 
 			fmt.Printf("✓ Account %s removed. All local data deleted.\n", matchEmail)
 			return nil
-		},
+		}),
 	}
 	removeCmd.Flags().BoolVarP(&forceRemove, "force", "f", false, "Skip confirmation prompt")
 
 	accountsCmd.AddCommand(removeCmd)
-	rootCmd.AddCommand(accountsCmd)
+	return accountsCmd
+}
+
+func newAccountsAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add",
+		Short: "Add a Gmail account via OAuth2 (guided setup)",
+		RunE:  runAccountsAdd,
+	}
 }
 
 func runAccountsAdd(cmd *cobra.Command, args []string) error {
-	reader := bufio.NewReader(os.Stdin)
+	reader := newPromptReader()
 
 	printHeader("mailrat — Add Gmail Account")
 
@@ -186,8 +177,9 @@ func runAccountsAdd(cmd *cobra.Command, args []string) error {
 	fmt.Println("    • Send emails on your behalf")
 	fmt.Println("    • Read your Google contacts")
 	fmt.Println()
-	fmt.Print("  Press Enter to continue...")
-	reader.ReadString('\n') //nolint:errcheck
+	if _, err := promptLine(reader, "  Press Enter to continue..."); err != nil {
+		return err
+	}
 	fmt.Println()
 
 	a, err := newAppWithCredentials(credPath)
@@ -206,7 +198,7 @@ func runAccountsAdd(cmd *cobra.Command, args []string) error {
 	// -----------------------------------------------------------------------
 	fmt.Println()
 	fmt.Println("  ┌─────────────────────────────────────────────┐")
-	fmt.Printf( "  │  ✓ Account added: %-26s │\n", acc.Email)
+	fmt.Printf("  │  ✓ Account added: %-26s │\n", acc.Email)
 	fmt.Println("  └─────────────────────────────────────────────┘")
 	fmt.Println()
 	fmt.Println("  Next steps:")

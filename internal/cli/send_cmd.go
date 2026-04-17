@@ -1,79 +1,54 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os"
-	"strings"
 
 	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/spf13/cobra"
 )
 
-func init() {
+func newSendCmd() *cobra.Command {
 	var accountID string
 	var to, subject, body string
 
-	sendCmd := &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "send",
 		Short: "Send an email",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a, err := newApp()
-			if err != nil {
-				return err
-			}
-			defer a.close()
-
-			ctx := context.Background()
+		RunE: withAppContext(func(ctx context.Context, a *app) error {
+			var err error
 
 			// Require at least one account.
-			accs, err := a.accounts.ListAccounts()
+			accountID, err = resolveAccount(a, accountID)
 			if err != nil {
 				return err
-			}
-			if len(accs) == 0 {
-				return fmt.Errorf("no accounts configured; run: mailrat accounts add")
-			}
-
-			// Use first account if not specified.
-			if accountID == "" {
-				accountID = accs[0].ID
 			}
 
 			// Interactive prompts if flags not provided.
-			reader := bufio.NewReader(os.Stdin)
+			reader := newPromptReader()
 			if to == "" {
-				fmt.Print("To: ")
-				to, _ = reader.ReadString('\n')
-				to = strings.TrimSpace(to)
+				to, err = promptLine(reader, "To: ")
+				if err != nil {
+					return err
+				}
 			}
 			if subject == "" {
-				fmt.Print("Subject: ")
-				subject, _ = reader.ReadString('\n')
-				subject = strings.TrimSpace(subject)
+				subject, err = promptLine(reader, "Subject: ")
+				if err != nil {
+					return err
+				}
 			}
 			if body == "" {
-				fmt.Println("Body (end with a line containing only '.'):")
-				var lines []string
-				for {
-					line, _ := reader.ReadString('\n')
-					line = strings.TrimRight(line, "\r\n")
-					if line == "." {
-						break
-					}
-					lines = append(lines, line)
+				body, err = promptMultilineBody(reader, "Body (end with a line containing only '.'):")
+				if err != nil {
+					return err
 				}
-				body = strings.Join(lines, "\n")
 			}
 
 			// Find the account email for the From header.
-			var fromEmail string
-			for _, acc := range accs {
-				if acc.ID == accountID {
-					fromEmail = acc.Email
-					break
-				}
+			fromEmail, err := resolveAccountEmail(a, accountID)
+			if err != nil {
+				return err
 			}
 
 			client, err := a.gmailClientForAccount(ctx, accountID)
@@ -94,13 +69,13 @@ func init() {
 
 			fmt.Printf("Message sent (id: %s)\n", msgID)
 			return nil
-		},
+		}),
 	}
 
-	sendCmd.Flags().StringVar(&accountID, "account", "", "Account ID to send from")
-	sendCmd.Flags().StringVar(&to, "to", "", "Recipient email")
-	sendCmd.Flags().StringVar(&subject, "subject", "", "Subject")
-	sendCmd.Flags().StringVar(&body, "body", "", "Message body")
+	cmd.Flags().StringVar(&accountID, "account", "", "Account ID to send from")
+	cmd.Flags().StringVar(&to, "to", "", "Recipient email")
+	cmd.Flags().StringVar(&subject, "subject", "", "Subject")
+	cmd.Flags().StringVar(&body, "body", "", "Message body")
 
-	rootCmd.AddCommand(sendCmd)
+	return cmd
 }
