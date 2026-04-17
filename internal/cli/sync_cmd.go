@@ -54,6 +54,12 @@ func init() {
 					if err := mgr.IncrementalSync(ctx, acc.ID); err != nil {
 						return fmt.Errorf("incremental sync for %s: %w", acc.Email, err)
 					}
+					// Backfill historical messages for any label whose config
+					// has changed (e.g. INBOX set to "all mail") since last sync.
+					configs, _ := a.store.ListSyncConfigs(acc.ID)
+					if err := mgr.BackfillFromConfigs(ctx, acc.ID, configs); err != nil {
+						fmt.Printf("warning: backfill for %s: %v\n", acc.Email, err)
+					}
 				}
 			}
 			return nil

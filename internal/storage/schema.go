@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS sync_config (
     label_name        TEXT NOT NULL DEFAULT '',
     days_to_sync      INTEGER NOT NULL DEFAULT 30,
     fetch_attachments INTEGER NOT NULL DEFAULT 0,
+    backfilled        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (label_id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

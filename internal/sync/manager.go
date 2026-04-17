@@ -196,6 +196,65 @@ func (m *Manager) FetchBodies(ctx context.Context, accountID string, limit int) 
 	return nil
 }
 
+// BackfillFromConfigs fetches historical messages for any label whose config
+// has not yet been fully backfilled. Call this after IncrementalSync.
+// A label is considered backfilled once we've run its historical query at least
+// once; the result is persisted so subsequent syncs skip it.
+func (m *Manager) BackfillFromConfigs(ctx context.Context, accountID string, configs []storage.SyncConfig) error {
+	seen := make(map[string]bool)
+	for _, c := range configs {
+		if c.Backfilled {
+			continue
+		}
+
+		q := buildBackfillQuery(c)
+		if q == "" {
+			// No meaningful query — mark done so we don't retry endlessly.
+			_ = m.store.MarkSyncConfigBackfilled(c.LabelID, accountID)
+			continue
+		}
+
+		fmt.Printf("Backfilling %q (%s)...\n", c.LabelName, q)
+		if err := m.fetchAndStore(ctx, accountID, q, 2000, seen); err != nil {
+			fmt.Printf("warning: backfill for %q failed: %v\n", c.LabelName, err)
+			continue
+		}
+
+		if err := m.store.MarkSyncConfigBackfilled(c.LabelID, accountID); err != nil {
+			return fmt.Errorf("mark backfilled %s: %w", c.LabelID, err)
+		}
+		fmt.Printf("Backfill complete for %q\n", c.LabelName)
+	}
+
+	// Fetch bodies/attachments for labels that request it (runs after messages land).
+	var attachLabelIDs []string
+	for _, c := range configs {
+		if c.FetchAttachments {
+			attachLabelIDs = append(attachLabelIDs, c.LabelID)
+		}
+	}
+	if len(attachLabelIDs) > 0 {
+		if err := m.FetchBodiesForLabels(ctx, accountID, attachLabelIDs, 200); err != nil {
+			fmt.Printf("warning: fetch bodies for labels: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// buildBackfillQuery returns the Gmail search query for a label's backfill.
+// Returns "" if no query is needed (label has no meaningful scope).
+func buildBackfillQuery(c storage.SyncConfig) string {
+	labelQ := labelIDToGmailQuery(c.LabelID, c.LabelName)
+	if labelQ == "" {
+		return ""
+	}
+	if c.DaysToSync == 0 {
+		return labelQ // all mail for this label
+	}
+	return fmt.Sprintf("%s newer_than:%dd", labelQ, c.DaysToSync)
+}
+
 // FetchBodiesForLabels fetches bodies/attachment metadata for metadata-only
 // messages that carry at least one of the given label IDs.
 func (m *Manager) FetchBodiesForLabels(ctx context.Context, accountID string, labelIDs []string, limit int) error {

@@ -137,6 +137,10 @@ func syncAllCmd(store *storage.Store, accMgr *accounts.Manager, accts []storage.
 			if err := mgr.IncrementalSync(ctx, acct.ID); err != nil {
 				return msgSyncDone{err: fmt.Errorf("sync %s: %w", acct.Email, err)}
 			}
+			configs, _ := store.ListSyncConfigs(acct.ID)
+			if err := mgr.BackfillFromConfigs(ctx, acct.ID, configs); err != nil {
+				return msgSyncDone{err: fmt.Errorf("backfill %s: %w", acct.Email, err)}
+			}
 		}
 		return msgSyncDone{}
 	}
