@@ -1,0 +1,49 @@
+# Binaries
+mailrat
+/bin/
+/dist/
+
+# Go build cache
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go module download cache (not the go.sum — that stays)
+vendor/
+
+# SQLite databases (local data, never commit)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# OAuth credentials and tokens — never commit these
+credentials.json
+token.json
+*.token
+
+# Application data directory
+.mailrat/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Test output
+coverage.out
+coverage.html
+
+# Wails (Phase 3)
+frontend/node_modules/
+frontend/dist/
+build/bin/
