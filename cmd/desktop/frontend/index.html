@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>mailrat</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link rel="stylesheet" href="/css/app.css"/>
+  <script src="/js/app.js"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+</head>
+<body class="h-screen w-screen overflow-hidden flex text-sm select-none"
+      x-data
+      x-init="$store.mail.init()">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  LEFT SIDEBAR                                                          -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <aside class="w-60 bg-sidebar border-r border-divider flex flex-col h-full flex-shrink-0"
+         x-data="sidebar">
+
+    <!-- Window controls + compose -->
+    <div class="h-14 flex items-center justify-between px-4 flex-shrink-0" style="-webkit-app-region:drag">
+      <div class="flex space-x-2" style="-webkit-app-region:no-drag">
+        <div class="w-3 h-3 rounded-full bg-red-500 opacity-80"></div>
+        <div class="w-3 h-3 rounded-full bg-yellow-500 opacity-80"></div>
+        <div class="w-3 h-3 rounded-full bg-green-500 opacity-80"></div>
+      </div>
+      <button @click="openCompose()"
+              class="text-secondary hover:text-white transition-colors"
+              title="Compose (C)"
+              style="-webkit-app-region:no-drag">
+        <!-- pencil icon -->
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
+                   m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Account switcher -->
+    <div class="px-3 pb-3 flex-shrink-0">
+      <!-- Unified inbox -->
+      <button @click="selectAccount('unified')"
+              :class="store.activeAccountId === 'unified'
+                      ? 'bg-active-item text-white'
+                      : 'hover:bg-white/5 text-secondary'"
+              class="w-full flex items-center px-2 py-1.5 rounded-md text-xs mb-0.5 transition-colors">
+        <svg class="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        All Inboxes
+      </button>
+
+      <!-- Per-account buttons -->
+      <template x-for="acc in store.accounts" :key="acc.id">
+        <button @click="selectAccount(acc.id)"
+                :class="store.activeAccountId === acc.id
+                        ? 'bg-active-item text-white'
+                        : 'hover:bg-white/5 text-secondary'"
+                class="w-full flex items-center px-2 py-1.5 rounded-md text-xs mb-0.5 transition-colors">
+          <svg class="w-4 h-4 mr-2 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+          </svg>
+          <span class="truncate" x-text="acc.email"></span>
+        </button>
+      </template>
+
+      <!-- No accounts placeholder -->
+      <template x-if="store.accounts.length === 0">
+        <p class="text-tertiary text-xs px-2 py-1">No accounts — run <code class="font-mono">mailrat accounts add</code></p>
+      </template>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 overflow-y-auto px-2 pb-4 space-y-4">
+
+      <!-- System labels -->
+      <div>
+        <h3 class="text-xs font-semibold text-tertiary uppercase tracking-wider px-2 mb-1">Folders</h3>
+        <ul class="space-y-0.5">
+          <!-- INBOX -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md nav-item-active">
+              <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5
+                         m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172
+                         a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+              </svg>
+              Primary
+            </button>
+          </li>
+          <!-- Starred -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915
+                         c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674
+                         c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888
+                         c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888
+                         c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/>
+              </svg>
+              Starred
+            </button>
+          </li>
+          <!-- Drafts -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+                         a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+              </svg>
+              Drafts
+            </button>
+          </li>
+          <!-- Sent -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+              </svg>
+              Sent
+            </button>
+          </li>
+          <!-- All Mail -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6
+                         a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414
+                         a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414
+                         A1 1 0 006.586 13H4"/>
+              </svg>
+              All Mail
+            </button>
+          </li>
+          <!-- Spam -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3
+                         L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+              </svg>
+              Spam
+            </button>
+          </li>
+          <!-- Trash -->
+          <li>
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+              <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
+                         m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Trash
+            </button>
+          </li>
+        </ul>
+      </div>
+
+    </nav>
+
+    <!-- Sync status bar -->
+    <div class="px-3 py-2 border-t border-divider flex-shrink-0 flex items-center justify-between">
+      <span class="text-xs text-tertiary" x-text="
+        store.syncStatus === 'syncing' ? ('Syncing' + (store.syncAccount ? ' ' + store.syncAccount : '') + '…') :
+        store.syncStatus === 'done'    ? 'Up to date' : ''
+      "></span>
+      <button @click="store.sync()"
+              :disabled="store.syncStatus === 'syncing'"
+              class="text-secondary hover:text-white disabled:opacity-40 transition-colors"
+              title="Sync now (S)">
+        <svg class="w-4 h-4" :class="{ 'animate-spin': store.syncStatus === 'syncing' }"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9
+                   m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+        </svg>
+      </button>
+    </div>
+  </aside>
+  <!-- END SIDEBAR -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  MIDDLE — EMAIL LIST                                                   -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <section class="w-80 bg-list border-r border-divider flex flex-col h-full flex-shrink-0"
+           x-data="emailList">
+
+    <!-- Header -->
+    <header class="h-14 flex items-center justify-between px-4 border-b border-divider flex-shrink-0">
+      <h2 class="font-semibold text-white text-sm" x-text="
+        store.activeAccountId === 'unified' ? 'All Inboxes' :
+        (store.accounts.find(a => a.id === store.activeAccountId)?.email || 'Inbox')
+      "></h2>
+      <div class="flex items-center space-x-2">
+        <!-- Sync spinner -->
+        <template x-if="store.syncStatus === 'syncing'">
+          <svg class="w-4 h-4 text-blue-400 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9
+                     m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+        </template>
+      </div>
+    </header>
+
+    <!-- Search box -->
+    <div class="px-3 py-2 border-b border-divider flex-shrink-0">
+      <div class="relative">
+        <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-tertiary">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </span>
+        <input type="text"
+               x-model="store.searchQuery"
+               @keydown="doSearch($event)"
+               placeholder="Search"
+               class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
+                      pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
+      </div>
+    </div>
+
+    <!-- Thread list -->
+    <div class="flex-1 overflow-y-auto">
+
+      <!-- Loading state -->
+      <template x-if="store.loading">
+        <div class="flex items-center justify-center h-32 text-tertiary text-xs">
+          Loading…
+        </div>
+      </template>
+
+      <!-- Empty state -->
+      <template x-if="!store.loading && store.threads.length === 0">
+        <div class="flex flex-col items-center justify-center h-40 text-tertiary text-xs space-y-2">
+          <svg class="w-8 h-8 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6
+                     a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414
+                     a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414
+                     A1 1 0 006.586 13H4"/>
+          </svg>
+          <span x-text="store.searchQuery ? 'No results' : 'No messages'"></span>
+        </div>
+      </template>
+
+      <!-- Thread items -->
+      <template x-if="!store.loading">
+        <div>
+          <template x-for="thread in store.threads" :key="thread.id + thread.accountId">
+            <article @click="selectThread(thread)"
+                     :class="isActive(thread) ? 'bg-active-item' : 'hover:bg-white/5'"
+                     class="px-3 py-2.5 border-b border-divider cursor-pointer transition-colors">
+
+              <!-- Row 1: sender + date -->
+              <div class="flex justify-between items-baseline mb-0.5">
+                <div class="flex items-center space-x-1.5 min-w-0">
+                  <!-- Unread indicator -->
+                  <template x-if="thread.isUnread">
+                    <span class="unread-dot"></span>
+                  </template>
+                  <h3 :class="thread.isUnread ? 'font-semibold text-white' : 'text-white'"
+                      class="truncate text-sm" x-text="thread.participants || thread.accountId"></h3>
+                  <!-- Message count badge -->
+                  <template x-if="thread.messageCount > 1">
+                    <span class="text-tertiary text-xs flex-shrink-0" x-text="thread.messageCount"></span>
+                  </template>
+                </div>
+                <span class="text-xs text-secondary ml-2 flex-shrink-0" x-text="formatDate(thread.date)"></span>
+              </div>
+
+              <!-- Row 2: subject -->
+              <p :class="thread.isUnread ? 'font-semibold text-white' : 'text-secondary'"
+                 class="text-xs truncate mb-0.5" x-text="thread.subject || '(no subject)'"></p>
+
+              <!-- Row 3: snippet + attachment indicator -->
+              <div class="flex items-center justify-between">
+                <p class="text-secondary text-xs truncate pr-2" x-text="thread.snippet"></p>
+                <template x-if="thread.hasAttachments">
+                  <svg class="w-3 h-3 text-tertiary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
+                             a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                  </svg>
+                </template>
+              </div>
+
+            </article>
+          </template>
+        </div>
+      </template>
+
+    </div>
+  </section>
+  <!-- END EMAIL LIST -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  RIGHT — READING PANE                                                  -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <main class="flex-1 bg-reading flex flex-col h-full min-w-0"
+        x-data="readingPane">
+
+    <!-- Toolbar -->
+    <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
+      <div class="flex items-center space-x-5 text-secondary">
+        <!-- Archive -->
+        <button class="hover:text-white transition-colors" title="Archive">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+          </svg>
+        </button>
+        <!-- Delete -->
+        <button class="hover:text-white transition-colors" title="Delete">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
+                     m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+        <!-- Move -->
+        <button class="hover:text-white transition-colors" title="Move to folder">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
+          </svg>
+        </button>
+        <!-- Label -->
+        <button class="hover:text-white transition-colors" title="Add label">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7
+                     a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+          </svg>
+        </button>
+
+        <div class="w-px h-5 bg-divider"></div>
+
+        <!-- Reply -->
+        <button @click="store.activeThread && reply(store.messages[store.messages.length - 1])"
+                class="hover:text-white transition-colors" title="Reply (R)">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+          </svg>
+        </button>
+        <!-- Forward -->
+        <button class="hover:text-white transition-colors" title="Forward">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Search in reading pane -->
+      <div class="relative w-56">
+        <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-tertiary">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </span>
+        <input type="text"
+               placeholder="Search in conversation"
+               class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
+                      pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
+      </div>
+    </div>
+
+    <!-- Empty state — no thread selected -->
+    <template x-if="!store.activeThread">
+      <div class="flex-1 flex flex-col items-center justify-center text-tertiary space-y-3">
+        <svg class="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5
+                   a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        <p class="text-sm">Select a conversation</p>
+      </div>
+    </template>
+
+    <!-- Thread content -->
+    <template x-if="store.activeThread">
+      <div class="flex-1 overflow-y-auto">
+        <div class="p-6 lg:p-10 max-w-4xl mx-auto w-full">
+
+          <!-- Subject + labels row -->
+          <div class="flex items-start justify-between mb-7">
+            <div class="flex items-center space-x-3 min-w-0">
+              <h1 class="text-2xl font-bold text-white truncate"
+                  x-text="store.activeThread.subject || '(no subject)'"></h1>
+              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white/10 text-secondary flex-shrink-0">
+                Inbox
+              </span>
+            </div>
+            <!-- Reply button in reading area -->
+            <button @click="reply(store.messages[store.messages.length - 1])"
+                    class="text-secondary hover:text-white flex-shrink-0 ml-4 transition-colors"
+                    title="Reply">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Messages in the thread -->
+          <template x-for="(msg, idx) in store.messages" :key="msg.id">
+            <div :class="idx < store.messages.length - 1 ? 'mb-4' : ''"
+                 class="group">
+
+              <!-- Collapsed message (not expanded) -->
+              <template x-if="!isExpanded(msg.id)">
+                <div @click="toggle(msg)"
+                     class="flex items-center justify-between py-2 px-1 rounded-lg cursor-pointer
+                            hover:bg-white/5 transition-colors">
+                  <div class="flex items-center space-x-3 min-w-0">
+                    <!-- Avatar -->
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                         :style="'background-color:' + avatarColor(msg.from || '')">
+                      <span x-text="initials(msg.from || '')"></span>
+                    </div>
+                    <div class="min-w-0">
+                      <span class="text-sm font-medium text-white truncate block"
+                            x-text="msg.from || 'Unknown'"></span>
+                      <span class="text-xs text-secondary truncate block" x-text="msg.snippet"></span>
+                    </div>
+                  </div>
+                  <div class="flex items-center space-x-2 text-secondary ml-4 flex-shrink-0">
+                    <span class="text-xs" x-text="formatDate(msg.date)"></span>
+                    <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
+                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 9l-7 7-7-7"/>
+                    </svg>
+                  </div>
+                </div>
+              </template>
+
+              <!-- Expanded message -->
+              <template x-if="isExpanded(msg.id)">
+                <div class="mb-2">
+                  <!-- Message header -->
+                  <div class="flex items-start justify-between mb-4">
+                    <div class="flex items-center space-x-3 min-w-0">
+                      <!-- Avatar -->
+                      <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
+                           :style="'background-color:' + avatarColor(msg.from || '')">
+                        <span x-text="initials(msg.from || '')"></span>
+                      </div>
+                      <div class="min-w-0">
+                        <div class="flex items-baseline space-x-2">
+                          <span class="font-bold text-white text-sm" x-text="msg.from || 'Unknown'"></span>
+                        </div>
+                        <div class="text-xs text-secondary mt-0.5">
+                          To: <span class="text-white" x-text="msg.to || ''"></span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="flex items-center space-x-3 text-secondary ml-4 flex-shrink-0">
+                      <span class="text-xs" x-text="formatDate(msg.date)"></span>
+                      <div class="flex space-x-1">
+                        <button @click.stop="toggle(msg)"
+                                class="hover:text-white p-1 rounded transition-colors" title="Collapse">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                          </svg>
+                        </button>
+                        <button @click.stop="reply(msg)"
+                                class="hover:text-white p-1 rounded transition-colors" title="Reply">
+                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                  d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Body -->
+                  <div class="pl-13 ml-13" style="margin-left:3.25rem">
+                    <!-- Loading body -->
+                    <template x-if="!msg.body">
+                      <p class="text-tertiary text-xs italic">Loading…</p>
+                    </template>
+                    <!-- Plain text body -->
+                    <template x-if="msg.body && !msg.body.trim().startsWith('<')">
+                      <pre class="text-white text-sm whitespace-pre-wrap font-sans leading-relaxed message-body"
+                           x-text="msg.body"></pre>
+                    </template>
+                    <!-- HTML body -->
+                    <template x-if="msg.body && msg.body.trim().startsWith('<')">
+                      <div class="text-white text-sm message-body" x-html="msg.body"></div>
+                    </template>
+
+                    <!-- Attachment indicator -->
+                    <template x-if="msg.hasAttachments">
+                      <div class="mt-3 inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+                        <svg class="w-3 h-3 mr-1.5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
+                                   a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                        </svg>
+                        Attachment
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </template>
+
+            </div>
+          </template>
+
+          <!-- Quick reply bar -->
+          <template x-if="store.messages.length > 0">
+            <div class="mt-6">
+              <button @click="reply(store.messages[store.messages.length - 1])"
+                      class="w-full text-left border border-divider rounded-lg px-4 py-3
+                             hover:bg-white/5 text-secondary text-sm transition-colors cursor-text">
+                Reply…
+              </button>
+            </div>
+          </template>
+
+        </div>
+      </div>
+    </template>
+
+  </main>
+  <!-- END READING PANE -->
+
+
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <!--  COMPOSE MODAL                                                         -->
+  <!-- ═══════════════════════════════════════════════════════════════════════ -->
+  <div x-data="compose"
+       x-show="store.composing"
+       x-transition.opacity
+       @keydown.window="handleKeydown($event)"
+       class="fixed inset-0 z-50 flex items-end justify-end p-6 compose-backdrop"
+       style="display:none">
+
+    <!-- Modal card -->
+    <div class="bg-sidebar border border-divider rounded-xl shadow-2xl w-full max-w-lg flex flex-col"
+         style="height: 480px"
+         @click.stop>
+
+      <!-- Modal header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-divider flex-shrink-0">
+        <h3 class="font-semibold text-white text-sm"
+            x-text="store.composeMode === 'reply' ? 'Reply' : 'New Message'"></h3>
+        <button @click="store.closeCompose()" class="text-secondary hover:text-white transition-colors">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- From account selector (only if multiple accounts) -->
+      <template x-if="store.accounts.length > 1">
+        <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
+          <span class="text-secondary text-xs w-12 flex-shrink-0">From</span>
+          <select x-model="data.accountId"
+                  class="flex-1 bg-transparent text-white text-sm focus:outline-none">
+            <template x-for="acc in store.accounts" :key="acc.id">
+              <option :value="acc.id" x-text="acc.email"></option>
+            </template>
+          </select>
+        </div>
+      </template>
+
+      <!-- To field -->
+      <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
+        <span class="text-secondary text-xs w-12 flex-shrink-0">To</span>
+        <input type="text"
+               x-model="data.to"
+               placeholder="Recipients"
+               class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+      </div>
+
+      <!-- Subject field -->
+      <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
+        <span class="text-secondary text-xs w-12 flex-shrink-0">Subject</span>
+        <input type="text"
+               x-model="data.subject"
+               placeholder="Subject"
+               class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+      </div>
+
+      <!-- Body -->
+      <div class="flex-1 overflow-hidden px-4 py-3">
+        <textarea x-model="data.body"
+                  placeholder="Write your message…"
+                  class="w-full h-full bg-transparent text-white text-sm
+                         placeholder-tertiary focus:outline-none leading-relaxed"></textarea>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-4 py-3 border-t border-divider flex items-center justify-between flex-shrink-0">
+        <!-- Send error -->
+        <p x-show="store.sendError" x-text="store.sendError"
+           class="text-red-400 text-xs truncate pr-4"></p>
+        <span x-show="!store.sendError" class="text-tertiary text-xs">⌘↩ to send</span>
+
+        <button @click="store.sendCompose()"
+                :disabled="store.sending || !data.to || !data.subject"
+                class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40
+                       text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0">
+          <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Error toast -->
+  <div x-show="$store.mail.error"
+       x-transition
+       class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50
+              bg-red-900/90 border border-red-700 text-red-200 text-xs px-4 py-2 rounded-lg
+              max-w-sm text-center"
+       style="display:none">
+    <span x-text="$store.mail.error"></span>
+    <button @click="$store.mail.error = null" class="ml-2 underline">Dismiss</button>
+  </div>
+
+</body>
+</html>

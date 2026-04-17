@@ -1,0 +1,78 @@
+/* Base */
+body {
+  background-color: #1e1e1e;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Column backgrounds */
+.bg-sidebar  { background-color: #2b2b2d; }
+.bg-list     { background-color: #222223; }
+.bg-reading  { background-color: #1e1e1f; }
+
+/* Text */
+.text-secondary { color: #8e8e93; }
+.text-tertiary  { color: #636366; }
+
+/* Borders */
+.border-divider { border-color: #38383a; }
+
+/* Active / hover states */
+.bg-active-item { background-color: #38383a; }
+
+/* Label tags */
+.tag-blue   { background-color: rgba(64,156,255,0.2);  color: #7cb5ec; }
+.tag-purple { background-color: rgba(191,90,242,0.2);  color: #d49aed; }
+.tag-green  { background-color: rgba(50,215,75,0.2);   color: #87d995; }
+.tag-orange { background-color: rgba(255,159,10,0.2);  color: #f0a045; }
+.tag-red    { background-color: rgba(255,69,58,0.2);   color: #f06a64; }
+
+/* Scrollbars */
+::-webkit-scrollbar              { width: 6px; height: 6px; }
+::-webkit-scrollbar-track        { background: transparent; }
+::-webkit-scrollbar-thumb        { background: #4a4a4a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover  { background: #5a5a5a; }
+
+/* Compose modal backdrop */
+.compose-backdrop {
+  background: rgba(0,0,0,0.5);
+  backdrop-filter: blur(2px);
+}
+
+/* Message body HTML content */
+.message-body { line-height: 1.6; }
+.message-body a { color: #409cff; text-decoration: underline; }
+.message-body p { margin-bottom: 0.75em; }
+.message-body blockquote {
+  border-left: 3px solid #38383a;
+  padding-left: 1em;
+  color: #8e8e93;
+  margin: 0.5em 0;
+}
+
+/* Sync indicator animation */
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+
+/* Unread dot */
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #409cff;
+  flex-shrink: 0;
+}
+
+/* Nav item active */
+.nav-item-active {
+  background-color: rgba(64,156,255,0.15);
+  color: #409cff;
+}
+
+/* Textarea reset */
+textarea {
+  resize: none;
+  outline: none;
+}
+textarea:focus { outline: none; }

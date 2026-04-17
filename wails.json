@@ -1,0 +1,16 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "mailrat",
+  "outputfilename": "mailrat",
+  "frontend:dir": "cmd/desktop/frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:devPath": "cmd/desktop/frontend",
+  "wailsjsdir": "",
+  "version": "2",
+  "info": {
+    "productName": "mailrat",
+    "productVersion": "0.1.0",
+    "description": "Native Gmail Desktop Client"
+  }
+}
