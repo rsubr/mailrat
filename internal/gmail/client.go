@@ -192,7 +192,12 @@ func (c *Client) GetHistoryList(ctx context.Context, startHistoryID uint64) (*Hi
 
 		for _, h := range resp.History {
 			for _, ma := range h.MessagesAdded {
-				meta := parseMessageMeta(ma.Message)
+				// History entries are partial (id+threadId+labelIds only).
+				// Fetch full metadata to get InternalDate and headers.
+				meta, err := c.GetMessageMeta(ctx, ma.Message.Id)
+				if err != nil {
+					continue
+				}
 				e := meta // copy
 				events = append(events, HistoryEvent{MessageAdded: &e})
 			}
