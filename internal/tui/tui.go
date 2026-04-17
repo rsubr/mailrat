@@ -37,9 +37,10 @@ type model struct {
 	threadCur  int
 
 	// message reader
-	message  storage.Message
-	viewport viewport.Model
-	vpReady  bool
+	message     storage.Message
+	attachments []storage.Attachment
+	viewport    viewport.Model
+	vpReady     bool
 
 	// compose
 	composeTo      textinput.Model
@@ -132,8 +133,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.message = msg.msg
+		m.attachments = msg.attachments
 		m.viewport = viewport.New(m.width, m.contentHeight())
-		m.viewport.SetContent(formatMessageBody(msg.msg))
+		m.viewport.SetContent(formatMessageBody(msg.msg, msg.attachments))
 		m.vpReady = true
 		m.view = viewMessage
 		return m, nil

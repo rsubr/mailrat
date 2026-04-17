@@ -59,6 +59,15 @@ CREATE TABLE IF NOT EXISTS drafts (
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS attachments (
+    message_id TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    name       TEXT NOT NULL DEFAULT '',
+    mime_type  TEXT NOT NULL DEFAULT '',
+    size       INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (message_id, account_id) REFERENCES messages(id, account_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS contacts (
     id            TEXT NOT NULL,
     account_id    TEXT NOT NULL,

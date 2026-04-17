@@ -55,7 +55,7 @@ func (m model) renderMessage() string {
 }
 
 // formatMessageBody builds the full text of a message for display in the viewport.
-func formatMessageBody(msg storage.Message) string {
+func formatMessageBody(msg storage.Message, attachments []storage.Attachment) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("From:    %s\n", msg.FromAddr))
@@ -63,6 +63,11 @@ func formatMessageBody(msg storage.Message) string {
 	sb.WriteString(fmt.Sprintf("Date:    %s\n",
 		time.UnixMilli(msg.InternalDate).Format("Mon, 02 Jan 2006 15:04:05")))
 	sb.WriteString(fmt.Sprintf("Subject: %s\n", msg.Subject))
+
+	if len(attachments) > 0 {
+		sb.WriteString(fmt.Sprintf("Attach:  %s\n", formatAttachmentList(attachments)))
+	}
+
 	sb.WriteString(separatorStyle.Render(strings.Repeat("─", 60)))
 	sb.WriteString("\n\n")
 
@@ -76,6 +81,27 @@ func formatMessageBody(msg storage.Message) string {
 
 	sb.WriteString(stripHTML(body))
 	return sb.String()
+}
+
+// formatAttachmentList formats attachments as a compact comma-separated list.
+func formatAttachmentList(attachments []storage.Attachment) string {
+	parts := make([]string, len(attachments))
+	for i, a := range attachments {
+		parts[i] = fmt.Sprintf("%s (%s)", a.Name, formatSize(a.Size))
+	}
+	return strings.Join(parts, ",  ")
+}
+
+// formatSize formats a byte count as a human-readable string.
+func formatSize(bytes int64) string {
+	switch {
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(bytes)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
 
 // stripHTML removes HTML tags and decodes common entities for terminal display.

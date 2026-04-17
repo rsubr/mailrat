@@ -29,8 +29,9 @@ type msgThreadLoaded struct {
 }
 
 type msgMessageLoaded struct {
-	msg storage.Message
-	err error
+	msg         storage.Message
+	attachments []storage.Attachment
+	err         error
 }
 
 type msgSyncDone struct {
@@ -80,11 +81,11 @@ func loadMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgI
 		if err != nil {
 			return msgMessageLoaded{err: fmt.Errorf("get message: %w", err)}
 		}
-		// If body not cached, fetch from Gmail API
+		// If body not cached, fetch from Gmail API (also saves attachments to store).
 		if msg.CacheState == storage.CacheMetadataOnly {
 			httpClient, err := accMgr.GetClient(ctx, acctID)
 			if err != nil {
-				return msgMessageLoaded{msg: msg} // show snippet we have
+				return msgMessageLoaded{msg: msg}
 			}
 			gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
 			if err != nil {
@@ -96,7 +97,8 @@ func loadMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgI
 				msg = fetched
 			}
 		}
-		return msgMessageLoaded{msg: msg}
+		atts, _ := store.GetAttachments(acctID, msgID)
+		return msgMessageLoaded{msg: msg, attachments: atts}
 	}
 }
 

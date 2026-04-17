@@ -89,12 +89,17 @@ func (m model) renderInboxRow(msg storage.Message, selected bool) string {
 		dot = unreadDotStyle.Render("• ")
 	}
 
+	clip := "  "
+	if msg.HasAttachments {
+		clip = accentStyle.Render("⊕ ")
+	}
+
 	date := time.UnixMilli(msg.InternalDate).Format("Jan 02 15:04")
 	from := truncStr(msg.FromAddr, 24)
-	subject := truncStr(msg.Subject, 42)
-	snippet := truncStr(msg.Snippet, 30)
+	subject := truncStr(msg.Subject, 38)
+	snippet := truncStr(msg.Snippet, 28)
 
-	line := fmt.Sprintf("%s%-10s  %-24s  %-42s  %s", dot, date, from, subject, snippet)
+	line := fmt.Sprintf("%s%-10s  %-24s  %s%-38s  %s", dot, date, from, clip, subject, snippet)
 
 	switch {
 	case selected:

@@ -16,7 +16,16 @@ type MessageMeta struct {
 // Message is a full message including body.
 type Message struct {
 	MessageMeta
-	Body string // plain text or HTML body
+	Body        string       // plain text or HTML body
+	Attachments []Attachment // populated on format=full fetch
+}
+
+// Attachment holds metadata for a MIME attachment part.
+// The binary content is not stored locally; Size is in bytes.
+type Attachment struct {
+	Name     string
+	MimeType string
+	Size     int64
 }
 
 // Thread is a Gmail thread.

@@ -47,6 +47,7 @@ func migrate(db *sql.DB) error {
 	migrations := []string{
 		`ALTER TABLE contacts ADD COLUMN resource_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE contacts ADD COLUMN etag TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN has_attachments INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine

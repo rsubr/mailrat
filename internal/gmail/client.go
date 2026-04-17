@@ -87,7 +87,8 @@ func (c *Client) GetMessage(ctx context.Context, id string) (Message, error) {
 
 	meta := parseMessageMeta(msg)
 	body := extractBody(msg.Payload)
-	return Message{MessageMeta: meta, Body: body}, nil
+	attachments := extractAttachments(msg.Payload)
+	return Message{MessageMeta: meta, Body: body, Attachments: attachments}, nil
 }
 
 // GetThread fetches a full thread.
@@ -295,6 +296,38 @@ func extractPart(part *gmailv1.MessagePart, mimeType string) string {
 		}
 	}
 	return ""
+}
+
+// extractAttachments walks the MIME part tree and returns attachment metadata.
+// Binary content is not fetched here — that requires a separate attachments.get call.
+func extractAttachments(payload *gmailv1.MessagePart) []Attachment {
+	if payload == nil {
+		return nil
+	}
+	var out []Attachment
+	collectAttachments(payload, &out)
+	return out
+}
+
+func collectAttachments(part *gmailv1.MessagePart, out *[]Attachment) {
+	if part == nil {
+		return
+	}
+	// A part is an attachment if it has a filename.
+	if part.Filename != "" {
+		size := int64(0)
+		if part.Body != nil {
+			size = part.Body.Size
+		}
+		*out = append(*out, Attachment{
+			Name:     part.Filename,
+			MimeType: part.MimeType,
+			Size:     size,
+		})
+	}
+	for _, p := range part.Parts {
+		collectAttachments(p, out)
+	}
 }
 
 // withRetry calls fn with exponential backoff on 429/500 errors.

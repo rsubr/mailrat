@@ -46,7 +46,15 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 		if err == nil {
 			msg.Body = full.Body
 			msg.CacheState = storage.CacheBodyCached
+			msg.HasAttachments = len(full.Attachments) > 0
 			_ = s.store.UpsertMessage(msg)
+			if msg.HasAttachments {
+				atts := make([]storage.Attachment, len(full.Attachments))
+				for i, a := range full.Attachments {
+					atts[i] = storage.Attachment{Name: a.Name, MimeType: a.MimeType, Size: a.Size}
+				}
+				_ = s.store.UpsertAttachments(accountID, messageID, atts)
+			}
 		}
 	}
 

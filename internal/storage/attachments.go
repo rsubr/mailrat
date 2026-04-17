@@ -1,0 +1,60 @@
+package storage
+
+// Attachment holds metadata for one MIME attachment belonging to a message.
+type Attachment struct {
+	Name     string
+	MimeType string
+	Size     int64 // bytes
+}
+
+// UpsertAttachments replaces all attachment records for (accountID, messageID).
+func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Attachment) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(
+		`DELETE FROM attachments WHERE message_id = ? AND account_id = ?`,
+		messageID, accountID,
+	); err != nil {
+		return err
+	}
+
+	for _, a := range attachments {
+		if _, err := tx.Exec(
+			`INSERT INTO attachments (message_id, account_id, name, mime_type, size)
+			 VALUES (?, ?, ?, ?, ?)`,
+			messageID, accountID, a.Name, a.MimeType, a.Size,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetAttachments returns all attachments for a message.
+func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error) {
+	rows, err := s.db.Query(
+		`SELECT name, mime_type, size FROM attachments
+		 WHERE message_id = ? AND account_id = ?
+		 ORDER BY rowid`,
+		messageID, accountID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Attachment
+	for rows.Next() {
+		var a Attachment
+		if err := rows.Scan(&a.Name, &a.MimeType, &a.Size); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
