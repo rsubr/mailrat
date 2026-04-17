@@ -42,6 +42,16 @@ type msgSendDone struct {
 	err error
 }
 
+type msgMarkReadDone struct {
+	acctID    string
+	messageID string
+	queued    bool // true when offline and op was deferred
+}
+
+type msgDrainDone struct {
+	applied int // number of pending ops successfully flushed
+}
+
 // Commands
 
 func loadAccountsCmd(store *storage.Store) tea.Cmd {
@@ -120,6 +130,73 @@ func syncAllCmd(store *storage.Store, accMgr *accounts.Manager, accts []storage.
 			}
 		}
 		return msgSyncDone{}
+	}
+}
+
+// markReadCmd optimistically updates local storage, then tries the Gmail API.
+// If offline, the operation is queued in pending_ops for later.
+func markReadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+
+		// Optimistic local update — do this regardless of network state.
+		if msg, err := store.GetMessage(acctID, msgID); err == nil && msg.IsUnread {
+			msg.IsUnread = false
+			_ = store.UpsertMessage(msg)
+		}
+
+		// Attempt the Gmail API call.
+		httpClient, err := accMgr.GetClient(ctx, acctID)
+		if err == nil {
+			if gc, err := gmail.NewClient(ctx, httpClient, acctID); err == nil {
+				if err := gc.ModifyLabels(ctx, msgID, nil, []string{"UNREAD"}); err == nil {
+					return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: false}
+				}
+			}
+		}
+
+		// Offline or API error — queue for the next successful sync.
+		_ = store.AddPendingOp(storage.OpMarkRead, acctID, msgID)
+		return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: true}
+	}
+}
+
+// drainPendingOpsCmd runs after a successful sync and replays any queued operations.
+func drainPendingOpsCmd(store *storage.Store, accMgr *accounts.Manager) tea.Cmd {
+	return func() tea.Msg {
+		ops, err := store.ListPendingOps()
+		if err != nil || len(ops) == 0 {
+			return msgDrainDone{}
+		}
+
+		ctx := context.Background()
+		clients := make(map[string]*gmail.Client)
+		applied := 0
+
+		for _, op := range ops {
+			if _, ok := clients[op.AccountID]; !ok {
+				httpClient, err := accMgr.GetClient(ctx, op.AccountID)
+				if err != nil {
+					continue
+				}
+				gc, err := gmail.NewClient(ctx, httpClient, op.AccountID)
+				if err != nil {
+					continue
+				}
+				clients[op.AccountID] = gc
+			}
+			gc := clients[op.AccountID]
+
+			switch op.OpType {
+			case storage.OpMarkRead:
+				if err := gc.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"}); err == nil {
+					_ = store.DeletePendingOp(op.ID)
+					applied++
+				}
+			}
+		}
+
+		return msgDrainDone{applied: applied}
 	}
 }
 

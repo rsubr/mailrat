@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -138,16 +140,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.SetContent(formatMessageBody(msg.msg, msg.attachments))
 		m.vpReady = true
 		m.view = viewMessage
+		// Mark as read: optimistic local update + background API call (queued if offline).
+		var markCmd tea.Cmd
+		if msg.msg.IsUnread {
+			markCmd = markReadCmd(m.store, m.accMgr, msg.msg.AccountID, msg.msg.ID)
+		}
+		return m, markCmd
+
+	case msgMarkReadDone:
+		// Reflect the read state in the inbox and thread lists so the unread dot clears.
+		for i, m2 := range m.messages {
+			if m2.ID == msg.messageID && m2.AccountID == msg.acctID {
+				m.messages[i].IsUnread = false
+				break
+			}
+		}
+		for i, m2 := range m.threadMsgs {
+			if m2.ID == msg.messageID && m2.AccountID == msg.acctID {
+				m.threadMsgs[i].IsUnread = false
+				break
+			}
+		}
+		m.message.IsUnread = false
+		return m, nil
+
+	case msgDrainDone:
+		if msg.applied > 0 {
+			m.status = fmt.Sprintf("%d pending change(s) synced", msg.applied)
+		}
 		return m, nil
 
 	case msgSyncDone:
 		m.syncing = false
 		if msg.err != nil {
 			m.status = "Sync error: " + msg.err.Error()
-		} else {
-			m.status = "Sync complete"
+			return m, loadInboxCmd(m.store, m.activeAcct)
 		}
-		return m, loadInboxCmd(m.store, m.activeAcct)
+		m.status = "Sync complete"
+		return m, tea.Batch(
+			loadInboxCmd(m.store, m.activeAcct),
+			drainPendingOpsCmd(m.store, m.accMgr),
+		)
 
 	case msgSendDone:
 		if msg.err != nil {

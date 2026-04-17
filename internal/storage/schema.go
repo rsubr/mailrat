@@ -68,6 +68,15 @@ CREATE TABLE IF NOT EXISTS attachments (
     FOREIGN KEY (message_id, account_id) REFERENCES messages(id, account_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS pending_ops (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    op_type    TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT 0,
+    UNIQUE (op_type, account_id, message_id)
+);
+
 CREATE TABLE IF NOT EXISTS contacts (
     id            TEXT NOT NULL,
     account_id    TEXT NOT NULL,

@@ -73,7 +73,14 @@ func formatMessageBody(msg storage.Message, attachments []storage.Attachment) st
 
 	body := msg.Body
 	if body == "" {
-		body = msg.Snippet
+		if msg.CacheState == storage.CacheMetadataOnly {
+			body = dimStyle.Render("[ Body not available offline — connect and reopen to load ]")
+			if msg.Snippet != "" {
+				body += "\n\n" + msg.Snippet
+			}
+		} else {
+			body = msg.Snippet
+		}
 	}
 	if body == "" {
 		body = "(no body)"
