@@ -21,19 +21,19 @@ type ThreadSummary struct {
 
 const threadSummarySQL = `
 	SELECT
-		thread_id,
-		account_id,
+		m.thread_id,
+		m.account_id,
 		COUNT(*)                                                   AS message_count,
-		SUM(is_unread)                                             AS unread_count,
-		MAX(internal_date)                                         AS last_date,
-		MAX(has_attachments)                                       AS has_attachments,
-		GROUP_CONCAT(DISTINCT from_addr)                           AS participants,
+		SUM(m.is_unread)                                           AS unread_count,
+		MAX(m.internal_date)                                       AS last_date,
+		MAX(m.has_attachments)                                     AS has_attachments,
+		GROUP_CONCAT(DISTINCT m.from_addr)                         AS participants,
 		(SELECT subject FROM messages m2
 		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
-		 ORDER BY internal_date DESC LIMIT 1)                      AS subject,
+		 ORDER BY m2.internal_date DESC LIMIT 1)                   AS subject,
 		(SELECT snippet  FROM messages m2
 		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
-		 ORDER BY internal_date DESC LIMIT 1)                      AS snippet
+		 ORDER BY m2.internal_date DESC LIMIT 1)                   AS snippet
 	FROM messages m
 `
 
@@ -55,10 +55,33 @@ func scanThreadSummaries(rows *sql.Rows) ([]ThreadSummary, error) {
 	return out, rows.Err()
 }
 
-// ListAllThreadSummaries returns one row per thread across all accounts, newest first.
+// inboxFilter is a subquery that returns the thread_ids that have at least one
+// message carrying the INBOX label. Used to restrict both list functions to the
+// actual inbox rather than all synced mail.
+const inboxFilter = `
+	m.thread_id IN (
+		SELECT DISTINCT m2.thread_id
+		FROM messages m2
+		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
+		WHERE ml.label_id = 'INBOX'
+	)
+`
+
+const inboxFilterForAccount = `
+	m.account_id = ? AND m.thread_id IN (
+		SELECT DISTINCT m2.thread_id
+		FROM messages m2
+		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
+		WHERE m2.account_id = ? AND ml.label_id = 'INBOX'
+	)
+`
+
+// ListAllThreadSummaries returns inbox threads across all accounts, newest first.
 func (s *Store) ListAllThreadSummaries(limit int) ([]ThreadSummary, error) {
 	rows, err := s.db.Query(
-		threadSummarySQL+`GROUP BY thread_id, account_id ORDER BY last_date DESC LIMIT ?`,
+		threadSummarySQL+
+			`WHERE `+inboxFilter+
+			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
 		limit,
 	)
 	if err != nil {
@@ -68,11 +91,13 @@ func (s *Store) ListAllThreadSummaries(limit int) ([]ThreadSummary, error) {
 	return scanThreadSummaries(rows)
 }
 
-// ListThreadSummaries returns one row per thread for a single account, newest first.
+// ListThreadSummaries returns inbox threads for a single account, newest first.
 func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummary, error) {
 	rows, err := s.db.Query(
-		threadSummarySQL+`WHERE account_id = ? GROUP BY thread_id, account_id ORDER BY last_date DESC LIMIT ?`,
-		accountID, limit,
+		threadSummarySQL+
+			`WHERE `+inboxFilterForAccount+
+			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
+		accountID, accountID, limit,
 	)
 	if err != nil {
 		return nil, err
