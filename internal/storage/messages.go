@@ -101,7 +101,48 @@ func (s *Store) ListMessagesByThread(accountID, threadID string) ([]Message, err
 	return scanMessages(rows)
 }
 
-// ListAllAccounts returns messages across all accounts, newest first.
+// ListMessagesByLabel returns messages that have the given label (by name or ID),
+// newest first. labelQuery is matched case-insensitively against both the label
+// ID (e.g. "SENT") and the label name (e.g. "Sent").
+func (s *Store) ListMessagesByLabel(accountID, labelQuery string, limit int) ([]Message, error) {
+	rows, err := s.db.Query(`
+		SELECT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
+		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state
+		FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
+		WHERE m.account_id = ?
+		  AND (UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?))
+		ORDER BY m.internal_date DESC
+		LIMIT ?
+	`, accountID, labelQuery, labelQuery, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessages(rows)
+}
+
+// ListAllMessagesByLabel is the cross-account version of ListMessagesByLabel.
+func (s *Store) ListAllMessagesByLabel(labelQuery string, limit int) ([]Message, error) {
+	rows, err := s.db.Query(`
+		SELECT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
+		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state
+		FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
+		WHERE UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?)
+		ORDER BY m.internal_date DESC
+		LIMIT ?
+	`, labelQuery, labelQuery, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessages(rows)
+}
+
+// ListAllMessages returns messages across all accounts, newest first.
 func (s *Store) ListAllMessages(limit int) ([]Message, error) {
 	rows, err := s.db.Query(`
 		SELECT id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
