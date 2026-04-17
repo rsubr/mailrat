@@ -201,6 +201,25 @@ func (m *Manager) FetchBodies(ctx context.Context, accountID string, limit int) 
 // A label is considered backfilled once we've run its historical query at least
 // once; the result is persisted so subsequent syncs skip it.
 func (m *Manager) BackfillFromConfigs(ctx context.Context, accountID string, configs []storage.SyncConfig) error {
+	// Seed defaults for INBOX and STARRED when the user hasn't explicitly
+	// configured them yet. Without this, BackfillFromConfigs is a no-op on a
+	// fresh install and the user only ever sees the initial 30-day window.
+	existing := make(map[string]bool, len(configs))
+	for _, c := range configs {
+		existing[c.LabelID] = true
+	}
+	defaults := []storage.SyncConfig{
+		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
+		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
+	}
+	for _, d := range defaults {
+		if !existing[d.LabelID] {
+			if err := m.store.UpsertSyncConfig(d); err == nil {
+				configs = append(configs, d)
+			}
+		}
+	}
+
 	seen := make(map[string]bool)
 	for _, c := range configs {
 		if c.Backfilled {
