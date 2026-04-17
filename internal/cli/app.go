@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ type app struct {
 }
 
 // newApp opens the database and initialises the account manager.
+// Requires credentials.json to already exist.
 func newApp() (*app, error) {
 	dir, err := dataDir()
 	if err != nil {
@@ -36,10 +38,47 @@ func newApp() (*app, error) {
 	credPath := filepath.Join(dir, "credentials.json")
 	mgr, err := accounts.NewManager(store, credPath)
 	if err != nil {
-		return nil, fmt.Errorf("account manager: %w\n\nPlace your Google OAuth2 credentials.json at: %s", err, credPath)
+		store.Close() //nolint:errcheck
+		return nil, fmt.Errorf(
+			"credentials not found at %s\n\nRun 'mailrat accounts add' to set up your account.",
+			credPath,
+		)
 	}
 
 	return &app{store: store, accounts: mgr}, nil
+}
+
+// newAppWithCredentials opens the database and initialises the account manager
+// using the provided credentials path. Used by 'accounts add' after the user
+// has supplied their credentials.json.
+func newAppWithCredentials(credPath string) (*app, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return nil, err
+	}
+
+	dbPath := filepath.Join(dir, "mailrat.db")
+	store, err := storage.Open(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	mgr, err := accounts.NewManager(store, credPath)
+	if err != nil {
+		store.Close() //nolint:errcheck
+		return nil, fmt.Errorf("load credentials: %w", err)
+	}
+
+	return &app{store: store, accounts: mgr}, nil
+}
+
+// CredentialsPath returns the expected path for credentials.json.
+func CredentialsPath() (string, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "credentials.json"), nil
 }
 
 func (a *app) close() {
@@ -93,4 +132,8 @@ func dataDir() (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+func parseJSONBytes(data []byte, v interface{}) error {
+	return json.Unmarshal(data, v)
 }
