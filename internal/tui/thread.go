@@ -15,23 +15,48 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "esc":
+		case "esc", "u":
 			m.nav.view = viewInbox
 			return m, nil
-		case "j", "down":
+		case "j", "down", "n":
 			if m.thread.cursor < len(m.thread.messages)-1 {
 				m.thread.cursor++
 			}
-		case "k", "up":
+		case "k", "up", "p":
 			if m.thread.cursor > 0 {
 				m.thread.cursor--
 			}
-		case "enter":
+		case "enter", "o":
 			if len(m.thread.messages) == 0 {
 				return m, nil
 			}
 			sel := m.thread.messages[m.thread.cursor]
 			return m, loadMessageCmd(m.store, m.accMgr, sel.AccountID, sel.ID)
+		case "r":
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			return m.beginReply(m.thread.messages[m.thread.cursor]), nil
+		case "f":
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			return m.beginForward(m.thread.messages[m.thread.cursor]), nil
+		case "e", "y":
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			sel := m.thread.messages[m.thread.cursor]
+			m.nav.view = viewInbox
+			return m, archiveThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
+		case "a":
+			return m.unsupportedShortcut("a"), nil
+		case "s":
+			return m.unsupportedShortcut("s"), nil
+		case "#":
+			return m.unsupportedShortcut("#"), nil
+		case "!":
+			return m.unsupportedShortcut("!"), nil
 		}
 	}
 	return m, nil

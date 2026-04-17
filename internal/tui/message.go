@@ -15,7 +15,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "esc":
+		case "esc", "u":
 			if len(m.thread.messages) > 0 {
 				m.nav.view = viewThread
 			} else {
@@ -24,16 +24,22 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reader.ready = false
 			return m, nil
 		case "r":
-			replyTo := m.reader.current
-			m.compose.replyTo = &replyTo
-			m.compose.focus = composeFocusBody // start in body; To+Subject pre-filled
-			m.compose.to.SetValue(m.reader.current.FromAddr)
-			m.compose.subject.SetValue("Re: " + strings.TrimPrefix(m.reader.current.Subject, "Re: "))
-			m.compose.to.Blur()
-			m.compose.subject.Blur()
-			m.compose.body.Focus()
-			m.nav.view = viewCompose
-			return m, nil
+			return m.beginReply(m.reader.current), nil
+		case "f":
+			return m.beginForward(m.reader.current), nil
+		case "I":
+			return m, markUnreadCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ID)
+		case "e", "y":
+			m.nav.view = viewInbox
+			return m, archiveThreadCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ThreadID)
+		case "a":
+			return m.unsupportedShortcut("a"), nil
+		case "s":
+			return m.unsupportedShortcut("s"), nil
+		case "#":
+			return m.unsupportedShortcut("#"), nil
+		case "!":
+			return m.unsupportedShortcut("!"), nil
 		}
 	}
 
@@ -60,8 +66,7 @@ func formatMessageBody(msg storage.Message, attachments []storage.Attachment) st
 
 	sb.WriteString(fmt.Sprintf("From:    %s\n", msg.FromAddr))
 	sb.WriteString(fmt.Sprintf("To:      %s\n", msg.ToAddr))
-	sb.WriteString(fmt.Sprintf("Date:    %s\n",
-		time.UnixMilli(msg.InternalDate).Format("Mon, 02 Jan 2006 15:04:05")))
+	sb.WriteString(fmt.Sprintf("Date:    %s\n", formatHeaderDate(msg.InternalDate)))
 	sb.WriteString(fmt.Sprintf("Subject: %s\n", msg.Subject))
 
 	if len(attachments) > 0 {
@@ -88,6 +93,10 @@ func formatMessageBody(msg storage.Message, attachments []storage.Attachment) st
 
 	sb.WriteString(stripHTML(body))
 	return sb.String()
+}
+
+func formatHeaderDate(ts int64) string {
+	return time.UnixMilli(ts).Format("Mon, 02 Jan 2006 15:04:05")
 }
 
 // formatAttachmentList formats attachments as a compact comma-separated list.

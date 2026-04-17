@@ -15,38 +15,41 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
-		case "j", "down":
+		case "j", "down", "n":
 			if m.inbox.cursor < len(m.inbox.threads)-1 {
 				m.inbox.cursor++
 			}
-		case "k", "up":
+		case "k", "up", "p":
 			if m.inbox.cursor > 0 {
 				m.inbox.cursor--
 			}
-		case "enter":
+		case "enter", "o":
 			if len(m.inbox.threads) == 0 {
 				return m, nil
 			}
 			sel := m.inbox.threads[m.inbox.cursor]
 			return m, loadThreadCmd(m.store, sel.AccountID, sel.ThreadID)
-		case "s":
+		case "S":
 			if !m.status.syncing && len(m.nav.allAccounts) > 0 {
 				m.status.syncing = true
 				m.status.text = "Syncing..."
 				return m, syncAllCmd(m.store, m.accMgr, m.nav.allAccounts)
 			}
 		case "c":
-			m.nav.view = viewCompose
-			m.compose.replyTo = nil
-			m.compose.focus = composeFocusTo
-			m.compose.to.Focus()
-			m.compose.subject.Blur()
-			m.compose.body.Blur()
+			m = m.beginCompose()
 			return m, nil
-		case "a":
+		case "A":
 			m.nav.view = viewAccounts
 			m.account.cursor = 0
 			return m, nil
+		case "e", "y":
+			if len(m.inbox.threads) == 0 {
+				return m, nil
+			}
+			sel := m.inbox.threads[m.inbox.cursor]
+			return m, archiveThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
+		case "a":
+			return m.unsupportedShortcut("a"), nil
 		case "?":
 			acctID := m.resolveAcctID()
 			if acctID == "" {
@@ -54,6 +57,20 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			return m, loadConfigCmd(m.store, acctID)
+		case "/":
+			return m.unsupportedShortcut("/"), nil
+		case "x":
+			return m.unsupportedShortcut("x"), nil
+		case "s":
+			return m.unsupportedShortcut("s"), nil
+		case "#":
+			return m.unsupportedShortcut("#"), nil
+		case "!":
+			return m.unsupportedShortcut("!"), nil
+		case "u":
+			m.account.cursor = 0
+			m.nav.view = viewAccounts
+			return m, nil
 		}
 	}
 	return m, nil
@@ -207,13 +224,13 @@ func (m model) renderHelp() string {
 	var keys string
 	switch m.nav.view {
 	case viewInbox:
-		keys = "j/k:move  enter:open  c:compose  s:sync  a:accounts  ?:config  q:quit"
+		keys = "j/k,n/p:move  enter/o:open  c:compose  e/y:archive  A:accounts  S:sync  ?:config"
 	case viewThread:
-		keys = "j/k:move  enter:read  esc:back"
+		keys = "j/k,n/p:move  enter/o:read  r:reply  f:forward  e/y:archive  u:back"
 	case viewMessage:
-		keys = "↑/↓/pgup/pgdn:scroll  r:reply  esc:back  q:quit"
+		keys = "↑/↓/pgup/pgdn:scroll  r:reply  f:forward  Shift+I:unread  e/y:archive  u:back"
 	case viewCompose:
-		keys = "tab:next field  ctrl+s:send  esc:cancel"
+		keys = "tab:next field  ctrl+s/ctrl+enter:send  esc:cancel"
 	case viewAccounts:
 		keys = "j/k:move  enter:select  esc:back"
 	case viewConfig:

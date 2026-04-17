@@ -23,7 +23,7 @@ func (m model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.compose.focus = (m.compose.focus + 1) % 3
 			m = applyComposeFocus(m)
 			return m, nil
-		case "ctrl+s":
+		case "ctrl+s", "ctrl+enter":
 			return m.submitCompose()
 		}
 	}

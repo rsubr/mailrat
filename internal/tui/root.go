@@ -55,6 +55,9 @@ func (m model) handleRootMessage(msg tea.Msg) (model, tea.Cmd, bool) {
 	case msgConfigSaved:
 		next, cmd := m.handleConfigSaved(msg)
 		return next, cmd, true
+	case msgActionDone:
+		next, cmd := m.handleActionDone(msg)
+		return next, cmd, true
 	default:
 		return m, nil, false
 	}
@@ -157,6 +160,39 @@ func (m model) handleConfigSaved(msg msgConfigSaved) (model, tea.Cmd) {
 	}
 	m.nav.view = viewInbox
 	return m, nil
+}
+
+func (m model) handleActionDone(msg msgActionDone) (model, tea.Cmd) {
+	if msg.err != nil {
+		m.status.text = msg.err.Error()
+		return m, nil
+	}
+	if msg.markUnread {
+		wasUnread := false
+		if m.reader.current.ID == msg.messageID && m.reader.current.AccountID == msg.accountID {
+			wasUnread = m.reader.current.IsUnread
+			m.reader.current.IsUnread = true
+		}
+		for i, item := range m.thread.messages {
+			if item.ID == msg.messageID && item.AccountID == msg.accountID {
+				wasUnread = wasUnread || m.thread.messages[i].IsUnread
+				m.thread.messages[i].IsUnread = true
+				break
+			}
+		}
+		if !wasUnread {
+			for i, t := range m.inbox.threads {
+				if t.ThreadID == m.reader.current.ThreadID && t.AccountID == msg.accountID {
+					m.inbox.threads[i].UnreadCount++
+					break
+				}
+			}
+		}
+	}
+	if msg.status != "" {
+		m.status.text = msg.status
+	}
+	return m, msg.cmd
 }
 
 func (m model) updateActiveView(msg tea.Msg) (tea.Model, tea.Cmd) {
