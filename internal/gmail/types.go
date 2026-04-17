@@ -1,0 +1,52 @@
+package gmail
+
+// MessageMeta is a lightweight message with headers only.
+type MessageMeta struct {
+	ID           string
+	ThreadID     string
+	Subject      string
+	From         string
+	To           string
+	Snippet      string
+	InternalDate int64
+	LabelIDs     []string
+	IsUnread     bool
+}
+
+// Message is a full message including body.
+type Message struct {
+	MessageMeta
+	Body string // plain text or HTML body
+}
+
+// Thread is a Gmail thread.
+type Thread struct {
+	ID       string
+	Messages []MessageMeta
+}
+
+// Label is a Gmail label.
+type Label struct {
+	ID        string
+	Name      string
+	LabelType string // "system" or "user"
+}
+
+// HistoryEvent represents a change from the history list.
+type HistoryEvent struct {
+	MessageAdded  *MessageMeta
+	LabelsAdded   *LabelChange
+	LabelsRemoved *LabelChange
+}
+
+// LabelChange records label additions/removals for a message.
+type LabelChange struct {
+	MessageID string
+	LabelIDs  []string
+}
+
+// HistoryResponse is the result of a history.list call.
+type HistoryResponse struct {
+	Events    []HistoryEvent
+	HistoryID uint64
+}
