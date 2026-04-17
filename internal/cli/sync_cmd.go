@@ -1,0 +1,66 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/spf13/cobra"
+)
+
+func init() {
+	var days int
+	var accountID string
+
+	syncCmd := &cobra.Command{
+		Use:   "sync",
+		Short: "Sync mail from Gmail",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a, err := newApp()
+			if err != nil {
+				return err
+			}
+			defer a.close()
+
+			ctx := context.Background()
+
+			// Determine which accounts to sync.
+			accs, err := a.accounts.ListAccounts()
+			if err != nil {
+				return err
+			}
+			if len(accs) == 0 {
+				return fmt.Errorf("no accounts configured; run: mailrat accounts add")
+			}
+
+			for _, acc := range accs {
+				if accountID != "" && acc.ID != accountID {
+					continue
+				}
+
+				mgr, err := a.syncManager(ctx, acc.ID)
+				if err != nil {
+					fmt.Printf("warning: cannot init sync for %s: %v\n", acc.Email, err)
+					continue
+				}
+
+				// Use incremental sync if history ID is stored, otherwise initial.
+				stored, _ := a.store.GetAccount(acc.ID)
+				if stored.HistoryID == "" {
+					if err := mgr.InitialSync(ctx, acc.ID, days); err != nil {
+						return fmt.Errorf("initial sync for %s: %w", acc.Email, err)
+					}
+				} else {
+					if err := mgr.IncrementalSync(ctx, acc.ID); err != nil {
+						return fmt.Errorf("incremental sync for %s: %w", acc.Email, err)
+					}
+				}
+			}
+			return nil
+		},
+	}
+
+	syncCmd.Flags().IntVar(&days, "days", 30, "Number of days to sync on initial sync")
+	syncCmd.Flags().StringVar(&accountID, "account", "", "Account ID to sync (default: all)")
+
+	rootCmd.AddCommand(syncCmd)
+}
