@@ -19,8 +19,8 @@ type msgAccountsLoaded struct {
 }
 
 type msgInboxLoaded struct {
-	msgs []storage.Message
-	err  error
+	threads []storage.ThreadSummary
+	err     error
 }
 
 type msgThreadLoaded struct {
@@ -66,14 +66,14 @@ func loadAccountsCmd(store *storage.Store) tea.Cmd {
 
 func loadInboxCmd(store *storage.Store, acctID string) tea.Cmd {
 	return func() tea.Msg {
-		var msgs []storage.Message
+		var threads []storage.ThreadSummary
 		var err error
 		if acctID == "" {
-			msgs, err = store.ListAllMessages(100)
+			threads, err = store.ListAllThreadSummaries(100)
 		} else {
-			msgs, err = store.ListMessages(acctID, 100)
+			threads, err = store.ListThreadSummaries(acctID, 100)
 		}
-		return msgInboxLoaded{msgs: msgs, err: err}
+		return msgInboxLoaded{threads: threads, err: err}
 	}
 }
 

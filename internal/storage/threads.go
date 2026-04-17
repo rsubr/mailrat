@@ -6,6 +6,81 @@ import (
 	"fmt"
 )
 
+// ThreadSummary is a thread as shown in the inbox: aggregated from its messages.
+type ThreadSummary struct {
+	ThreadID       string
+	AccountID      string
+	Subject        string
+	Snippet        string // from the most recent message
+	Participants   string // comma-separated distinct from_addr values
+	MessageCount   int
+	UnreadCount    int
+	LastDate       int64
+	HasAttachments bool
+}
+
+const threadSummarySQL = `
+	SELECT
+		thread_id,
+		account_id,
+		COUNT(*)                                                   AS message_count,
+		SUM(is_unread)                                             AS unread_count,
+		MAX(internal_date)                                         AS last_date,
+		MAX(has_attachments)                                       AS has_attachments,
+		GROUP_CONCAT(DISTINCT from_addr)                           AS participants,
+		(SELECT subject FROM messages m2
+		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
+		 ORDER BY internal_date DESC LIMIT 1)                      AS subject,
+		(SELECT snippet  FROM messages m2
+		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
+		 ORDER BY internal_date DESC LIMIT 1)                      AS snippet
+	FROM messages m
+`
+
+func scanThreadSummaries(rows *sql.Rows) ([]ThreadSummary, error) {
+	var out []ThreadSummary
+	for rows.Next() {
+		var t ThreadSummary
+		var hasAttachments int
+		if err := rows.Scan(
+			&t.ThreadID, &t.AccountID,
+			&t.MessageCount, &t.UnreadCount, &t.LastDate, &hasAttachments,
+			&t.Participants, &t.Subject, &t.Snippet,
+		); err != nil {
+			return nil, err
+		}
+		t.HasAttachments = hasAttachments == 1
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// ListAllThreadSummaries returns one row per thread across all accounts, newest first.
+func (s *Store) ListAllThreadSummaries(limit int) ([]ThreadSummary, error) {
+	rows, err := s.db.Query(
+		threadSummarySQL+`GROUP BY thread_id, account_id ORDER BY last_date DESC LIMIT ?`,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
+// ListThreadSummaries returns one row per thread for a single account, newest first.
+func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummary, error) {
+	rows, err := s.db.Query(
+		threadSummarySQL+`WHERE account_id = ? GROUP BY thread_id, account_id ORDER BY last_date DESC LIMIT ?`,
+		accountID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
 type Thread struct {
 	ID              string
 	AccountID       string

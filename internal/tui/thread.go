@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mailrat/mailrat/internal/storage"
 )
 
 func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -41,7 +42,8 @@ func (m model) renderThread() string {
 		return dimStyle.Render("\n  No messages in thread.")
 	}
 
-	maxRows := m.contentHeight()
+	// Reserve 1 line for the subject header; messages scroll in the rest.
+	maxRows := m.contentHeight() - 1
 	if maxRows < 1 {
 		maxRows = 1
 	}
@@ -55,30 +57,61 @@ func (m model) renderThread() string {
 		end = len(m.threadMsgs)
 	}
 
+	subject := truncStr(m.threadMsgs[0].Subject, m.width-30)
+	header := dimStyle.Render(fmt.Sprintf("  %s  (%d messages)", subject, len(m.threadMsgs)))
+
 	var sb strings.Builder
+	sb.WriteString(header)
+	sb.WriteByte('\n')
+
 	for i := start; i < end; i++ {
-		msg := m.threadMsgs[i]
-
-		dot := "  "
-		if msg.IsUnread {
-			dot = unreadDotStyle.Render("• ")
-		}
-
-		date := time.UnixMilli(msg.InternalDate).Format("Jan 02 15:04")
-		from := truncStr(msg.FromAddr, 30)
-		subject := truncStr(msg.Subject, 50)
-
-		line := fmt.Sprintf("%s%-10s  %-30s  %s", dot, date, from, subject)
-
-		switch {
-		case i == m.threadCur:
-			line = selectedStyle.Width(m.width).Render(line)
-		case msg.IsUnread:
-			line = boldStyle.Render(line)
-		}
-
-		sb.WriteString(line)
+		sb.WriteString(m.renderThreadMsg(m.threadMsgs[i], i, i == m.threadCur))
 		sb.WriteByte('\n')
 	}
 	return sb.String()
+}
+
+func (m model) renderThreadMsg(msg storage.Message, idx int, selected bool) string {
+	// Root message (idx=0) is flush; every reply is indented with └.
+	var indent string
+	if idx == 0 {
+		indent = "  "
+	} else {
+		indent = dimStyle.Render("  └ ")
+	}
+
+	dot := "  "
+	if msg.IsUnread {
+		dot = unreadDotStyle.Render("• ")
+	}
+
+	date := time.UnixMilli(msg.InternalDate).Format("Jan 02 15:04")
+	from := truncStr(shortAddr(msg.FromAddr), 24)
+	snippet := truncStr(msg.Snippet, 40)
+
+	line := fmt.Sprintf("%s%s%-10s  %-24s  %s", indent, dot, date, from, snippet)
+
+	switch {
+	case selected:
+		return selectedStyle.Width(m.width).Render(line)
+	case msg.IsUnread:
+		return boldStyle.Render(line)
+	default:
+		return line
+	}
+}
+
+// threadParticipants returns a comma-joined list of unique display names from
+// the messages in a thread (used in other views that need a summary string).
+func threadParticipants(msgs []storage.Message) string {
+	seen := make(map[string]bool)
+	var names []string
+	for _, m := range msgs {
+		name := shortAddr(m.FromAddr)
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, ", ")
 }

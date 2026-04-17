@@ -30,9 +30,9 @@ type model struct {
 	allAccounts []storage.Account
 	activeAcct  string // "" = unified inbox
 
-	// inbox
-	messages []storage.Message
-	cursor   int
+	// inbox (one entry per thread)
+	threads []storage.ThreadSummary
+	cursor  int
 
 	// thread
 	threadMsgs []storage.Message
@@ -110,9 +110,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case msgInboxLoaded:
-		m.messages = msg.msgs
-		if m.cursor >= len(m.messages) && len(m.messages) > 0 {
-			m.cursor = len(m.messages) - 1
+		m.threads = msg.threads
+		if m.cursor >= len(m.threads) && len(m.threads) > 0 {
+			m.cursor = len(m.threads) - 1
 		}
 		if msg.err != nil {
 			m.status = "Error loading inbox: " + msg.err.Error()
@@ -148,15 +148,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, markCmd
 
 	case msgMarkReadDone:
-		// Reflect the read state in the inbox and thread lists so the unread dot clears.
-		for i, m2 := range m.messages {
-			if m2.ID == msg.messageID && m2.AccountID == msg.acctID {
-				m.messages[i].IsUnread = false
+		// Decrement the thread's unread count in the inbox list.
+		threadID := m.message.ThreadID
+		for i, t := range m.threads {
+			if t.ThreadID == threadID && t.AccountID == msg.acctID {
+				if m.threads[i].UnreadCount > 0 {
+					m.threads[i].UnreadCount--
+				}
 				break
 			}
 		}
+		// Clear the flag on the individual message in the thread view.
 		for i, m2 := range m.threadMsgs {
-			if m2.ID == msg.messageID && m2.AccountID == msg.acctID {
+			if m2.ID == msg.messageID {
 				m.threadMsgs[i].IsUnread = false
 				break
 			}
