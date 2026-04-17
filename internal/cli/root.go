@@ -10,6 +10,9 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "mailrat",
 	Short: "A native Gmail client",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return launchTUI()
+	},
 }
 
 func Execute() {
