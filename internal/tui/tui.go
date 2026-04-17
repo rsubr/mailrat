@@ -1,0 +1,221 @@
+package tui
+
+import (
+	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mailrat/mailrat/internal/accounts"
+	"github.com/mailrat/mailrat/internal/storage"
+)
+
+type viewState int
+
+const (
+	viewInbox viewState = iota
+	viewThread
+	viewMessage
+	viewCompose
+	viewAccounts
+)
+
+type model struct {
+	store  *storage.Store
+	accMgr *accounts.Manager
+
+	// navigation
+	view        viewState
+	allAccounts []storage.Account
+	activeAcct  string // "" = unified inbox
+
+	// inbox
+	messages []storage.Message
+	cursor   int
+
+	// thread
+	threadMsgs []storage.Message
+	threadCur  int
+
+	// message reader
+	message  storage.Message
+	viewport viewport.Model
+	vpReady  bool
+
+	// compose
+	composeTo      textinput.Model
+	composeSubject textinput.Model
+	composeBody    textarea.Model
+	composeFocus   int // 0=To, 1=Subject, 2=Body
+	replyTo        *storage.Message
+
+	// account switcher
+	acctCursor int
+
+	// status
+	status  string
+	syncing bool
+
+	// terminal dimensions
+	width  int
+	height int
+}
+
+// New creates the root TUI model. Call tea.NewProgram(tui.New(...)).
+func New(store *storage.Store, accMgr *accounts.Manager) model {
+	to := textinput.New()
+	to.Placeholder = "recipient@example.com"
+	to.CharLimit = 200
+
+	subj := textinput.New()
+	subj.Placeholder = "Subject"
+	subj.CharLimit = 200
+
+	body := textarea.New()
+	body.Placeholder = "Write your message..."
+	body.SetHeight(12)
+	body.CharLimit = 0 // unlimited
+
+	return model{
+		store:          store,
+		accMgr:         accMgr,
+		composeTo:      to,
+		composeSubject: subj,
+		composeBody:    body,
+	}
+}
+
+func (m model) Init() tea.Cmd {
+	return tea.Batch(
+		loadAccountsCmd(m.store),
+		loadInboxCmd(m.store, m.activeAcct),
+	)
+}
+
+func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if m.vpReady {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = m.contentHeight()
+		}
+		return m, nil
+
+	case msgAccountsLoaded:
+		m.allAccounts = msg.accounts
+		return m, nil
+
+	case msgInboxLoaded:
+		m.messages = msg.msgs
+		if m.cursor >= len(m.messages) && len(m.messages) > 0 {
+			m.cursor = len(m.messages) - 1
+		}
+		if msg.err != nil {
+			m.status = "Error loading inbox: " + msg.err.Error()
+		}
+		return m, nil
+
+	case msgThreadLoaded:
+		if msg.err != nil {
+			m.status = "Error loading thread: " + msg.err.Error()
+			return m, nil
+		}
+		m.threadMsgs = msg.msgs
+		m.threadCur = 0
+		m.view = viewThread
+		return m, nil
+
+	case msgMessageLoaded:
+		if msg.err != nil {
+			m.status = "Error loading message: " + msg.err.Error()
+			return m, nil
+		}
+		m.message = msg.msg
+		m.viewport = viewport.New(m.width, m.contentHeight())
+		m.viewport.SetContent(formatMessageBody(msg.msg))
+		m.vpReady = true
+		m.view = viewMessage
+		return m, nil
+
+	case msgSyncDone:
+		m.syncing = false
+		if msg.err != nil {
+			m.status = "Sync error: " + msg.err.Error()
+		} else {
+			m.status = "Sync complete"
+		}
+		return m, loadInboxCmd(m.store, m.activeAcct)
+
+	case msgSendDone:
+		if msg.err != nil {
+			m.status = "Send error: " + msg.err.Error()
+			return m, nil
+		}
+		m.status = "Message sent"
+		m.view = viewInbox
+		m = clearCompose(m)
+		return m, nil
+	}
+
+	switch m.view {
+	case viewInbox:
+		return m.updateInbox(msg)
+	case viewThread:
+		return m.updateThread(msg)
+	case viewMessage:
+		return m.updateMessage(msg)
+	case viewCompose:
+		return m.updateCompose(msg)
+	case viewAccounts:
+		return m.updateAccounts(msg)
+	}
+
+	return m, nil
+}
+
+func (m model) View() string {
+	if m.width == 0 {
+		return "Loading..."
+	}
+
+	var content string
+	switch m.view {
+	case viewInbox:
+		content = m.renderInbox()
+	case viewThread:
+		content = m.renderThread()
+	case viewMessage:
+		content = m.renderMessage()
+	case viewCompose:
+		content = m.renderCompose()
+	case viewAccounts:
+		content = m.renderAccounts()
+	default:
+		content = m.renderInbox()
+	}
+
+	return m.renderHeader() + "\n" + content + "\n" + m.renderHelp()
+}
+
+// contentHeight is the number of lines available for the main content area.
+// Header (1) + separator newline (1) + help (1) + separator newline (1) = 4.
+func (m model) contentHeight() int {
+	if m.height < 4 {
+		return 1
+	}
+	return m.height - 4
+}
+
+// clearCompose resets the compose form fields.
+func clearCompose(m model) model {
+	m.composeTo.Reset()
+	m.composeSubject.Reset()
+	m.composeBody.Reset()
+	m.composeFocus = 0
+	m.replyTo = nil
+	m.composeTo.Blur()
+	m.composeSubject.Blur()
+	m.composeBody.Blur()
+	return m
+}
