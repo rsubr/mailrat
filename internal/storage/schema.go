@@ -96,4 +96,14 @@ CREATE INDEX IF NOT EXISTS idx_message_labels_label
 
 CREATE INDEX IF NOT EXISTS idx_contacts_email
     ON contacts(account_id, email);
+
+CREATE TABLE IF NOT EXISTS sync_config (
+    label_id          TEXT NOT NULL,
+    account_id        TEXT NOT NULL,
+    label_name        TEXT NOT NULL DEFAULT '',
+    days_to_sync      INTEGER NOT NULL DEFAULT 30,
+    fetch_attachments INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (label_id, account_id),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
 `

@@ -20,68 +20,71 @@ func NewManager(store *storage.Store, client *gmail.Client) *Manager {
 	return &Manager{store: store, client: client}
 }
 
-// InitialSync fetches messages newer than `days` days for the account and
-// stores them as metadata_only.
-func (m *Manager) InitialSync(ctx context.Context, accountID string, days int) error {
-	query := fmt.Sprintf("newer_than:%dd", days)
-
-	fmt.Printf("Starting initial sync for account %s (last %d days)...\n", accountID, days)
-
-	messages, err := m.client.ListMessages(ctx, query, 500)
-	if err != nil {
-		return fmt.Errorf("list messages: %w", err)
-	}
-
-	fmt.Printf("Fetched %d message metadata records\n", len(messages))
-
-	// Sync labels first.
+// InitialSync fetches historical messages for the account.
+// configs controls per-label behaviour (days_to_sync=0 means all mail).
+// defaultDays is used for labels without a config entry.
+func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays int, configs []storage.SyncConfig) error {
+	// Sync labels first so label rows exist before we reference them.
 	if err := m.syncLabels(ctx, accountID); err != nil {
 		return fmt.Errorf("sync labels: %w", err)
 	}
 
-	for _, meta := range messages {
-		msg := storage.Message{
-			ID:           meta.ID,
-			ThreadID:     meta.ThreadID,
-			AccountID:    accountID,
-			Subject:      meta.Subject,
-			FromAddr:     meta.From,
-			ToAddr:       meta.To,
-			Snippet:      meta.Snippet,
-			InternalDate: meta.InternalDate,
-			IsUnread:     meta.IsUnread,
-			CacheState:   storage.CacheMetadataOnly,
-		}
-		if err := m.store.UpsertMessage(msg); err != nil {
-			return fmt.Errorf("upsert message %s: %w", meta.ID, err)
-		}
-
-		thread := storage.Thread{
-			ID:              meta.ThreadID,
-			AccountID:       accountID,
-			LastMessageDate: meta.InternalDate,
-		}
-		if err := m.store.UpsertThread(thread); err != nil {
-			return fmt.Errorf("upsert thread %s: %w", meta.ThreadID, err)
-		}
-
-		if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
-			return fmt.Errorf("set labels on %s: %w", meta.ID, err)
+	// Partition configs: "all mail" labels vs "limited days" labels.
+	allMailLabels := make(map[string]storage.SyncConfig)
+	maxDays := defaultDays
+	for _, c := range configs {
+		if c.DaysToSync == 0 {
+			allMailLabels[c.LabelID] = c
+		} else if c.DaysToSync > maxDays {
+			maxDays = c.DaysToSync
 		}
 	}
 
-	// Record the latest historyId from the first message (they share history).
-	if len(messages) > 0 {
-		// Get the actual historyId by fetching the profile.
-		histID, err := m.fetchHistoryID(ctx)
-		if err == nil {
-			if err := m.store.UpdateHistoryID(accountID, strconv.FormatUint(histID, 10)); err != nil {
-				return fmt.Errorf("update history id: %w", err)
-			}
+	fmt.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, maxDays)
+
+	seen := make(map[string]bool)
+
+	// Base query: everything within the day window (covers all limited labels).
+	baseQuery := fmt.Sprintf("newer_than:%dd", maxDays)
+	if err := m.fetchAndStore(ctx, accountID, baseQuery, 500, seen); err != nil {
+		return fmt.Errorf("base sync: %w", err)
+	}
+
+	// Per "all mail" label: unlimited queries.
+	for labelID, cfg := range allMailLabels {
+		q := labelIDToGmailQuery(labelID, cfg.LabelName)
+		if q == "" {
+			continue
+		}
+		fmt.Printf("Fetching all mail for label %q (%s)...\n", cfg.LabelName, q)
+		if err := m.fetchAndStore(ctx, accountID, q, 2000, seen); err != nil {
+			fmt.Printf("warning: failed to fetch label %q: %v\n", cfg.LabelName, err)
 		}
 	}
 
-	fmt.Printf("Initial sync complete: %d messages stored\n", len(messages))
+	// Fetch bodies/attachments for labels that request it.
+	var attachLabelIDs []string
+	for _, c := range configs {
+		if c.FetchAttachments {
+			attachLabelIDs = append(attachLabelIDs, c.LabelID)
+		}
+	}
+	if len(attachLabelIDs) > 0 {
+		fmt.Printf("Fetching bodies/attachments for configured labels...\n")
+		if err := m.FetchBodiesForLabels(ctx, accountID, attachLabelIDs, 200); err != nil {
+			fmt.Printf("warning: fetch bodies for labels: %v\n", err)
+		}
+	}
+
+	// Record the latest historyId.
+	histID, err := m.fetchHistoryID(ctx)
+	if err == nil {
+		if err := m.store.UpdateHistoryID(accountID, strconv.FormatUint(histID, 10)); err != nil {
+			return fmt.Errorf("update history id: %w", err)
+		}
+	}
+
+	fmt.Printf("Initial sync complete: %d messages stored\n", len(seen))
 	return nil
 }
 
@@ -193,6 +196,79 @@ func (m *Manager) FetchBodies(ctx context.Context, accountID string, limit int) 
 	return nil
 }
 
+// FetchBodiesForLabels fetches bodies/attachment metadata for metadata-only
+// messages that carry at least one of the given label IDs.
+func (m *Manager) FetchBodiesForLabels(ctx context.Context, accountID string, labelIDs []string, limit int) error {
+	msgs, err := m.store.ListUncachedBodiesForLabels(accountID, labelIDs, limit)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Fetching bodies for %d messages (label-filtered)...\n", len(msgs))
+
+	for _, msg := range msgs {
+		full, err := m.client.GetMessage(ctx, msg.ID)
+		if err != nil {
+			fmt.Printf("warning: failed to fetch body for %s: %v\n", msg.ID, err)
+			continue
+		}
+		msg.Body = full.Body
+		msg.CacheState = storage.CacheBodyCached
+		if err := m.store.UpsertMessage(msg); err != nil {
+			return err
+		}
+		if len(full.Attachments) > 0 {
+			atts := make([]storage.Attachment, len(full.Attachments))
+			for i, a := range full.Attachments {
+				atts[i] = storage.Attachment{Name: a.Name, MimeType: a.MimeType, Size: a.Size}
+			}
+			_ = m.store.UpsertAttachments(accountID, msg.ID, atts)
+		}
+	}
+	return nil
+}
+
+// fetchAndStore runs a Gmail query and upserts results, skipping IDs in seen.
+func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, maxResults int64, seen map[string]bool) error {
+	messages, err := m.client.ListMessages(ctx, query, maxResults)
+	if err != nil {
+		return fmt.Errorf("list messages (%s): %w", query, err)
+	}
+	for _, meta := range messages {
+		if seen[meta.ID] {
+			continue
+		}
+		seen[meta.ID] = true
+
+		msg := storage.Message{
+			ID:           meta.ID,
+			ThreadID:     meta.ThreadID,
+			AccountID:    accountID,
+			Subject:      meta.Subject,
+			FromAddr:     meta.From,
+			ToAddr:       meta.To,
+			Snippet:      meta.Snippet,
+			InternalDate: meta.InternalDate,
+			IsUnread:     meta.IsUnread,
+			CacheState:   storage.CacheMetadataOnly,
+		}
+		if err := m.store.UpsertMessage(msg); err != nil {
+			return fmt.Errorf("upsert message %s: %w", meta.ID, err)
+		}
+		if err := m.store.UpsertThread(storage.Thread{
+			ID:              meta.ThreadID,
+			AccountID:       accountID,
+			LastMessageDate: meta.InternalDate,
+		}); err != nil {
+			return fmt.Errorf("upsert thread %s: %w", meta.ThreadID, err)
+		}
+		if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
+			return fmt.Errorf("set labels on %s: %w", meta.ID, err)
+		}
+	}
+	return nil
+}
+
 func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 	labels, err := m.client.ListLabels(ctx)
 	if err != nil {
@@ -212,12 +288,34 @@ func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 }
 
 func (m *Manager) fetchHistoryID(ctx context.Context) (uint64, error) {
-	// Get the current historyId from the Gmail profile endpoint.
 	profile, err := m.client.GetProfile(ctx)
 	if err != nil {
 		return 0, err
 	}
 	return profile, nil
+}
+
+// labelIDToGmailQuery converts a Gmail label ID to a search query term.
+func labelIDToGmailQuery(id, name string) string {
+	switch id {
+	case "INBOX":
+		return "in:inbox"
+	case "STARRED":
+		return "is:starred"
+	case "SENT":
+		return "in:sent"
+	case "DRAFTS":
+		return "in:drafts"
+	case "SPAM":
+		return "in:spam"
+	case "TRASH":
+		return "in:trash"
+	default:
+		if name != "" {
+			return "label:" + name
+		}
+		return ""
+	}
 }
 
 func mergeLabelIDs(existing, add []string) []string {

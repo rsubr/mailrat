@@ -46,7 +46,8 @@ func init() {
 				// Use incremental sync if history ID is stored, otherwise initial.
 				stored, _ := a.store.GetAccount(acc.ID)
 				if stored.HistoryID == "" {
-					if err := mgr.InitialSync(ctx, acc.ID, days); err != nil {
+					configs, _ := a.store.ListSyncConfigs(acc.ID)
+					if err := mgr.InitialSync(ctx, acc.ID, days, configs); err != nil {
 						return fmt.Errorf("initial sync for %s: %w", acc.Email, err)
 					}
 				} else {

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type CacheState string
@@ -175,6 +176,41 @@ func (s *Store) ListUncachedBodies(accountID string, limit int) ([]Message, erro
 		ORDER BY internal_date DESC
 		LIMIT ?
 	`, accountID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanMessages(rows)
+}
+
+// ListUncachedBodiesForLabels returns metadata-only messages that have at
+// least one of the given label IDs, newest first.
+func (s *Store) ListUncachedBodiesForLabels(accountID string, labelIDs []string, limit int) ([]Message, error) {
+	if len(labelIDs) == 0 {
+		return nil, nil
+	}
+	placeholders := strings.Repeat("?,", len(labelIDs))
+	placeholders = placeholders[:len(placeholders)-1] // trim trailing comma
+
+	args := []any{accountID}
+	for _, id := range labelIDs {
+		args = append(args, id)
+	}
+	args = append(args, limit)
+
+	q := fmt.Sprintf(`
+		SELECT DISTINCT m.id, m.thread_id, m.account_id, m.subject, m.from_addr, m.to_addr,
+		       m.snippet, m.body, m.internal_date, m.is_unread, m.cache_state, m.has_attachments
+		FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		WHERE m.account_id = ?
+		  AND m.cache_state = 'metadata_only'
+		  AND ml.label_id IN (%s)
+		ORDER BY m.internal_date DESC
+		LIMIT ?
+	`, placeholders)
+
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
