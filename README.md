@@ -1,351 +1,261 @@
 # mailrat
 
-A fast, offline-capable Gmail client for the terminal. Built with Go, backed by SQLite.
+A native Gmail desktop client built with Go. Backend-driven architecture: Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
 
-mailrat syncs your Gmail directly via the Gmail API — not IMAP — and stores everything locally so your inbox is always available, even without a connection. All state lives in Go and SQLite; the CLI is a thin layer on top.
+Three interfaces share the same backend:
+
+- **CLI** — headless mail engine for scripting and backend testing
+- **TUI** — full-featured terminal UI built with Bubbletea
+- **Desktop / Web** — Wails desktop app or browser-accessible HTTP server
+
+---
 
 ## Features
 
-- **Multi-account** — manage multiple Gmail accounts from one tool
+- **Multi-account** — manage multiple Gmail accounts from one binary
 - **Offline-first** — read cached messages and contacts without a connection
 - **Fast** — inbox loads from local SQLite, not the network
-- **Unified inbox** — view messages across all accounts sorted by date
+- **Unified inbox** — threads across all accounts sorted by date
 - **Full Gmail label support** — system and user-defined labels
 - **Contacts** — sync, search, create, edit, and delete Google contacts
 - **No IMAP** — uses the Gmail API directly for reliable sync via `historyId`
 
-## Contents
-
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Getting Started](#getting-started)
-- [Commands](#commands)
-  - [accounts](#accounts)
-  - [sync](#sync)
-  - [inbox](#inbox)
-  - [message](#message)
-  - [send](#send)
-  - [labels](#labels)
-  - [contacts](#contacts)
-- [TUI Keyboard Shortcuts](#tui-keyboard-shortcuts)
-- [Data Storage](#data-storage)
-- [Architecture](#architecture)
-- [Roadmap](#roadmap)
+---
 
 ## Requirements
 
 - Go 1.21 or later
-- A Google account
-- A Google Cloud project with the Gmail API and People API enabled (the `accounts add` command walks you through this)
+- A Google Cloud OAuth 2.0 credentials file (`credentials.json`) with the scopes:
+  - `gmail.readonly`, `gmail.modify`, `gmail.send`
+  - `contacts` (for the People API)
+
+Place `credentials.json` in `~/.mailrat/credentials.json` before running any command.
+
+---
 
 ## Installation
-
-### Build from source
 
 ```bash
 git clone https://github.com/mailrat/mailrat.git
 cd mailrat
-./build.sh --release
-```
-
-This produces a static binary at `./mailrat`. Copy it somewhere on your `$PATH`:
-
-```bash
-cp mailrat /usr/local/bin/
-```
-
-## Getting Started
-
-### 1. Add your Gmail account
-
-```bash
-mailrat accounts add
-```
-
-This launches a step-by-step wizard that:
-- Guides you through enabling the Gmail API and People API on Google Cloud
-- Walks you through creating OAuth2 credentials (Desktop app type)
-- Opens a browser for the OAuth consent flow — or, if you are on a headless/remote machine, prints a URL you can open on any device and paste the redirect URL back
-
-### 2. Sync your mail
-
-```bash
-mailrat sync --days=30
-```
-
-### 3. Read your inbox
-
-```bash
-mailrat inbox list
+go build ./...
 ```
 
 ---
 
-## Commands
-
-### accounts
-
-Manage Gmail accounts.
+## Quickstart
 
 ```bash
-# Add a new account (guided setup wizard)
-mailrat accounts add
+# 1. Add a Gmail account (opens browser OAuth flow)
+go run ./cmd/cli accounts add
 
-# List all authenticated accounts
-mailrat accounts list
+# 2. Sync the last 30 days
+go run ./cmd/cli sync --days=30
 
-# Remove an account and delete all its local data
-mailrat accounts remove <account-id|email>
-mailrat accounts remove you@gmail.com --force   # skip confirmation
-```
-
-> **Note:** Removing an account permanently deletes all locally cached emails, threads, labels, drafts, and contacts for that account.
-
----
-
-### sync
-
-Sync mail from Gmail. On first run per account, performs a full sync. On subsequent runs, uses Gmail's `historyId` for fast incremental updates.
-
-```bash
-# Sync all accounts (auto-detects initial vs incremental)
-mailrat sync
-
-# Sync the last N days on initial sync (default: 30)
-mailrat sync --days=7
-mailrat sync --days=90
-
-# Sync a specific account only
-mailrat sync --account <account-id>
+# 3. Pick an interface
+go run ./cmd/cli tui          # terminal UI
+go run ./cmd/webserver        # open http://localhost:8080 in a browser
 ```
 
 ---
 
-### inbox
+## Interfaces
 
-Browse your inbox — or any other label (Sent, Drafts, Spam, etc.).
+### CLI
 
 ```bash
-# Unified inbox across all accounts, newest first
-mailrat inbox list
-
-# Limit number of results (default: 50)
-mailrat inbox list --limit 20
-
-# Filter to a single account
-mailrat inbox list --account <account-id>
-
-# Filter by label name or ID (case-insensitive)
-mailrat inbox list --label SENT
-mailrat inbox list --label DRAFT
-mailrat inbox list --label SPAM
-mailrat inbox list --label STARRED
-mailrat inbox list --label IMPORTANT
-mailrat inbox list --label "Work"          # any user-created label
-
-# Combine flags
-mailrat inbox list --label SENT --limit 20
-mailrat inbox list --label SENT --account <account-id>
+go run ./cmd/cli <command>
 ```
 
-Output columns: unread indicator (`*`), date, from, subject, snippet.
-
-Run `mailrat labels list` to see every label available for your account.
+| Command | Description |
+|---|---|
+| `accounts add` | OAuth flow to add a Gmail account |
+| `accounts list` | List connected accounts |
+| `accounts remove <id\|email>` | Remove an account and its local data |
+| `sync [--days=N] [--account=id]` | Sync mail (initial or incremental) |
+| `inbox list [--label=L] [--limit=N] [--account=id]` | Print unified inbox |
+| `message read <id> [--account=id]` | Print a message body |
+| `send [--to=] [--subject=] [--body=] [--account=id]` | Send an email |
+| `labels list [--account=id]` | List Gmail labels |
+| `contacts list [--sync] [--search=q]` | List / search contacts |
+| `contacts add [--name=] [--email=]` | Add a contact |
+| `contacts edit <id>` | Edit a contact |
+| `contacts delete <id> [--force]` | Delete a contact |
+| `tui` | Launch the terminal UI |
 
 ---
 
-### message
-
-Read individual messages.
+### TUI
 
 ```bash
-# Read a message by ID (fetches body from Gmail if not cached)
-mailrat message read <message-id>
-
-# Specify account if the ID is ambiguous
-mailrat message read <message-id> --account <account-id>
+go run ./cmd/cli tui
 ```
 
-Message IDs are shown in `inbox list` output.
+Full-screen terminal UI powered by [Bubbletea](https://github.com/charmbracelet/bubbletea).
 
----
-
-### send
-
-Compose and send an email.
-
-```bash
-# Interactive prompts for To / Subject / Body
-mailrat send
-
-# Pass fields as flags
-mailrat send --to recipient@example.com --subject "Hello" --body "Hi there"
-
-# Send from a specific account (default: first account)
-mailrat send --account <account-id> --to recipient@example.com
-```
-
-When using interactive mode, end the message body with a line containing only `.`.
-
----
-
-### labels
-
-Manage Gmail labels.
-
-```bash
-# List all labels for the default account
-mailrat labels list
-
-# List labels for a specific account
-mailrat labels list --account <account-id>
-```
-
----
-
-### contacts
-
-Sync and manage Google contacts.
-
-```bash
-# List locally cached contacts
-mailrat contacts list
-
-# Sync from Google, then list
-mailrat contacts list --sync
-
-# Search by name or email
-mailrat contacts list --search "alice"
-
-# Add a new contact
-mailrat contacts add
-mailrat contacts add --name "Alice Smith" --email alice@example.com
-
-# Edit a contact (prompts with current values as defaults)
-mailrat contacts edit <contact-id>
-mailrat contacts edit <contact-id> --name "Alice B. Smith"
-mailrat contacts edit <contact-id> --email newemail@example.com
-
-# Delete a contact (prompts for confirmation)
-mailrat contacts delete <contact-id>
-mailrat contacts delete <contact-id> --force   # skip confirmation
-```
-
-Contact IDs are shown in `contacts list` output.
-
----
-
-## TUI Keyboard Shortcuts
-
-The interactive TUI (`mailrat inbox list`) uses Gmail-style keyboard shortcuts.
-
-### Navigation
+#### Navigation
 
 | Key | Action |
-|-----|--------|
-| `j` / `n` | Next message / thread |
-| `k` / `p` | Previous message / thread |
-| `Enter` / `o` | Open selected thread or message |
-| `u` | Go back (from thread or message view) |
+|---|---|
+| `j` / `k` or arrows | Move cursor |
+| `Enter` / `o` | Open thread / message |
+| `u` / `Esc` | Back |
 
-### Actions
+#### Actions
 
 | Key | Action |
-|-----|--------|
+|---|---|
 | `c` | Compose new message |
-| `r` | Reply to current message |
-| `a` | Reply all (thread and message views) |
-| `f` | Forward current message |
-| `e` / `y` | Archive conversation |
-| `I` | Mark message as unread |
+| `r` | Reply |
+| `a` | Reply all |
+| `f` | Forward |
+| `e` / `y` | Archive |
+| `I` | Mark unread |
+| `s` | Sync now |
+| `/` | Search |
+| `q` | Quit |
 
-### Compose
+#### Compose
 
 | Key | Action |
-|-----|--------|
-| `Ctrl+S` | Send message |
-| `Ctrl+Enter` | Send message |
-
-### Search
-
-Press `/` from the inbox to open the search view. Type a query and press `Enter` to search across message subjects, snippets, and senders. Results are shown in inbox format — navigate with `j`/`k` and open a thread with `Enter` or `o`. Press `/` again to start a new search, or `Esc` to return to the inbox.
-
-### Unsupported keys
-
-The keys `s`, `#`, `!`, and `x` are recognized and display a status message rather than silently doing nothing.
+|---|---|
+| `Tab` | Next field |
+| `Ctrl+S` / `Ctrl+Enter` | Send |
+| `Esc` | Discard |
 
 ---
 
-## Data Storage
+### Desktop app (Wails)
 
-All data is stored under `~/.mailrat/`:
+Requires [Wails v2](https://wails.io) installed (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
 
+```bash
+wails build        # production binary
+wails dev          # live-reload dev mode
 ```
-~/.mailrat/
-├── credentials.json    # your Google OAuth client credentials (you provide this)
-└── mailrat.db          # SQLite database — all mail and contact data
+
+The frontend is an Alpine.js + Tailwind CSS SPA embedded into the binary at build time. No npm or frontend build step required — CDN-loaded.
+
+---
+
+### Web server (remote browser access)
+
+Serves the same UI and backend over plain HTTP — useful for testing on a remote machine or from a phone/tablet.
+
+```bash
+# Run from the project root
+go run ./cmd/webserver
+
+# Custom address
+go run ./cmd/webserver -addr 0.0.0.0:9090
+
+# All flags
+go run ./cmd/webserver -addr 0.0.0.0:8080 -static cmd/desktop/frontend
 ```
 
-The SQLite database uses WAL mode and stores:
+| Flag | Default | Description |
+|---|---|---|
+| `-addr` | `0.0.0.0:8080` | Listen address (`host:port`) |
+| `-static` | `cmd/desktop/frontend` | Path to frontend files (relative to cwd) |
+
+Open `http://<host>:<port>` in any browser.
+
+#### REST API
+
+The web server exposes the backend as a JSON API used by the browser frontend:
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/accounts` | Connected accounts |
+| `GET` | `/api/inbox?accountId=&limit=` | Inbox thread summaries |
+| `GET` | `/api/search?q=&limit=` | Search threads |
+| `GET` | `/api/thread?accountId=&threadId=` | Messages in a thread |
+| `GET` | `/api/message?accountId=&messageId=` | Single message (lazy body fetch) |
+| `POST` | `/api/send` | Send a message (JSON body) |
+| `POST` | `/api/sync?accountId=` | Run incremental sync |
+| `GET` | `/api/labels?accountId=` | Gmail labels |
+| `GET` | `/api/events` | SSE stream — push `sync:progress`, `sync:complete`, `inbox:updated` |
+
+The same `index.html` works inside the Wails WebView and in a plain browser. A small shim (`js/wails-compat.js`) maps `window.go.desktop.App.*` to `fetch()` calls when running outside Wails, and subscribes to the SSE stream for push events.
+
+---
+
+## Data directory
+
+All data lives in `~/.mailrat/`:
+
+| File | Contents |
+|---|---|
+| `credentials.json` | Google OAuth client credentials (you supply this) |
+| `mailrat.db` | SQLite database — all mail, contacts, and tokens |
+
+The database uses WAL mode and stores:
 
 | Table | Contents |
 |---|---|
-| `accounts` | account IDs, emails, OAuth tokens, sync historyId |
-| `messages` | headers, snippet, body (when cached), cache state |
-| `threads` | thread IDs and last message date |
+| `accounts` | Account IDs, emails, OAuth tokens, sync `historyId` |
+| `messages` | Headers, snippet, body (when cached), cache state |
+| `threads` | Thread IDs and last-message date |
 | `labels` | Gmail label definitions |
-| `message_labels` | many-to-many message ↔ label mapping |
-| `drafts` | draft content |
-| `contacts` | synced Google contacts with resource name and etag |
+| `message_labels` | Many-to-many message ↔ label mapping |
+| `drafts` | Draft content |
+| `contacts` | Synced Google contacts with resource name and etag |
 
-You can inspect the database directly:
+Inspect the database directly:
 
 ```bash
 sqlite3 ~/.mailrat/mailrat.db ".tables"
 sqlite3 ~/.mailrat/mailrat.db "SELECT email FROM accounts"
 sqlite3 ~/.mailrat/mailrat.db \
-  "SELECT subject, from_addr, datetime(internal_date/1000,'unixepoch') FROM messages LIMIT 10"
+  "SELECT subject, from_addr, datetime(internal_date/1000,'unixepoch')
+   FROM messages ORDER BY internal_date DESC LIMIT 10"
 ```
-
-> **Note:** `credentials.json` and `mailrat.db` are excluded from version control via `.gitignore`. Never commit them.
 
 ---
 
 ## Architecture
 
 ```
-Gmail API ──► Sync Engine ──► SQLite ──► Go Services ──► CLI
+Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Wails / HTTP)
 ```
 
+### Design principles
+
 - **Go backend owns all state** — no business logic in the UI layer
-- **SQLite is the single source of truth** — queries run locally, offline reads are instant
+- **SQLite is the single source of truth** — queries run locally; offline reads are instant
 - **Gmail API as sync layer only** — initial sync via date range, incremental sync via `historyId`
-- **Lazy body fetch** — message metadata is synced first; full bodies are fetched on demand
+- **Lazy body fetch** — metadata is synced first; full bodies are fetched on demand
 
 ### Package layout
 
 ```
-cmd/cli/                  entry point
+cmd/
+  cli/              CLI entry point (also launches TUI)
+  desktop/          Wails desktop entry point
+    frontend/       Alpine.js + Tailwind SPA (embedded into binary at build time)
+  webserver/        HTTP server for remote browser access
+
 internal/
-  accounts/               OAuth2 flow and token management
-  gmail/                  Gmail API wrapper with retry/backoff
-  sync/                   initial and incremental sync engine
-  storage/                SQLite schema and CRUD
-  mail/                   inbox, send, label, and draft services
-  contacts/               Google People API wrapper
-  cli/                    Cobra commands
+  accounts/         OAuth2 flow and token management
+  cli/              Cobra commands
+  contacts/         Google People API integration
+  desktop/          Wails-bound App struct and frontend-facing types
+  gmail/            Gmail API client wrapper with retry / backoff
+  mail/             Business logic — inbox, send, labels, drafts
+  storage/          SQLite schema and CRUD
+  sync/             Initial and incremental sync engine
+  tui/              Bubbletea models and views
 ```
 
 ---
 
-## Roadmap
+## Development
 
-- [ ] Attachment download and caching
-- [ ] TUI (Bubbletea) — Phase 2
-- [ ] Desktop app (Wails) — Phase 3
-- [ ] Reply and forward commands
-- [ ] Schedule send (local queue)
-- [ ] Push notifications via Gmail API watch
+```bash
+go test ./...    # run tests
+go build ./...   # build all binaries
+go vet ./...     # vet
+```
 
 ---
 
