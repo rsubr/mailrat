@@ -19,6 +19,7 @@ const (
 	viewMessage
 	viewCompose
 	viewAccounts
+	viewConfig
 )
 
 type model struct {
@@ -53,6 +54,10 @@ type model struct {
 
 	// account switcher
 	acctCursor int
+
+	// sync config modal
+	configRows   []configRow
+	configCursor int
 
 	// status
 	status  string
@@ -195,6 +200,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.view = viewInbox
 		m = clearCompose(m)
 		return m, nil
+
+	case msgConfigLoaded:
+		if msg.err != nil {
+			m.status = "Config load error: " + msg.err.Error()
+			return m, nil
+		}
+		m.configRows = msg.rows
+		m.configCursor = 0
+		m.view = viewConfig
+		return m, nil
+
+	case msgConfigSaved:
+		if msg.err != nil {
+			m.status = "Config save error: " + msg.err.Error()
+		} else {
+			m.status = "Sync config saved"
+		}
+		m.view = viewInbox
+		return m, nil
 	}
 
 	switch m.view {
@@ -208,6 +232,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateCompose(msg)
 	case viewAccounts:
 		return m.updateAccounts(msg)
+	case viewConfig:
+		return m.updateConfig(msg)
 	}
 
 	return m, nil
@@ -230,6 +256,8 @@ func (m model) View() string {
 		content = m.renderCompose()
 	case viewAccounts:
 		content = m.renderAccounts()
+	case viewConfig:
+		content = m.renderConfig()
 	default:
 		content = m.renderInbox()
 	}
@@ -244,6 +272,18 @@ func (m model) contentHeight() int {
 		return 1
 	}
 	return m.height - 4
+}
+
+// resolveAcctID returns the active account ID, falling back to the first
+// available account when viewing the unified inbox.
+func (m model) resolveAcctID() string {
+	if m.activeAcct != "" {
+		return m.activeAcct
+	}
+	if len(m.allAccounts) > 0 {
+		return m.allAccounts[0].ID
+	}
+	return ""
 }
 
 // clearCompose resets the compose form fields.

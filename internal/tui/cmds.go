@@ -42,6 +42,15 @@ type msgSendDone struct {
 	err error
 }
 
+type msgConfigLoaded struct {
+	rows []configRow
+	err  error
+}
+
+type msgConfigSaved struct {
+	err error
+}
+
 type msgMarkReadDone struct {
 	acctID    string
 	messageID string
@@ -197,6 +206,61 @@ func drainPendingOpsCmd(store *storage.Store, accMgr *accounts.Manager) tea.Cmd 
 		}
 
 		return msgDrainDone{applied: applied}
+	}
+}
+
+// loadConfigCmd loads labels and existing sync configs for the given account,
+// merging them with smart defaults (INBOX/STARRED: all+attachments, rest: 30d).
+func loadConfigCmd(store *storage.Store, acctID string) tea.Cmd {
+	return func() tea.Msg {
+		labels, err := store.ListLabels(acctID)
+		if err != nil {
+			return msgConfigLoaded{err: err}
+		}
+
+		existing, _ := store.ListSyncConfigs(acctID)
+		cfgMap := make(map[string]storage.SyncConfig, len(existing))
+		for _, c := range existing {
+			cfgMap[c.LabelID] = c
+		}
+
+		rows := make([]configRow, 0, len(labels))
+		for _, l := range labels {
+			row := configRow{
+				LabelID:   l.ID,
+				LabelName: l.Name,
+				// defaults
+				DaysToSync:       30,
+				FetchAttachments: false,
+			}
+			if c, ok := cfgMap[l.ID]; ok {
+				row.DaysToSync = c.DaysToSync
+				row.FetchAttachments = c.FetchAttachments
+			} else if l.ID == "INBOX" || l.ID == "STARRED" {
+				row.DaysToSync = 0    // all mail
+				row.FetchAttachments = true
+			}
+			rows = append(rows, row)
+		}
+		return msgConfigLoaded{rows: rows}
+	}
+}
+
+// saveConfigCmd persists all config rows to the database.
+func saveConfigCmd(store *storage.Store, acctID string, rows []configRow) tea.Cmd {
+	return func() tea.Msg {
+		for _, row := range rows {
+			if err := store.UpsertSyncConfig(storage.SyncConfig{
+				LabelID:          row.LabelID,
+				AccountID:        acctID,
+				LabelName:        row.LabelName,
+				DaysToSync:       row.DaysToSync,
+				FetchAttachments: row.FetchAttachments,
+			}); err != nil {
+				return msgConfigSaved{err: err}
+			}
+		}
+		return msgConfigSaved{}
 	}
 }
 

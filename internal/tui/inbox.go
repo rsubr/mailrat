@@ -47,6 +47,13 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.view = viewAccounts
 			m.acctCursor = 0
 			return m, nil
+		case "?":
+			acctID := m.resolveAcctID()
+			if acctID == "" {
+				m.status = "No account configured"
+				return m, nil
+			}
+			return m, loadConfigCmd(m.store, acctID)
 		}
 	}
 	return m, nil
@@ -200,7 +207,7 @@ func (m model) renderHelp() string {
 	var keys string
 	switch m.view {
 	case viewInbox:
-		keys = "j/k:move  enter:open thread  c:compose  s:sync  a:accounts  q:quit"
+		keys = "j/k:move  enter:open  c:compose  s:sync  a:accounts  ?:config  q:quit"
 	case viewThread:
 		keys = "j/k:move  enter:read  esc:back"
 	case viewMessage:
@@ -209,6 +216,8 @@ func (m model) renderHelp() string {
 		keys = "tab:next field  ctrl+s:send  esc:cancel"
 	case viewAccounts:
 		keys = "j/k:move  enter:select  esc:back"
+	case viewConfig:
+		keys = "j/k:move  d:cycle days  a:toggle attachments  esc:save & close"
 	}
 
 	right := m.status
