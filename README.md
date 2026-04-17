@@ -122,7 +122,7 @@ mailrat sync --account <account-id>
 
 ### inbox
 
-Browse your inbox.
+Browse your inbox — or any other label (Sent, Drafts, Spam, etc.).
 
 ```bash
 # Unified inbox across all accounts, newest first
@@ -133,9 +133,23 @@ mailrat inbox list --limit 20
 
 # Filter to a single account
 mailrat inbox list --account <account-id>
+
+# Filter by label name or ID (case-insensitive)
+mailrat inbox list --label SENT
+mailrat inbox list --label DRAFT
+mailrat inbox list --label SPAM
+mailrat inbox list --label STARRED
+mailrat inbox list --label IMPORTANT
+mailrat inbox list --label "Work"          # any user-created label
+
+# Combine flags
+mailrat inbox list --label SENT --limit 20
+mailrat inbox list --label SENT --account <account-id>
 ```
 
 Output columns: unread indicator (`*`), date, from, subject, snippet.
+
+Run `mailrat labels list` to see every label available for your account.
 
 ---
 
