@@ -60,10 +60,12 @@ CREATE TABLE IF NOT EXISTS drafts (
 );
 
 CREATE TABLE IF NOT EXISTS contacts (
-    id         TEXT NOT NULL,
-    account_id TEXT NOT NULL,
-    name       TEXT NOT NULL DEFAULT '',
-    email      TEXT NOT NULL,
+    id            TEXT NOT NULL,
+    account_id    TEXT NOT NULL,
+    name          TEXT NOT NULL DEFAULT '',
+    email         TEXT NOT NULL,
+    resource_name TEXT NOT NULL DEFAULT '',
+    etag          TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

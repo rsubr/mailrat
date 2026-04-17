@@ -33,7 +33,25 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("apply schema: %w", err)
 	}
 
+	if err := migrate(db); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+
 	return &Store{db: db}, nil
+}
+
+// migrate applies additive schema changes to existing databases.
+// Each statement is run independently; failures are ignored so that
+// already-applied migrations (e.g. column already exists) don't abort startup.
+func migrate(db *sql.DB) error {
+	migrations := []string{
+		`ALTER TABLE contacts ADD COLUMN resource_name TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE contacts ADD COLUMN etag TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, m := range migrations {
+		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

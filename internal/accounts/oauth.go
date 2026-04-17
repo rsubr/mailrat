@@ -24,7 +24,7 @@ var scopes = []string{
 	googleapi.GmailReadonlyScope,
 	googleapi.GmailModifyScope,
 	googleapi.GmailSendScope,
-	peopleapi.ContactsReadonlyScope,
+	peopleapi.ContactsScope, // read + write (create/update/delete)
 }
 
 // oauthConfig builds an OAuth2 config from credentials JSON.
