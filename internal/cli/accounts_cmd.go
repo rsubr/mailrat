@@ -43,47 +43,49 @@ func newAccountsCmd() *cobra.Command {
 		Use:   "remove <account-id|email>",
 		Short: "Remove an account and delete all its local data",
 		Args:  cobra.ExactArgs(1),
-		RunE: withApp(func(a *app) error {
-			query := args[0]
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withApp(func(a *app) error {
+				query := args[0]
 
-			// Resolve by ID or email.
-			accs, err := a.accounts.ListAccounts()
-			if err != nil {
-				return err
-			}
-
-			var matchID, matchEmail string
-			for _, acc := range accs {
-				if acc.ID == query || acc.Email == query {
-					matchID = acc.ID
-					matchEmail = acc.Email
-					break
-				}
-			}
-			if matchID == "" {
-				return fmt.Errorf("no account found matching %q\n\nRun 'mailrat accounts list' to see available accounts.", query)
-			}
-
-			if !forceRemove {
-				fmt.Printf("Remove account %s and delete ALL local data?\n", matchEmail)
-				fmt.Println("This will delete all cached emails, labels, drafts, and contacts for this account.")
-				matched, err := promptExactMatch(newPromptReader(), "Type the email address to confirm: ", matchEmail)
+				// Resolve by ID or email.
+				accs, err := a.accounts.ListAccounts()
 				if err != nil {
 					return err
 				}
-				if !matched {
-					fmt.Println("Input did not match. Cancelled.")
-					return nil
+
+				var matchID, matchEmail string
+				for _, acc := range accs {
+					if acc.ID == query || acc.Email == query {
+						matchID = acc.ID
+						matchEmail = acc.Email
+						break
+					}
 				}
-			}
+				if matchID == "" {
+					return fmt.Errorf("no account found matching %q\n\nRun 'mailrat accounts list' to see available accounts.", query)
+				}
 
-			if err := a.store.DeleteAccount(matchID); err != nil {
-				return fmt.Errorf("remove account: %w", err)
-			}
+				if !forceRemove {
+					fmt.Printf("Remove account %s and delete ALL local data?\n", matchEmail)
+					fmt.Println("This will delete all cached emails, labels, drafts, and contacts for this account.")
+					matched, err := promptExactMatch(newPromptReader(), "Type the email address to confirm: ", matchEmail)
+					if err != nil {
+						return err
+					}
+					if !matched {
+						fmt.Println("Input did not match. Cancelled.")
+						return nil
+					}
+				}
 
-			fmt.Printf("✓ Account %s removed. All local data deleted.\n", matchEmail)
-			return nil
-		}),
+				if err := a.store.DeleteAccount(matchID); err != nil {
+					return fmt.Errorf("remove account: %w", err)
+				}
+
+				fmt.Printf("✓ Account %s removed. All local data deleted.\n", matchEmail)
+				return nil
+			})(cmd, args)
+		},
 	}
 	removeCmd.Flags().BoolVarP(&forceRemove, "force", "f", false, "Skip confirmation prompt")
 

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -115,46 +116,48 @@ func newContactsCmd() *cobra.Command {
 		Use:   "edit <contact-id>",
 		Short: "Edit a contact's name and/or email",
 		Args:  cobra.ExactArgs(1),
-		RunE: withAppContext(func(ctx context.Context, a *app) error {
-			aid, err := resolveAccount(a, accountID)
-			if err != nil {
-				return err
-			}
-
-			svc, err := a.contactsService(ctx, aid)
-			if err != nil {
-				return err
-			}
-
-			id := args[0]
-
-			// Load existing values to show as defaults.
-			existing, err := a.store.GetContact(aid, id)
-			if err != nil {
-				return fmt.Errorf("contact %q not found; run: mailrat contacts list --sync", id)
-			}
-
-			reader := newPromptReader()
-			if !cmd.Flags().Changed("name") {
-				editName, err = promptLineDefault(reader, "Name", existing.Name)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withAppContext(func(ctx context.Context, a *app) error {
+				aid, err := resolveAccount(a, accountID)
 				if err != nil {
 					return err
 				}
-			}
-			if !cmd.Flags().Changed("email") {
-				editEmail, err = promptLineDefault(reader, "Email", existing.Email)
+
+				svc, err := a.contactsService(ctx, aid)
 				if err != nil {
 					return err
 				}
-			}
 
-			c, err := svc.Update(ctx, id, editName, editEmail)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("✓ Contact updated: %s <%s>\n", c.Name, c.Email)
-			return nil
-		}),
+				id := args[0]
+
+				// Load existing values to show as defaults.
+				existing, err := a.store.GetContact(aid, id)
+				if err != nil {
+					return fmt.Errorf("contact %q not found; run: mailrat contacts list --sync", id)
+				}
+
+				reader := newPromptReader()
+				if !cmd.Flags().Changed("name") {
+					editName, err = promptLineDefault(reader, "Name", existing.Name)
+					if err != nil {
+						return err
+					}
+				}
+				if !cmd.Flags().Changed("email") {
+					editEmail, err = promptLineDefault(reader, "Email", existing.Email)
+					if err != nil {
+						return err
+					}
+				}
+
+				c, err := svc.Update(ctx, id, editName, editEmail)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("✓ Contact updated: %s <%s>\n", c.Name, c.Email)
+				return nil
+			})(cmd, args)
+		},
 	}
 	editCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	editCmd.Flags().StringVar(&editName, "name", "", "New name")
@@ -167,41 +170,43 @@ func newContactsCmd() *cobra.Command {
 		Use:   "delete <contact-id>",
 		Short: "Delete a contact",
 		Args:  cobra.ExactArgs(1),
-		RunE: withAppContext(func(ctx context.Context, a *app) error {
-			aid, err := resolveAccount(a, accountID)
-			if err != nil {
-				return err
-			}
-
-			id := args[0]
-
-			existing, err := a.store.GetContact(aid, id)
-			if err != nil {
-				return fmt.Errorf("contact %q not found; run: mailrat contacts list --sync", id)
-			}
-
-			if !forceDelete {
-				ok, err := promptConfirm(newPromptReader(), fmt.Sprintf("Delete contact: %s <%s> ? [y/N] ", existing.Name, existing.Email))
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withAppContext(func(ctx context.Context, a *app) error {
+				aid, err := resolveAccount(a, accountID)
 				if err != nil {
 					return err
 				}
-				if !ok {
-					fmt.Println("Cancelled.")
-					return nil
+
+				id := args[0]
+
+				existing, err := a.store.GetContact(aid, id)
+				if err != nil {
+					return fmt.Errorf("contact %q not found; run: mailrat contacts list --sync", id)
 				}
-			}
 
-			svc, err := a.contactsService(ctx, aid)
-			if err != nil {
-				return err
-			}
+				if !forceDelete {
+					ok, err := promptConfirm(newPromptReader(), fmt.Sprintf("Delete contact: %s <%s> ? [y/N] ", existing.Name, existing.Email))
+					if err != nil {
+						return err
+					}
+					if !ok {
+						fmt.Println("Cancelled.")
+						return nil
+					}
+				}
 
-			if err := svc.Delete(ctx, id); err != nil {
-				return err
-			}
-			fmt.Printf("✓ Contact deleted: %s <%s>\n", existing.Name, existing.Email)
-			return nil
-		}),
+				svc, err := a.contactsService(ctx, aid)
+				if err != nil {
+					return err
+				}
+
+				if err := svc.Delete(ctx, id); err != nil {
+					return err
+				}
+				fmt.Printf("✓ Contact deleted: %s <%s>\n", existing.Name, existing.Email)
+				return nil
+			})(cmd, args)
+		},
 	}
 	deleteCmd.Flags().StringVar(&accountID, "account", "", "Account ID")
 	deleteCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
