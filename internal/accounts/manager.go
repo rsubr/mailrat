@@ -123,10 +123,12 @@ func (s *savingTokenSource) Token() (*oauth2.Token, error) {
 	return token, nil
 }
 
-// fetchEmail calls Google's userinfo endpoint to get the authenticated email.
+// fetchEmail calls the Gmail API profile endpoint to get the authenticated
+// email. This works with the gmail.readonly scope we already request —
+// no additional userinfo/email scope needed.
 func fetchEmail(ctx context.Context, client *http.Client) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://www.googleapis.com/oauth2/v3/userinfo", nil)
+		"https://gmail.googleapis.com/gmail/v1/users/me/profile", nil)
 	if err != nil {
 		return "", err
 	}
@@ -136,14 +138,14 @@ func fetchEmail(ctx context.Context, client *http.Client) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var info struct {
-		Email string `json:"email"`
+	var profile struct {
+		EmailAddress string `json:"emailAddress"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
 		return "", err
 	}
-	if info.Email == "" {
-		return "", fmt.Errorf("empty email in userinfo response")
+	if profile.EmailAddress == "" {
+		return "", fmt.Errorf("empty emailAddress in Gmail profile response")
 	}
-	return info.Email, nil
+	return profile.EmailAddress, nil
 }
