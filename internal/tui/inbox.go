@@ -13,8 +13,9 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
+		case "q":
+			m.status.quitting = true
+			return m, nil
 		case "j", "down", "n":
 			if m.inbox.cursor < len(m.inbox.threads)-1 {
 				m.inbox.cursor++
@@ -227,6 +228,10 @@ func (m model) renderHeader() string {
 }
 
 func (m model) renderHelp() string {
+	if m.status.quitting {
+		return helpStyle.Render("Quit? ") + boldStyle.Render("[Y]") + helpStyle.Render("es / ") + boldStyle.Render("[N]") + helpStyle.Render("o")
+	}
+
 	var keys string
 	switch m.nav.view {
 	case viewInbox:

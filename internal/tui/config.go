@@ -38,8 +38,6 @@ func (m model) updateConfig(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c":
-			return m, tea.Quit
 		case "esc":
 			return m, saveConfigCmd(m.store, m.resolveAcctID(), m.config.rows)
 		case "j", "down":

@@ -81,6 +81,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleWindowSize(sizeMsg)
 	}
 
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if m.status.quitting {
+			switch keyMsg.String() {
+			case "y", "Y", "enter":
+				return m, tea.Quit
+			default:
+				m.status.quitting = false
+				return m, nil
+			}
+		}
+		if keyMsg.String() == "ctrl+c" {
+			m.status.quitting = true
+			return m, nil
+		}
+	}
+
 	if next, cmd, handled := m.handleRootMessage(msg); handled {
 		return next, cmd
 	}

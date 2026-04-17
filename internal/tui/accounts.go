@@ -11,8 +11,9 @@ func (m model) updateAccounts(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
+		case "q":
+			m.status.quitting = true
+			return m, nil
 		case "esc":
 			m.nav.view = viewInbox
 			return m, nil

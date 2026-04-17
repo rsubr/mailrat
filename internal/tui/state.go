@@ -62,8 +62,9 @@ type configState struct {
 }
 
 type statusState struct {
-	text    string
-	syncing bool
+	text     string
+	syncing  bool
+	quitting bool
 }
 
 type layoutState struct {
