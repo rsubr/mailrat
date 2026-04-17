@@ -119,6 +119,13 @@ func removeLocalLabel(store *storage.Store, acctID, msgID, labelID string) error
 	return store.SetMessageLabels(acctID, msgID, updated)
 }
 
+func searchThreadsCmd(store *storage.Store, query string) tea.Cmd {
+	return func() tea.Msg {
+		results, err := store.SearchAllThreadSummaries(query, 100)
+		return msgSearchLoaded{results: results, err: err}
+	}
+}
+
 func quoteBody(msg storage.Message) string {
 	date := ""
 	if msg.InternalDate > 0 {

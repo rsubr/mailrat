@@ -27,6 +27,7 @@ mailrat syncs your Gmail directly via the Gmail API — not IMAP — and stores 
   - [send](#send)
   - [labels](#labels)
   - [contacts](#contacts)
+- [TUI Keyboard Shortcuts](#tui-keyboard-shortcuts)
 - [Data Storage](#data-storage)
 - [Architecture](#architecture)
 - [Roadmap](#roadmap)
@@ -231,6 +232,47 @@ mailrat contacts delete <contact-id> --force   # skip confirmation
 ```
 
 Contact IDs are shown in `contacts list` output.
+
+---
+
+## TUI Keyboard Shortcuts
+
+The interactive TUI (`mailrat inbox list`) uses Gmail-style keyboard shortcuts.
+
+### Navigation
+
+| Key | Action |
+|-----|--------|
+| `j` / `n` | Next message / thread |
+| `k` / `p` | Previous message / thread |
+| `Enter` / `o` | Open selected thread or message |
+| `u` | Go back (from thread or message view) |
+
+### Actions
+
+| Key | Action |
+|-----|--------|
+| `c` | Compose new message |
+| `r` | Reply to current message |
+| `a` | Reply all (thread and message views) |
+| `f` | Forward current message |
+| `e` / `y` | Archive conversation |
+| `I` | Mark message as unread |
+
+### Compose
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+S` | Send message |
+| `Ctrl+Enter` | Send message |
+
+### Search
+
+Press `/` from the inbox to open the search view. Type a query and press `Enter` to search across message subjects, snippets, and senders. Results are shown in inbox format — navigate with `j`/`k` and open a thread with `Enter` or `o`. Press `/` again to start a new search, or `Esc` to return to the inbox.
+
+### Unsupported keys
+
+The keys `s`, `#`, `!`, and `x` are recognized and display a status message rather than silently doing nothing.
 
 ---
 

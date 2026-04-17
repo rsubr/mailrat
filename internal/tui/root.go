@@ -55,6 +55,13 @@ func (m model) handleRootMessage(msg tea.Msg) (model, tea.Cmd, bool) {
 	case msgConfigSaved:
 		next, cmd := m.handleConfigSaved(msg)
 		return next, cmd, true
+	case msgSearchLoaded:
+		m.search.results = msg.results
+		m.search.cursor = 0
+		if msg.err != nil {
+			m.status.text = "Search error: " + msg.err.Error()
+		}
+		return m, nil, true
 	case msgActionDone:
 		next, cmd := m.handleActionDone(msg)
 		return next, cmd, true
@@ -209,6 +216,8 @@ func (m model) updateActiveView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateAccounts(msg)
 	case viewConfig:
 		return m.updateConfig(msg)
+	case viewSearch:
+		return m.updateSearch(msg)
 	default:
 		return m, nil
 	}
@@ -228,6 +237,8 @@ func (m model) renderCurrentView() string {
 		return m.renderAccounts()
 	case viewConfig:
 		return m.renderConfig()
+	case viewSearch:
+		return m.renderSearch()
 	default:
 		return m.renderInbox()
 	}

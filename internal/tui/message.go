@@ -33,7 +33,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nav.view = viewInbox
 			return m, archiveThreadCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ThreadID)
 		case "a":
-			return m.unsupportedShortcut("a"), nil
+			return m.beginReplyAll(m.reader.current), nil
 		case "s":
 			return m.unsupportedShortcut("s"), nil
 		case "#":

@@ -42,6 +42,54 @@ func (m model) beginCompose() model {
 	return m
 }
 
+func (m model) beginReplyAll(msg storage.Message) model {
+	// Find self email to exclude from recipients.
+	var selfEmail string
+	for _, a := range m.nav.allAccounts {
+		if a.ID == msg.AccountID {
+			selfEmail = strings.ToLower(strings.TrimSpace(a.Email))
+			break
+		}
+	}
+
+	seen := map[string]bool{}
+	var addrs []string
+	for _, raw := range []string{msg.FromAddr, msg.ToAddr} {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			// Extract bare email for dedup and self-exclusion.
+			email := part
+			if i := strings.Index(part, "<"); i >= 0 {
+				if j := strings.Index(part[i:], ">"); j >= 0 {
+					email = strings.TrimSpace(part[i+1 : i+j])
+				}
+			}
+			key := strings.ToLower(strings.TrimSpace(email))
+			if key == "" || key == selfEmail || seen[key] {
+				continue
+			}
+			seen[key] = true
+			addrs = append(addrs, part)
+		}
+	}
+
+	replyTo := msg
+	m.compose.replyTo = &replyTo
+	m.compose.replyAll = true
+	m.compose.focus = composeFocusBody
+	m.compose.to.SetValue(strings.Join(addrs, ", "))
+	m.compose.subject.SetValue(replySubject(msg.Subject))
+	m.compose.body.SetValue("")
+	m.compose.to.Blur()
+	m.compose.subject.Blur()
+	m.compose.body.Focus()
+	m.nav.view = viewCompose
+	return m
+}
+
 func (m model) beginReply(msg storage.Message) model {
 	replyTo := msg
 	m.compose.replyTo = &replyTo

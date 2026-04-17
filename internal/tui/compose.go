@@ -104,7 +104,9 @@ func (m model) submitCompose() (tea.Model, tea.Cmd) {
 
 func (m model) renderCompose() string {
 	title := "New Message"
-	if m.compose.replyTo != nil {
+	if m.compose.replyAll && m.compose.replyTo != nil {
+		title = fmt.Sprintf("Reply All to %s", truncStr(m.compose.replyTo.FromAddr, 40))
+	} else if m.compose.replyTo != nil {
 		title = fmt.Sprintf("Reply to %s", truncStr(m.compose.replyTo.FromAddr, 40))
 	}
 

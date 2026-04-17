@@ -50,7 +50,10 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nav.view = viewInbox
 			return m, archiveThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "a":
-			return m.unsupportedShortcut("a"), nil
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			return m.beginReplyAll(m.thread.messages[m.thread.cursor]), nil
 		case "s":
 			return m.unsupportedShortcut("s"), nil
 		case "#":

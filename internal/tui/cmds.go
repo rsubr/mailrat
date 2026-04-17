@@ -48,3 +48,8 @@ type msgMarkReadDone struct {
 type msgDrainDone struct {
 	applied int // number of pending ops successfully flushed
 }
+
+type msgSearchLoaded struct {
+	results []storage.ThreadSummary
+	err     error
+}

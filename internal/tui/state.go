@@ -37,11 +37,19 @@ type messageState struct {
 }
 
 type composeState struct {
-	to      textinput.Model
-	subject textinput.Model
-	body    textarea.Model
-	focus   int
-	replyTo *storage.Message
+	to       textinput.Model
+	subject  textinput.Model
+	body     textarea.Model
+	focus    int
+	replyTo  *storage.Message
+	replyAll bool
+}
+
+type searchState struct {
+	input        textinput.Model
+	results      []storage.ThreadSummary
+	cursor       int
+	inputFocused bool
 }
 
 type accountListState struct {

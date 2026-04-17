@@ -91,6 +91,22 @@ func (s *Store) ListAllThreadSummaries(limit int) ([]ThreadSummary, error) {
 	return scanThreadSummaries(rows)
 }
 
+// SearchAllThreadSummaries searches threads across all accounts by subject, snippet, or sender.
+func (s *Store) SearchAllThreadSummaries(query string, limit int) ([]ThreadSummary, error) {
+	like := "%" + query + "%"
+	rows, err := s.db.Query(
+		threadSummarySQL+
+			`WHERE (LOWER(m.subject) LIKE LOWER(?) OR LOWER(m.snippet) LIKE LOWER(?) OR LOWER(m.from_addr) LIKE LOWER(?)) `+
+			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
+		like, like, like, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
 // ListThreadSummaries returns inbox threads for a single account, newest first.
 func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummary, error) {
 	rows, err := s.db.Query(

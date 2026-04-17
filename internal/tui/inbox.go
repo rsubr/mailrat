@@ -58,7 +58,13 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, loadConfigCmd(m.store, acctID)
 		case "/":
-			return m.unsupportedShortcut("/"), nil
+			m.nav.view = viewSearch
+			m.search.inputFocused = true
+			m.search.input.Focus()
+			m.search.input.SetValue("")
+			m.search.results = nil
+			m.search.cursor = 0
+			return m, nil
 		case "x":
 			return m.unsupportedShortcut("x"), nil
 		case "s":
@@ -224,17 +230,23 @@ func (m model) renderHelp() string {
 	var keys string
 	switch m.nav.view {
 	case viewInbox:
-		keys = "j/k,n/p:move  enter/o:open  c:compose  e/y:archive  A:accounts  S:sync  ?:config"
+		keys = "j/k,n/p:move  enter/o:open  c:compose  e/y:archive  /:search  A:accounts  S:sync  ?:config"
 	case viewThread:
-		keys = "j/k,n/p:move  enter/o:read  r:reply  f:forward  e/y:archive  u:back"
+		keys = "j/k,n/p:move  enter/o:read  r:reply  a:reply all  f:forward  e/y:archive  u:back"
 	case viewMessage:
-		keys = "↑/↓/pgup/pgdn:scroll  r:reply  f:forward  Shift+I:unread  e/y:archive  u:back"
+		keys = "↑/↓/pgup/pgdn:scroll  r:reply  a:reply all  f:forward  Shift+I:unread  e/y:archive  u:back"
 	case viewCompose:
 		keys = "tab:next field  ctrl+s/ctrl+enter:send  esc:cancel"
 	case viewAccounts:
 		keys = "j/k:move  enter:select  esc:back"
 	case viewConfig:
 		keys = "j/k:move  d:cycle days  a:toggle attachments  esc:save & close"
+	case viewSearch:
+		if m.search.inputFocused {
+			keys = "enter:search  esc:back"
+		} else {
+			keys = "j/k:navigate  enter/o:open  /:new search  esc:back"
+		}
 	}
 
 	right := m.status.text

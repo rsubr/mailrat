@@ -17,6 +17,7 @@ const (
 	viewCompose
 	viewAccounts
 	viewConfig
+	viewSearch
 )
 
 type model struct {
@@ -28,6 +29,7 @@ type model struct {
 	thread  threadState
 	reader  messageState
 	compose composeState
+	search  searchState
 	account accountListState
 	config  configState
 	status  statusState
@@ -49,6 +51,10 @@ func New(store *storage.Store, accMgr *accounts.Manager) model {
 	body.SetHeight(12)
 	body.CharLimit = 0 // unlimited
 
+	searchInput := textinput.New()
+	searchInput.Placeholder = "Search mail..."
+	searchInput.CharLimit = 200
+
 	return model{
 		store:  store,
 		accMgr: accMgr,
@@ -56,6 +62,9 @@ func New(store *storage.Store, accMgr *accounts.Manager) model {
 			to:      to,
 			subject: subj,
 			body:    body,
+		},
+		search: searchState{
+			input: searchInput,
 		},
 	}
 }
@@ -115,6 +124,7 @@ func clearCompose(m model) model {
 	m.compose.body.Reset()
 	m.compose.focus = composeFocusTo
 	m.compose.replyTo = nil
+	m.compose.replyAll = false
 	m.compose.to.Blur()
 	m.compose.subject.Blur()
 	m.compose.body.Blur()
