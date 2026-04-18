@@ -578,7 +578,8 @@ document.addEventListener('alpine:init', () => {
       if (!this.open) return;
       if (e.key === 'ArrowDown')  { e.preventDefault(); this.activeIdx = Math.min(this.activeIdx + 1, this.suggestions.length - 1); }
       else if (e.key === 'ArrowUp') { e.preventDefault(); this.activeIdx = Math.max(this.activeIdx - 1, -1); }
-      else if ((e.key === 'Enter' || e.key === 'Tab') && this.activeIdx >= 0) { e.preventDefault(); this.select(this.suggestions[this.activeIdx]); }
+      else if (e.key === 'Tab' && this.suggestions.length > 0) { e.preventDefault(); this.select(this.suggestions[this.activeIdx >= 0 ? this.activeIdx : 0]); }
+      else if (e.key === 'Enter' && this.activeIdx >= 0) { e.preventDefault(); this.select(this.suggestions[this.activeIdx]); }
       else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
     },
 
