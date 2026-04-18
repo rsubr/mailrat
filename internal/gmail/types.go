@@ -4,6 +4,7 @@ package gmail
 type MessageMeta struct {
 	ID           string
 	ThreadID     string
+	MessageID    string // RFC 2822 Message-ID header value, e.g. "<abc@mail.gmail.com>"
 	Subject      string
 	From         string
 	To           string

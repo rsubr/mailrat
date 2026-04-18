@@ -25,6 +25,7 @@ type ThreadItem struct {
 type MessageItem struct {
 	ID             string `json:"id"`
 	ThreadID       string `json:"threadId"`
+	MessageID      string `json:"messageId"` // RFC 2822 Message-ID header value
 	AccountID      string `json:"accountId"`
 	Subject        string `json:"subject"`
 	FromAddr       string `json:"from"`
@@ -71,6 +72,7 @@ func messageToItem(m storage.Message) MessageItem {
 	return MessageItem{
 		ID:             m.ID,
 		ThreadID:       m.ThreadID,
+		MessageID:      m.MessageID,
 		AccountID:      m.AccountID,
 		Subject:        m.Subject,
 		FromAddr:       m.FromAddr,

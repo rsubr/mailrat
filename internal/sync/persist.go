@@ -27,6 +27,7 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 	msg := storage.Message{
 		ID:           meta.ID,
 		ThreadID:     meta.ThreadID,
+		MessageID:    meta.MessageID,
 		AccountID:    accountID,
 		Subject:      meta.Subject,
 		FromAddr:     meta.From,

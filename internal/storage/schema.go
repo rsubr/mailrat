@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS messages (
     internal_date INTEGER NOT NULL DEFAULT 0,
     is_unread    INTEGER NOT NULL DEFAULT 1,
     cache_state  TEXT NOT NULL DEFAULT 'metadata_only',
+    has_attachments INTEGER NOT NULL DEFAULT 0,
+    message_id   TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

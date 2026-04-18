@@ -20,7 +20,7 @@ func NewSendService(client *gmail.Client) *SendService {
 // Send sends an outbound message. Returns the new message ID.
 func (s *SendService) Send(ctx context.Context, msg OutboundMessage) (string, error) {
 	raw := buildRaw(msg)
-	id, err := s.client.SendMessage(ctx, gmail.EncodeRaw(raw))
+	id, err := s.client.SendMessage(ctx, gmail.EncodeRaw(raw), msg.ThreadID)
 	if err != nil {
 		return "", err
 	}

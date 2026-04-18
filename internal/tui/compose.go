@@ -92,7 +92,7 @@ func (m model) submitCompose() (tea.Model, tea.Cmd) {
 		Body:    body,
 	}
 	if m.compose.replyTo != nil {
-		outMsg.InReplyTo = m.compose.replyTo.ID
+		outMsg.InReplyTo = m.compose.replyTo.MessageID
 		outMsg.ThreadID = m.compose.replyTo.ThreadID
 	}
 

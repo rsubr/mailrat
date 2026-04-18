@@ -17,14 +17,14 @@ const (
 
 const (
 	messageSelectColumns = `id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-	       internal_date, is_unread, cache_state, has_attachments`
+	       internal_date, is_unread, cache_state, has_attachments, message_id`
 	messageOrderDesc = ` ORDER BY internal_date DESC`
 	messageOrderAsc  = ` ORDER BY internal_date ASC`
 	messageUpsertSQL = `
 		INSERT INTO messages
 			(id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-			 internal_date, is_unread, cache_state, has_attachments)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 internal_date, is_unread, cache_state, has_attachments, message_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id, account_id) DO UPDATE SET
 			thread_id       = excluded.thread_id,
 			subject         = excluded.subject,
@@ -35,13 +35,15 @@ const (
 			internal_date   = excluded.internal_date,
 			is_unread       = excluded.is_unread,
 			cache_state     = CASE WHEN excluded.cache_state > messages.cache_state THEN excluded.cache_state ELSE messages.cache_state END,
-			has_attachments = CASE WHEN excluded.has_attachments = 1 THEN 1 ELSE messages.has_attachments END
+			has_attachments = CASE WHEN excluded.has_attachments = 1 THEN 1 ELSE messages.has_attachments END,
+			message_id      = CASE WHEN excluded.message_id != '' THEN excluded.message_id ELSE messages.message_id END
 	`
 )
 
 type Message struct {
 	ID             string
 	ThreadID       string
+	MessageID      string // RFC 2822 Message-ID header value
 	AccountID      string
 	Subject        string
 	FromAddr       string
@@ -67,7 +69,7 @@ func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 		FROM messages WHERE id = ? AND account_id = ?
 	`, messageID, accountID).Scan(
 		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
-		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments,
+		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, fmt.Errorf("message %q not found", messageID)
@@ -198,6 +200,7 @@ func messageUpsertArgs(m Message) []any {
 		boolToInt(m.IsUnread),
 		string(m.CacheState),
 		boolToInt(m.HasAttachments),
+		m.MessageID,
 	}
 }
 
@@ -215,7 +218,7 @@ func scanMessages(rows *sql.Rows) ([]Message, error) {
 		var isUnread, hasAttachments int
 		if err := rows.Scan(
 			&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
-			&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments,
+			&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
 		); err != nil {
 			return nil, err
 		}

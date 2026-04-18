@@ -183,7 +183,7 @@ document.addEventListener('alpine:init', () => {
           to:        replyTo.from || '',
           subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
           body:      '',
-          inReplyTo: replyTo.id,
+          inReplyTo: replyTo.messageId || '',
           threadId:  replyTo.threadId,
         };
       } else {

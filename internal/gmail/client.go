@@ -67,7 +67,7 @@ func (c *Client) GetMessageMeta(ctx context.Context, id string) (MessageMeta, er
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Get("me", id).
 			Format("metadata").
-			MetadataHeaders("Subject", "From", "To").
+			MetadataHeaders("Subject", "From", "To", "Message-ID").
 			Context(ctx).Do()
 	})
 	if err != nil {
@@ -142,10 +142,12 @@ func (c *Client) ModifyLabels(ctx context.Context, msgID string, add, remove []s
 }
 
 // SendMessage sends a raw RFC 2822 message (base64url encoded).
-func (c *Client) SendMessage(ctx context.Context, rawBase64 string) (string, error) {
+// threadID is optional; when non-empty it tells Gmail which thread to attach the message to.
+func (c *Client) SendMessage(ctx context.Context, rawBase64, threadID string) (string, error) {
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Send("me", &gmailv1.Message{
-			Raw: rawBase64,
+			Raw:      rawBase64,
+			ThreadId: threadID,
 		}).Context(ctx).Do()
 	})
 	if err != nil {
@@ -266,6 +268,8 @@ func parseMessageMeta(m *gmailv1.Message) MessageMeta {
 				meta.From = h.Value
 			case "To":
 				meta.To = h.Value
+			case "Message-ID":
+				meta.MessageID = h.Value
 			}
 		}
 	}
