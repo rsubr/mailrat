@@ -141,6 +141,17 @@ func (c *Client) ModifyLabels(ctx context.Context, msgID string, add, remove []s
 	return nil
 }
 
+// TrashMessage moves a message to the Trash.
+func (c *Client) TrashMessage(ctx context.Context, msgID string) error {
+	_, err := withRetry(ctx, func() (*gmailv1.Message, error) {
+		return c.svc.Users.Messages.Trash("me", msgID).Context(ctx).Do()
+	})
+	if err != nil {
+		return fmt.Errorf("trash message %s: %w", msgID, err)
+	}
+	return nil
+}
+
 // SendMessage sends a raw RFC 2822 message (base64url encoded).
 // threadID is optional; when non-empty it tells Gmail which thread to attach the message to.
 func (c *Client) SendMessage(ctx context.Context, rawBase64, threadID string) (string, error) {

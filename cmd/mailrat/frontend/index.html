@@ -309,361 +309,363 @@
 
 
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <!--  RIGHT — READING PANE                                                  -->
+  <!--  RIGHT — READING PANE / COMPOSE                                        -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <main class="flex-1 bg-reading flex flex-col h-full min-w-0"
-        x-data="readingPane">
+        x-data="readingPane"
+        @keydown.window="handleKeydown($event)">
 
-    <!-- Toolbar -->
-    <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
-      <div class="flex items-center space-x-5 text-secondary">
-        <!-- Archive -->
-        <button class="hover:text-white transition-colors" title="Archive">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
-          </svg>
-        </button>
-        <!-- Delete -->
-        <button class="hover:text-white transition-colors" title="Delete">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
-                     m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-          </svg>
-        </button>
-        <!-- Move -->
-        <button class="hover:text-white transition-colors" title="Move to folder">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"/>
-          </svg>
-        </button>
-        <!-- Label -->
-        <button class="hover:text-white transition-colors" title="Add label">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7
-                     a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
-          </svg>
-        </button>
+    <!-- ── Full-pane compose (new message) ─────────────────────────────────── -->
+    <template x-if="store.composing && store.composeMode === 'new'">
+      <div class="flex flex-col h-full" x-init="initEditor()">
 
-        <div class="w-px h-5 bg-divider"></div>
+        <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
+          <h2 class="font-semibold text-white text-sm">New Message</h2>
+          <button @click="store.closeCompose()" class="text-secondary hover:text-white transition-colors" title="Discard (Esc)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
 
-        <!-- Reply -->
-        <button @click="store.activeThread && reply(store.messages[store.messages.length - 1])"
-                class="hover:text-white transition-colors" title="Reply (R)">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-          </svg>
-        </button>
-        <!-- Forward -->
-        <button @click="store.activeThread && forward(store.messages[store.messages.length - 1])"
-                class="hover:text-white transition-colors" title="Forward">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/>
-          </svg>
-        </button>
-      </div>
+        <template x-if="store.accounts.length > 1">
+          <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
+            <span class="text-secondary text-xs w-16 flex-shrink-0">From</span>
+            <select x-model="data.accountId" class="flex-1 bg-transparent text-white text-sm focus:outline-none">
+              <template x-for="acc in store.accounts" :key="acc.id">
+                <option :value="acc.id" x-text="acc.email"></option>
+              </template>
+            </select>
+          </div>
+        </template>
 
-      <!-- Search in reading pane -->
-      <div class="relative w-56">
-        <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-tertiary">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
-          </svg>
-        </span>
-        <input type="text"
-               placeholder="Search in conversation"
-               class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
-                      pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
-      </div>
-    </div>
+        <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
+          <span class="text-secondary text-xs w-16 flex-shrink-0">To</span>
+          <input type="text" x-model="data.to" placeholder="Recipients"
+                 class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+        </div>
 
-    <!-- Empty state — no thread selected -->
-    <template x-if="!store.activeThread">
-      <div class="flex-1 flex flex-col items-center justify-center text-tertiary space-y-3">
-        <svg class="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
-                d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5
-                   a2 2 0 00-2 2v10a2 2 0 002 2z"/>
-        </svg>
-        <p class="text-sm">Select a conversation</p>
+        <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
+          <span class="text-secondary text-xs w-16 flex-shrink-0">Subject</span>
+          <input type="text" x-model="data.subject" placeholder="Subject"
+                 class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+        </div>
+
+        <div class="px-4 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="gap:2px">
+          <button @mousedown.prevent="exec('bold')"          class="toolbar-btn" title="Bold (⌘B)"><span class="font-bold text-xs">B</span></button>
+          <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
+          <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
+          <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
+          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/></svg>
+          </button>
+          <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+          </button>
+          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+          </button>
+          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/></svg>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-5 py-4">
+          <div contenteditable="true" x-ref="editor"
+               @input="store.composeData.body = $el.innerHTML"
+               data-placeholder="Write your message…"
+               class="compose-editor text-white text-sm leading-relaxed"></div>
+        </div>
+
+        <div class="px-5 py-3 border-t border-divider flex items-center justify-between flex-shrink-0">
+          <div class="flex items-center space-x-3">
+            <span class="text-tertiary text-xs">⌘↩ to send</span>
+            <p x-show="store.sendError" x-text="store.sendError" class="text-red-400 text-xs" style="display:none"></p>
+          </div>
+          <button @click="syncAndSend()" :disabled="store.sending || !data.to || !data.subject"
+                  class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
+            <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
+          </button>
+        </div>
+
       </div>
     </template>
+    <!-- END FULL COMPOSE -->
 
-    <!-- Thread content -->
-    <template x-if="store.activeThread">
-      <div class="flex-1 overflow-y-auto">
-        <div class="p-6 lg:p-10 max-w-4xl mx-auto w-full">
+    <!-- ── Reading pane + optional inline compose ───────────────────────────── -->
+    <template x-if="!store.composing || store.composeMode !== 'new'">
+      <div class="flex flex-col h-full">
 
-          <!-- Subject + labels row -->
-          <div class="flex items-start justify-between mb-7">
-            <div class="flex items-center space-x-3 min-w-0">
-              <h1 class="text-2xl font-bold text-white truncate"
-                  x-text="store.activeThread.subject || '(no subject)'"></h1>
-              <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white/10 text-secondary flex-shrink-0">
-                Inbox
-              </span>
-            </div>
-            <!-- Reply button in reading area -->
-            <button @click="reply(store.messages[store.messages.length - 1])"
-                    class="text-secondary hover:text-white flex-shrink-0 ml-4 transition-colors"
-                    title="Reply">
+        <!-- Toolbar -->
+        <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
+          <div class="flex items-center space-x-5 text-secondary">
+            <!-- Archive -->
+            <button class="hover:text-white transition-colors" title="Archive">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
+              </svg>
+            </button>
+            <!-- Delete -->
+            <button @click="store.trashThread()"
+                    :class="store.activeThread ? 'hover:text-white cursor-pointer' : 'opacity-30 cursor-default'"
+                    class="transition-colors" title="Delete">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
+                         m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+            </button>
+            <!-- Mark as unread -->
+            <button @click="store.markUnread()"
+                    :class="store.activeThread ? 'hover:text-white cursor-pointer' : 'opacity-30 cursor-default'"
+                    class="transition-colors" title="Mark as unread">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              </svg>
+            </button>
+
+            <div class="w-px h-5 bg-divider"></div>
+
+            <!-- Reply -->
+            <button @click="store.activeThread && reply(store.messages[store.messages.length - 1])"
+                    class="hover:text-white transition-colors" title="Reply (R)">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
               </svg>
             </button>
+            <!-- Forward -->
+            <button @click="store.activeThread && forward(store.messages[store.messages.length - 1])"
+                    class="hover:text-white transition-colors" title="Forward">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/>
+              </svg>
+            </button>
           </div>
 
-          <!-- Messages in the thread -->
-          <template x-for="(msg, idx) in store.messages" :key="msg.id">
-            <div :class="idx < store.messages.length - 1 ? 'mb-4' : ''"
-                 class="group">
+          <!-- Search in reading pane -->
+          <div class="relative w-56">
+            <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-tertiary">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+            </span>
+            <input type="text" placeholder="Search in conversation"
+                   class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
+                          pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
+          </div>
+        </div>
 
-              <!-- Collapsed message (not expanded) -->
-              <template x-if="!isExpanded(msg.id)">
-                <div @click="toggle(msg)"
-                     class="flex items-center justify-between py-2 px-1 rounded-lg cursor-pointer
-                            hover:bg-white/5 transition-colors">
+        <!-- Content area -->
+        <div class="flex-1 overflow-hidden flex flex-col">
+
+          <!-- Empty state -->
+          <template x-if="!store.activeThread">
+            <div class="flex-1 flex flex-col items-center justify-center text-tertiary space-y-3">
+              <svg class="w-16 h-16 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1"
+                      d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5
+                         a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+              </svg>
+              <p class="text-sm">Select a conversation</p>
+            </div>
+          </template>
+
+          <!-- Thread content -->
+          <template x-if="store.activeThread">
+            <div class="flex-1 overflow-y-auto">
+              <div class="p-6 lg:p-10 max-w-4xl mx-auto w-full">
+
+                <div class="flex items-start justify-between mb-7">
                   <div class="flex items-center space-x-3 min-w-0">
-                    <!-- Avatar -->
-                    <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
-                         :style="'background-color:' + avatarColor(msg.from || '')">
-                      <span x-text="initials(msg.from || '')"></span>
-                    </div>
-                    <div class="min-w-0">
-                      <span class="text-sm font-medium text-white truncate block"
-                            x-text="msg.from || 'Unknown'"></span>
-                      <span class="text-xs text-secondary truncate block" x-text="msg.snippet"></span>
-                    </div>
+                    <h1 class="text-2xl font-bold text-white truncate"
+                        x-text="store.activeThread.subject || '(no subject)'"></h1>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white/10 text-secondary flex-shrink-0">Inbox</span>
                   </div>
-                  <div class="flex items-center space-x-2 text-secondary ml-4 flex-shrink-0">
-                    <span class="text-xs" x-text="formatDate(msg.date)"></span>
-                    <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity"
-                         fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M19 9l-7 7-7-7"/>
+                  <button @click="reply(store.messages[store.messages.length - 1])"
+                          class="text-secondary hover:text-white flex-shrink-0 ml-4 transition-colors" title="Reply">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
                     </svg>
-                  </div>
+                  </button>
                 </div>
-              </template>
 
-              <!-- Expanded message -->
-              <template x-if="isExpanded(msg.id)">
-                <div class="mb-2">
-                  <!-- Message header -->
-                  <div class="flex items-start justify-between mb-4">
-                    <div class="flex items-center space-x-3 min-w-0">
-                      <!-- Avatar -->
-                      <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
-                           :style="'background-color:' + avatarColor(msg.from || '')">
-                        <span x-text="initials(msg.from || '')"></span>
-                      </div>
-                      <div class="min-w-0">
-                        <div class="flex items-baseline space-x-2">
-                          <span class="font-bold text-white text-sm" x-text="msg.from || 'Unknown'"></span>
+                <template x-for="(msg, idx) in store.messages" :key="msg.id">
+                  <div :class="idx < store.messages.length - 1 ? 'mb-4' : ''" class="group">
+
+                    <template x-if="!isExpanded(msg.id)">
+                      <div @click="toggle(msg)"
+                           class="flex items-center justify-between py-2 px-1 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
+                        <div class="flex items-center space-x-3 min-w-0">
+                          <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
+                               :style="'background-color:' + avatarColor(msg.from || '')">
+                            <span x-text="initials(msg.from || '')"></span>
+                          </div>
+                          <div class="min-w-0">
+                            <span class="text-sm font-medium text-white truncate block" x-text="msg.from || 'Unknown'"></span>
+                            <span class="text-xs text-secondary truncate block" x-text="msg.snippet"></span>
+                          </div>
                         </div>
-                        <div class="text-xs text-secondary mt-0.5">
-                          To: <span class="text-white" x-text="msg.to || ''"></span>
+                        <div class="flex items-center space-x-2 text-secondary ml-4 flex-shrink-0">
+                          <span class="text-xs" x-text="formatDate(msg.date)"></span>
+                          <svg class="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                          </svg>
                         </div>
                       </div>
-                    </div>
-                    <div class="flex items-center space-x-3 text-secondary ml-4 flex-shrink-0">
-                      <span class="text-xs" x-text="formatDate(msg.date)"></span>
-                      <div class="flex space-x-1">
-                        <button @click.stop="toggle(msg)"
-                                class="hover:text-white p-1 rounded transition-colors" title="Collapse">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
-                          </svg>
-                        </button>
-                        <button @click.stop="reply(msg)"
-                                class="hover:text-white p-1 rounded transition-colors" title="Reply">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
-                          </svg>
-                        </button>
+                    </template>
+
+                    <template x-if="isExpanded(msg.id)">
+                      <div class="mb-2">
+                        <div class="flex items-start justify-between mb-4">
+                          <div class="flex items-center space-x-3 min-w-0">
+                            <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold flex-shrink-0"
+                                 :style="'background-color:' + avatarColor(msg.from || '')">
+                              <span x-text="initials(msg.from || '')"></span>
+                            </div>
+                            <div class="min-w-0">
+                              <span class="font-bold text-white text-sm block" x-text="msg.from || 'Unknown'"></span>
+                              <div class="text-xs text-secondary mt-0.5">To: <span class="text-white" x-text="msg.to || ''"></span></div>
+                            </div>
+                          </div>
+                          <div class="flex items-center space-x-3 text-secondary ml-4 flex-shrink-0">
+                            <span class="text-xs" x-text="formatDate(msg.date)"></span>
+                            <div class="flex space-x-1">
+                              <button @click.stop="toggle(msg)" class="hover:text-white p-1 rounded transition-colors" title="Collapse">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                              </button>
+                              <button @click.stop="reply(msg)" class="hover:text-white p-1 rounded transition-colors" title="Reply">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style="margin-left:3.25rem">
+                          <template x-if="!msg.body"><p class="text-tertiary text-xs italic">Loading…</p></template>
+                          <template x-if="msg.body && !msg.body.trim().startsWith('<')">
+                            <pre class="text-white text-sm whitespace-pre-wrap font-sans leading-relaxed message-body" x-text="msg.body"></pre>
+                          </template>
+                          <template x-if="msg.body && msg.body.trim().startsWith('<')">
+                            <div class="text-white text-sm message-body" x-html="msg.body"></div>
+                          </template>
+                          <template x-if="msg.hasAttachments">
+                            <div class="mt-3 inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+                              <svg class="w-3 h-3 mr-1.5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
+                              </svg>
+                              Attachment
+                            </div>
+                          </template>
+                        </div>
                       </div>
-                    </div>
+                    </template>
+
                   </div>
+                </template>
 
-                  <!-- Body -->
-                  <div class="pl-13 ml-13" style="margin-left:3.25rem">
-                    <!-- Loading body -->
-                    <template x-if="!msg.body">
-                      <p class="text-tertiary text-xs italic">Loading…</p>
-                    </template>
-                    <!-- Plain text body -->
-                    <template x-if="msg.body && !msg.body.trim().startsWith('<')">
-                      <pre class="text-white text-sm whitespace-pre-wrap font-sans leading-relaxed message-body"
-                           x-text="msg.body"></pre>
-                    </template>
-                    <!-- HTML body -->
-                    <template x-if="msg.body && msg.body.trim().startsWith('<')">
-                      <div class="text-white text-sm message-body" x-html="msg.body"></div>
-                    </template>
-
-                    <!-- Attachment indicator -->
-                    <template x-if="msg.hasAttachments">
-                      <div class="mt-3 inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
-                        <svg class="w-3 h-3 mr-1.5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586
-                                   a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
-                        </svg>
-                        Attachment
-                      </div>
-                    </template>
+                <!-- Quick reply bar (hidden while composing) -->
+                <template x-if="store.messages.length > 0 && !store.composing">
+                  <div class="mt-6">
+                    <button @click="reply(store.messages[store.messages.length - 1])"
+                            class="w-full text-left border border-divider rounded-lg px-4 py-3
+                                   hover:bg-white/5 text-secondary text-sm transition-colors cursor-text">
+                      Reply…
+                    </button>
                   </div>
-                </div>
-              </template>
+                </template>
 
+              </div>
             </div>
           </template>
 
-          <!-- Quick reply bar -->
-          <template x-if="store.messages.length > 0">
-            <div class="mt-6">
-              <button @click="reply(store.messages[store.messages.length - 1])"
-                      class="w-full text-left border border-divider rounded-lg px-4 py-3
-                             hover:bg-white/5 text-secondary text-sm transition-colors cursor-text">
-                Reply…
-              </button>
+          <!-- Inline compose (reply / forward) -->
+          <template x-if="store.composing && store.composeMode !== 'new'">
+            <div class="flex-shrink-0 bg-sidebar border-t-2 border-blue-600/30 flex flex-col"
+                 style="height: 300px" x-init="initEditor()">
+
+              <!-- Header: mode label + To field + close -->
+              <div class="px-5 py-2 border-b border-divider flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center space-x-2 min-w-0 flex-1 mr-3">
+                  <span class="text-blue-400 text-xs font-semibold flex-shrink-0 uppercase tracking-wide"
+                        x-text="store.composeMode === 'forward' ? 'Fwd' : 'Re'"></span>
+                  <span class="text-divider flex-shrink-0">·</span>
+                  <input type="text" x-model="data.to" placeholder="To"
+                         class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary min-w-0"/>
+                  <template x-if="store.composeMode === 'forward'">
+                    <input type="text" x-model="data.subject" placeholder="Subject"
+                           class="w-48 bg-transparent text-secondary text-xs focus:outline-none placeholder-tertiary flex-shrink-0"/>
+                  </template>
+                </div>
+                <button @click="store.closeCompose()"
+                        class="text-secondary hover:text-white transition-colors flex-shrink-0" title="Discard (Esc)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Formatting toolbar -->
+              <div class="px-3 py-1 border-b border-divider flex items-center flex-shrink-0" style="gap:2px">
+                <button @mousedown.prevent="exec('bold')"          class="toolbar-btn" title="Bold (⌘B)"><span class="font-bold text-xs">B</span></button>
+                <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
+                <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
+                <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
+                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/></svg>
+                </button>
+                <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+                </button>
+                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
+                </button>
+                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/></svg>
+                </button>
+              </div>
+
+              <!-- Editor -->
+              <div class="flex-1 overflow-y-auto px-5 py-2">
+                <div contenteditable="true" x-ref="editor"
+                     @input="store.composeData.body = $el.innerHTML"
+                     data-placeholder="Write your reply…"
+                     class="compose-editor text-white text-sm leading-relaxed"></div>
+              </div>
+
+              <!-- Footer -->
+              <div class="px-5 py-2 border-t border-divider flex items-center justify-between flex-shrink-0">
+                <span class="text-tertiary text-xs">⌘↩ to send</span>
+                <div class="flex items-center space-x-3">
+                  <p x-show="store.sendError" x-text="store.sendError" class="text-red-400 text-xs" style="display:none"></p>
+                  <button @click="syncAndSend()" :disabled="store.sending || !data.to"
+                          class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
+                    <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
+                  </button>
+                </div>
+              </div>
+
             </div>
           </template>
+          <!-- END INLINE COMPOSE -->
 
         </div>
+        <!-- END CONTENT AREA -->
+
       </div>
     </template>
+    <!-- END READING PANE -->
 
   </main>
-  <!-- END READING PANE -->
-
-
-  <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <!--  COMPOSE MODAL                                                         -->
-  <!-- ═══════════════════════════════════════════════════════════════════════ -->
-  <div x-data="compose"
-       x-show="store.composing"
-       x-transition.opacity
-       @keydown.window="handleKeydown($event)"
-       class="fixed inset-0 z-50 flex items-end justify-end p-6 compose-backdrop"
-       style="display:none">
-
-    <!-- Modal card -->
-    <div class="bg-sidebar border border-divider rounded-xl shadow-2xl w-full max-w-lg flex flex-col"
-         style="height: 560px"
-         @click.stop>
-
-      <!-- Modal header -->
-      <div class="flex items-center justify-between px-4 py-3 border-b border-divider flex-shrink-0">
-        <h3 class="font-semibold text-white text-sm"
-            x-text="store.composeMode === 'reply' ? 'Reply' : store.composeMode === 'forward' ? 'Forward' : 'New Message'"></h3>
-        <button @click="store.closeCompose()" class="text-secondary hover:text-white transition-colors">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-          </svg>
-        </button>
-      </div>
-
-      <!-- From account selector (only if multiple accounts) -->
-      <template x-if="store.accounts.length > 1">
-        <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
-          <span class="text-secondary text-xs w-12 flex-shrink-0">From</span>
-          <select x-model="data.accountId"
-                  class="flex-1 bg-transparent text-white text-sm focus:outline-none">
-            <template x-for="acc in store.accounts" :key="acc.id">
-              <option :value="acc.id" x-text="acc.email"></option>
-            </template>
-          </select>
-        </div>
-      </template>
-
-      <!-- To field -->
-      <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
-        <span class="text-secondary text-xs w-12 flex-shrink-0">To</span>
-        <input type="text"
-               x-model="data.to"
-               placeholder="Recipients"
-               class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
-      </div>
-
-      <!-- Subject field -->
-      <div class="px-4 py-2 border-b border-divider flex items-center flex-shrink-0">
-        <span class="text-secondary text-xs w-12 flex-shrink-0">Subject</span>
-        <input type="text"
-               x-model="data.subject"
-               placeholder="Subject"
-               class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
-      </div>
-
-      <!-- Formatting toolbar -->
-      <div class="px-3 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="gap:2px">
-        <button @mousedown.prevent="exec('bold')"          class="toolbar-btn" title="Bold (⌘B)"><span class="font-bold text-xs">B</span></button>
-        <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
-        <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
-        <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
-        <div class="w-px h-4 bg-white/10 mx-1"></div>
-        <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/>
-          </svg>
-        </button>
-        <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
-          </svg>
-        </button>
-        <div class="w-px h-4 bg-white/10 mx-1"></div>
-        <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
-          </svg>
-        </button>
-        <div class="w-px h-4 bg-white/10 mx-1"></div>
-        <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/>
-          </svg>
-        </button>
-      </div>
-
-      <!-- Rich text editor body -->
-      <div class="flex-1 overflow-y-auto px-4 py-3">
-        <div contenteditable="true"
-             x-ref="editor"
-             @input="store.composeData.body = $el.innerHTML"
-             data-placeholder="Write your message…"
-             class="compose-editor text-white text-sm leading-relaxed"></div>
-      </div>
-
-      <!-- Footer -->
-      <div class="px-4 py-3 border-t border-divider flex items-center justify-between flex-shrink-0">
-        <!-- Send error -->
-        <p x-show="store.sendError" x-text="store.sendError"
-           class="text-red-400 text-xs truncate pr-4"></p>
-        <span x-show="!store.sendError" class="text-tertiary text-xs">⌘↩ to send</span>
-
-        <button @click="syncAndSend()"
-                :disabled="store.sending || !data.to || !data.subject"
-                class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40
-                       text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0">
-          <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
-        </button>
-      </div>
-
-    </div>
-  </div>
 
   <!-- Error toast -->
   <div x-show="$store.mail.error"

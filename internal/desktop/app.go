@@ -222,6 +222,44 @@ func (a *App) SendMessage(msg OutboundMsg) error {
 	return err
 }
 
+// MarkMessageRead removes the UNREAD label from a message.
+func (a *App) MarkMessageRead(accountID, messageID string) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return err
+	}
+	return mail.NewLabelService(a.store, client).MarkRead(a.ctx, accountID, messageID)
+}
+
+// MarkMessageUnread adds the UNREAD label to a message.
+func (a *App) MarkMessageUnread(accountID, messageID string) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return err
+	}
+	return mail.NewLabelService(a.store, client).MarkUnread(a.ctx, accountID, messageID)
+}
+
+// TrashThread moves all messages in a thread to the Trash.
+func (a *App) TrashThread(accountID, threadID string) error {
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
+	if err != nil {
+		return err
+	}
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return err
+	}
+	svc := mail.NewLabelService(a.store, client)
+	for _, msg := range msgs {
+		if err := svc.Trash(a.ctx, accountID, msg.ID); err != nil {
+			return err
+		}
+	}
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
 // Sync runs an incremental sync. Pass accountID="unified" to sync all accounts.
 func (a *App) Sync(accountID string) error {
 	if a.accounts == nil {

@@ -64,6 +64,14 @@ func (s *LabelService) MarkUnread(ctx context.Context, accountID, messageID stri
 	return s.store.UpsertMessage(msg)
 }
 
+// Trash moves a message to the Trash.
+func (s *LabelService) Trash(ctx context.Context, accountID, messageID string) error {
+	if err := s.client.TrashMessage(ctx, messageID); err != nil {
+		return err
+	}
+	return s.removeLocalLabel(accountID, messageID, "INBOX")
+}
+
 // ApplyLabel adds a label to a message.
 func (s *LabelService) ApplyLabel(ctx context.Context, accountID, messageID, labelID string) error {
 	if err := s.client.ModifyLabels(ctx, messageID, []string{labelID}, nil); err != nil {

@@ -166,9 +166,46 @@ document.addEventListener('alpine:init', () => {
 
     async selectThread(thread) {
       this.activeThread = thread;
+      if (this._markReadTimer) { clearTimeout(this._markReadTimer); this._markReadTimer = null; }
       try {
         const msgs = await Wails.call('GetThread', thread.accountId, thread.id);
         this.messages = msgs || [];
+        if (this.messages.some(m => m.isUnread)) {
+          this._markReadTimer = setTimeout(() => this._autoMarkRead(thread), 5000);
+        }
+      } catch (e) { this.error = e.toString(); }
+    },
+
+    async _autoMarkRead(thread) {
+      if (this.activeThread?.id !== thread.id) return;
+      for (const msg of this.messages.filter(m => m.isUnread)) {
+        try { await Wails.call('MarkMessageRead', msg.accountId, msg.id); msg.isUnread = false; }
+        catch (e) { /* best-effort */ }
+      }
+      const t = this.threads.find(t => t.id === thread.id && t.accountId === thread.accountId);
+      if (t) t.isUnread = false;
+    },
+
+    async trashThread() {
+      if (!this.activeThread) return;
+      const { id, accountId } = this.activeThread;
+      try {
+        await Wails.call('TrashThread', accountId, id);
+        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.activeThread = null;
+        this.messages = [];
+        this.composing = false;
+      } catch (e) { this.error = e.toString(); }
+    },
+
+    async markUnread() {
+      if (!this.activeThread || !this.messages.length) return;
+      const last = this.messages[this.messages.length - 1];
+      try {
+        await Wails.call('MarkMessageUnread', last.accountId, last.id);
+        last.isUnread = true;
+        const t = this.threads.find(t => t.id === this.activeThread.id && t.accountId === this.activeThread.accountId);
+        if (t) t.isUnread = true;
       } catch (e) { this.error = e.toString(); }
     },
 
@@ -280,19 +317,19 @@ document.addEventListener('alpine:init', () => {
     },
   }));
 
-  // ── Reading pane component ─────────────────────────────────────────────────
+  // ── Reading pane component (also owns compose UI) ─────────────────────────
   Alpine.data('readingPane', () => ({
     formatDate,
     initials,
     avatarColor,
-    expanded: [],          // message IDs that are currently expanded
+    expanded: [],
 
     get store() { return Alpine.store('mail'); },
+    get data()  { return Alpine.store('mail').composeData; },
 
     init() {
       this.$watch('store.messages', msgs => {
         if (!msgs || msgs.length === 0) { this.expanded = []; return; }
-        // Expand the last message by default
         const last = msgs[msgs.length - 1];
         this.expanded = [last.id];
         if (!last.body) this.store.fetchBody(last);
@@ -313,31 +350,22 @@ document.addEventListener('alpine:init', () => {
 
     reply(msg)   { this.store.openCompose('reply', msg); },
     forward(msg) { this.store.openCompose('forward', msg); },
-  }));
 
-  // ── Compose modal component ────────────────────────────────────────────────
-  Alpine.data('compose', () => ({
-    get store() { return Alpine.store('mail'); },
-    get data()  { return Alpine.store('mail').composeData; },
-
-    init() {
-      this.$watch('store.composing', val => {
-        if (!val) return;
-        this.$nextTick(() => {
-          const ed = this.$refs.editor;
-          if (!ed) return;
-          ed.innerHTML = this.data.body || '';
-          ed.focus();
-          // Position cursor at the very start (before any quote)
-          const sel = window.getSelection();
-          if (sel) {
-            const range = document.createRange();
-            range.setStart(ed, 0);
-            range.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          }
-        });
+    // Called by x-init on compose container when it's inserted into DOM
+    initEditor() {
+      this.$nextTick(() => {
+        const ed = this.$refs.editor;
+        if (!ed) return;
+        ed.innerHTML = this.data.body || '';
+        ed.focus();
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.setStart(ed, 0);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
       });
     },
 
@@ -360,11 +388,9 @@ document.addEventListener('alpine:init', () => {
     },
 
     handleKeydown(e) {
-      if (e.key === 'Escape') this.store.closeCompose();
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        this.syncAndSend();
-      }
+      if (!this.store.composing) return;
+      if (e.key === 'Escape') { e.preventDefault(); this.store.closeCompose(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.syncAndSend(); }
     },
   }));
 });
