@@ -7,16 +7,24 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 ## Completed features
 
 - Multi-account unified inbox (SQLite-backed, offline-first)
-- Full Gmail label support
+- Full Gmail label support with real labels in sidebar (collapsible "More" section)
+- Label chips per thread in the thread list
+- Star indicator in thread list (SVG icon, detects `STARRED` label ID)
 - Google Contacts sync
 - Rich text compose: contenteditable editor, formatting toolbar (bold/italic/underline/strikethrough/lists/links), `multipart/alternative` HTML+plain emails
 - Gmail-style reply/forward with quoted original (attribution + blockquote)
 - RFC 2822 reply threading (`In-Reply-To` + `References` headers)
 - Inline compose at bottom of thread for reply/forward; full-pane compose for new mail
+- CC/BCC fields in compose (new message and reply/forward), shown/hidden via Cc/Bcc buttons or `Cmd/Ctrl+Shift+C` / `Cmd/Ctrl+Shift+B`
+- CC/BCC displayed in message view
+- Address autocomplete for To/Cc/Bcc: searches local contacts DB as user types, arrow/Enter/Tab keyboard navigation, multi-address comma support
 - Auto mark-as-read after 5 seconds (cancelled on navigation away)
 - Trash thread (all messages moved to Gmail Trash, removed from local inbox)
 - Mark message as unread
 - Offline queuing: mark-read, mark-unread, trash queue to `pending_ops` when offline; replayed on next sync
+- Light/dark theme toggle with localStorage persistence
+- SVG sprite-based icon system
+- Infinite scroll pagination: scrolling to bottom of email list fetches next 60 threads (OFFSET-based), spinner shown while loading, stops when end of cache reached
 - Alpine.js and Tailwind vendored — no CDN requests
 
 ## Key files
@@ -32,6 +40,8 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 | Label ops (read/unread/trash) | `internal/mail/labels.go` |
 | Gmail API client | `internal/gmail/client.go` |
 | SQLite store | `internal/storage/` |
+| Thread list queries | `internal/storage/threads.go` |
+| Contacts search | `internal/storage/contacts.go` |
 | Pending ops queue | `internal/storage/pending_ops.go` |
 | TUI | `internal/tui/` |
 
@@ -45,12 +55,14 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 
 **Compose modes** — `composeMode` (`'new'` | `'reply'` | `'forward'`) controls full-pane vs inline compose. Two `x-ref="editor"` in mutually exclusive `x-if` blocks.
 
+**`@keydown.window.capture`** — keyboard shortcuts that conflict with Chrome built-ins (e.g. `Ctrl+Shift+C` for DevTools, `Ctrl+Shift+B` for bookmarks) require capture-phase listeners, not bubble-phase. Same technique Gmail uses.
+
+**`addressField` Alpine component** — registered via `Alpine.data('addressField', (field) => ...)`. Reads/writes `$store.mail.composeData[field]` via getter/setter. Autocompletes the last comma-separated token. Tab accepts first suggestion; Enter requires explicit arrow-key selection.
+
+**Pagination** — `GetInbox` and `GetLabelThreads` accept `offset int`. Frontend tracks `loadingMore` / `allLoaded`. `onListScroll()` on the list container triggers `loadMore()` when within 200px of bottom. Search results disable pagination (`allLoaded = true`).
+
 ## Known gaps / TODO
 
 - No mail signature management
-- Labels not shown in sidebar beyond system labels
-- No keyboard shortcuts in web/desktop SPA
-- Inbox capped at 60 threads, no pagination
-- Search is local SQLite only (no Gmail server-side search)
-- No CC/BCC fields in compose
 - No send validation (blank To is allowed)
+- Search is local SQLite only (no Gmail server-side search)
