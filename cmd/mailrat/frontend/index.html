@@ -20,24 +20,46 @@
   <aside class="w-60 bg-sidebar border-r border-divider flex flex-col h-full flex-shrink-0"
          x-data="sidebar">
 
-    <!-- Window controls + compose -->
+    <!-- Window controls + compose + theme toggle -->
     <div class="h-14 flex items-center justify-between px-4 flex-shrink-0" style="-webkit-app-region:drag">
       <div class="flex space-x-2" style="-webkit-app-region:no-drag">
         <div class="w-3 h-3 rounded-full bg-red-500 opacity-80"></div>
         <div class="w-3 h-3 rounded-full bg-yellow-500 opacity-80"></div>
         <div class="w-3 h-3 rounded-full bg-green-500 opacity-80"></div>
       </div>
-      <button @click="openCompose()"
-              class="text-secondary hover:text-white transition-colors"
-              title="Compose (C)"
-              style="-webkit-app-region:no-drag">
-        <!-- pencil icon -->
-        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
-                   m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-        </svg>
-      </button>
+      <div class="flex items-center space-x-2" style="-webkit-app-region:no-drag">
+        <!-- Theme toggle -->
+        <button @click="store.toggleTheme()"
+                class="text-secondary hover-primary transition-colors"
+                :title="store.theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'">
+          <!-- Sun (shown in dark mode) -->
+          <template x-if="store.theme === 'dark'">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707
+                       M6.343 17.657l-.707.707m12.728 0l-.707-.707
+                       M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+            </svg>
+          </template>
+          <!-- Moon (shown in light mode) -->
+          <template x-if="store.theme === 'light'">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+            </svg>
+          </template>
+        </button>
+        <!-- Compose -->
+        <button @click="openCompose()"
+                class="text-secondary hover-primary transition-colors"
+                title="Compose (C)">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
+                     m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
     <!-- Account switcher -->
@@ -45,8 +67,8 @@
       <!-- Unified inbox -->
       <button @click="selectAccount('unified')"
               :class="store.activeAccountId === 'unified'
-                      ? 'bg-active-item text-white'
-                      : 'hover:bg-white/5 text-secondary'"
+                      ? 'bg-active-item text-primary'
+                      : 'hover-bg text-secondary'"
               class="w-full flex items-center px-2 py-1.5 rounded-md text-xs mb-0.5 transition-colors">
         <svg class="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -59,8 +81,8 @@
       <template x-for="acc in store.accounts" :key="acc.id">
         <button @click="selectAccount(acc.id)"
                 :class="store.activeAccountId === acc.id
-                        ? 'bg-active-item text-white'
-                        : 'hover:bg-white/5 text-secondary'"
+                        ? 'bg-active-item text-primary'
+                        : 'hover-bg text-secondary'"
                 class="w-full flex items-center px-2 py-1.5 rounded-md text-xs mb-0.5 transition-colors">
           <svg class="w-4 h-4 mr-2 text-blue-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
@@ -96,7 +118,7 @@
           </li>
           <!-- Starred -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915
@@ -110,7 +132,7 @@
           </li>
           <!-- Drafts -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
@@ -121,7 +143,7 @@
           </li>
           <!-- Sent -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
@@ -131,7 +153,7 @@
           </li>
           <!-- All Mail -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6
@@ -144,7 +166,7 @@
           </li>
           <!-- Spam -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3
@@ -155,7 +177,7 @@
           </li>
           <!-- Trash -->
           <li>
-            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white transition-colors">
+            <button class="w-full flex items-center px-2 py-1.5 rounded-md hover-bg text-primary transition-colors">
               <svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
@@ -177,7 +199,7 @@
       "></span>
       <button @click="store.sync()"
               :disabled="store.syncStatus === 'syncing'"
-              class="text-secondary hover:text-white disabled:opacity-40 transition-colors"
+              class="text-secondary hover-primary disabled:opacity-40 transition-colors"
               title="Sync now (S)">
         <svg class="w-4 h-4" :class="{ 'animate-spin': store.syncStatus === 'syncing' }"
              fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -199,7 +221,7 @@
 
     <!-- Header -->
     <header class="h-14 flex items-center justify-between px-4 border-b border-divider flex-shrink-0">
-      <h2 class="font-semibold text-white text-sm" x-text="
+      <h2 class="font-semibold text-primary text-sm" x-text="
         store.activeAccountId === 'unified' ? 'All Inboxes' :
         (store.accounts.find(a => a.id === store.activeAccountId)?.email || 'Inbox')
       "></h2>
@@ -228,8 +250,8 @@
                x-model="store.searchQuery"
                @keydown="doSearch($event)"
                placeholder="Search"
-               class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
-                      pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
+               class="w-full bg-input border border-divider text-primary text-xs rounded-md
+                      pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-themed"/>
       </div>
     </div>
 
@@ -262,7 +284,7 @@
         <div>
           <template x-for="thread in store.threads" :key="thread.id + thread.accountId">
             <article @click="selectThread(thread)"
-                     :class="isActive(thread) ? 'bg-active-item' : 'hover:bg-white/5'"
+                     :class="isActive(thread) ? 'bg-active-item' : 'hover-bg'"
                      class="px-3 py-2.5 border-b border-divider cursor-pointer transition-colors">
 
               <!-- Row 1: sender + date -->
@@ -272,8 +294,8 @@
                   <template x-if="thread.isUnread">
                     <span class="unread-dot"></span>
                   </template>
-                  <h3 :class="thread.isUnread ? 'font-semibold text-white' : 'text-white'"
-                      class="truncate text-sm" x-text="thread.participants || thread.accountId"></h3>
+                  <h3 class="truncate text-sm font-medium text-primary"
+                      x-text="thread.participants || thread.accountId"></h3>
                   <!-- Message count badge -->
                   <template x-if="thread.messageCount > 1">
                     <span class="text-tertiary text-xs flex-shrink-0" x-text="thread.messageCount"></span>
@@ -283,7 +305,7 @@
               </div>
 
               <!-- Row 2: subject -->
-              <p :class="thread.isUnread ? 'font-semibold text-white' : 'text-secondary'"
+              <p :class="thread.isUnread ? 'font-semibold text-primary' : 'text-secondary'"
                  class="text-xs truncate mb-0.5" x-text="thread.subject || '(no subject)'"></p>
 
               <!-- Row 3: snippet + attachment indicator -->
@@ -320,8 +342,8 @@
       <div class="flex flex-col h-full" x-init="initEditor()">
 
         <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
-          <h2 class="font-semibold text-white text-sm">New Message</h2>
-          <button @click="store.closeCompose()" class="text-secondary hover:text-white transition-colors" title="Discard (Esc)">
+          <h2 class="font-semibold text-primary text-sm">New Message</h2>
+          <button @click="store.closeCompose()" class="text-secondary hover-primary transition-colors" title="Discard (Esc)">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
             </svg>
@@ -331,7 +353,7 @@
         <template x-if="store.accounts.length > 1">
           <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
             <span class="text-secondary text-xs w-16 flex-shrink-0">From</span>
-            <select x-model="data.accountId" class="flex-1 bg-transparent text-white text-sm focus:outline-none">
+            <select x-model="data.accountId" class="flex-1 bg-transparent text-primary text-sm focus:outline-none">
               <template x-for="acc in store.accounts" :key="acc.id">
                 <option :value="acc.id" x-text="acc.email"></option>
               </template>
@@ -342,13 +364,13 @@
         <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
           <span class="text-secondary text-xs w-16 flex-shrink-0">To</span>
           <input type="text" x-model="data.to" placeholder="Recipients"
-                 class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
         </div>
 
         <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
           <span class="text-secondary text-xs w-16 flex-shrink-0">Subject</span>
           <input type="text" x-model="data.subject" placeholder="Subject"
-                 class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
+                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
         </div>
 
         <div class="px-4 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="gap:2px">
@@ -356,18 +378,18 @@
           <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
           <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
           <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
-          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <div class="w-px h-4 toolbar-sep mx-1"></div>
           <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/></svg>
           </button>
           <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
           </button>
-          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <div class="w-px h-4 toolbar-sep mx-1"></div>
           <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
           </button>
-          <div class="w-px h-4 bg-white/10 mx-1"></div>
+          <div class="w-px h-4 toolbar-sep mx-1"></div>
           <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/></svg>
           </button>
@@ -377,7 +399,7 @@
           <div contenteditable="true" x-ref="editor"
                @input="store.composeData.body = $el.innerHTML"
                data-placeholder="Write your message…"
-               class="compose-editor text-white text-sm leading-relaxed"></div>
+               class="compose-editor text-primary text-sm leading-relaxed"></div>
         </div>
 
         <div class="px-5 py-3 border-t border-divider flex items-center justify-between flex-shrink-0">
@@ -403,7 +425,7 @@
         <div class="h-14 flex items-center justify-between px-5 border-b border-divider flex-shrink-0">
           <div class="flex items-center space-x-5 text-secondary">
             <!-- Archive -->
-            <button class="hover:text-white transition-colors" title="Archive">
+            <button class="hover-primary transition-colors" title="Archive">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/>
@@ -411,7 +433,7 @@
             </button>
             <!-- Delete -->
             <button @click="store.trashThread()"
-                    :class="store.activeThread ? 'hover:text-white cursor-pointer' : 'opacity-30 cursor-default'"
+                    :class="store.activeThread ? 'hover-primary cursor-pointer' : 'opacity-30 cursor-default'"
                     class="transition-colors" title="Delete">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -421,7 +443,7 @@
             </button>
             <!-- Mark as unread -->
             <button @click="store.markUnread()"
-                    :class="store.activeThread ? 'hover:text-white cursor-pointer' : 'opacity-30 cursor-default'"
+                    :class="store.activeThread ? 'hover-primary cursor-pointer' : 'opacity-30 cursor-default'"
                     class="transition-colors" title="Mark as unread">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -433,7 +455,7 @@
 
             <!-- Reply -->
             <button @click="store.activeThread && reply(store.messages[store.messages.length - 1])"
-                    class="hover:text-white transition-colors" title="Reply (R)">
+                    class="hover-primary transition-colors" title="Reply (R)">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
@@ -441,7 +463,7 @@
             </button>
             <!-- Forward -->
             <button @click="store.activeThread && forward(store.messages[store.messages.length - 1])"
-                    class="hover:text-white transition-colors" title="Forward">
+                    class="hover-primary transition-colors" title="Forward">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/>
@@ -457,8 +479,8 @@
               </svg>
             </span>
             <input type="text" placeholder="Search in conversation"
-                   class="w-full bg-black/20 border border-divider text-white text-xs rounded-md
-                          pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-tertiary"/>
+                   class="w-full bg-input border border-divider text-primary text-xs rounded-md
+                          pl-8 pr-3 py-1.5 focus:outline-none focus:border-blue-500 placeholder-themed"/>
           </div>
         </div>
 
@@ -484,12 +506,12 @@
 
                 <div class="flex items-start justify-between mb-7">
                   <div class="flex items-center space-x-3 min-w-0">
-                    <h1 class="text-2xl font-bold text-white truncate"
+                    <h1 class="text-2xl font-bold text-primary truncate"
                         x-text="store.activeThread.subject || '(no subject)'"></h1>
-                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white/10 text-secondary flex-shrink-0">Inbox</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-subtle text-secondary flex-shrink-0">Inbox</span>
                   </div>
                   <button @click="reply(store.messages[store.messages.length - 1])"
-                          class="text-secondary hover:text-white flex-shrink-0 ml-4 transition-colors" title="Reply">
+                          class="text-secondary hover-primary flex-shrink-0 ml-4 transition-colors" title="Reply">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
                     </svg>
@@ -501,14 +523,14 @@
 
                     <template x-if="!isExpanded(msg.id)">
                       <div @click="toggle(msg)"
-                           class="flex items-center justify-between py-2 px-1 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
+                           class="flex items-center justify-between py-2 px-1 rounded-lg cursor-pointer hover-bg transition-colors">
                         <div class="flex items-center space-x-3 min-w-0">
                           <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-semibold flex-shrink-0"
                                :style="'background-color:' + avatarColor(msg.from || '')">
                             <span x-text="initials(msg.from || '')"></span>
                           </div>
                           <div class="min-w-0">
-                            <span class="text-sm font-medium text-white truncate block" x-text="msg.from || 'Unknown'"></span>
+                            <span class="text-sm font-medium text-primary truncate block" x-text="msg.from || 'Unknown'"></span>
                             <span class="text-xs text-secondary truncate block" x-text="msg.snippet"></span>
                           </div>
                         </div>
@@ -530,17 +552,17 @@
                               <span x-text="initials(msg.from || '')"></span>
                             </div>
                             <div class="min-w-0">
-                              <span class="font-bold text-white text-sm block" x-text="msg.from || 'Unknown'"></span>
-                              <div class="text-xs text-secondary mt-0.5">To: <span class="text-white" x-text="msg.to || ''"></span></div>
+                              <span class="font-bold text-primary text-sm block" x-text="msg.from || 'Unknown'"></span>
+                              <div class="text-xs text-secondary mt-0.5">To: <span class="text-primary" x-text="msg.to || ''"></span></div>
                             </div>
                           </div>
                           <div class="flex items-center space-x-3 text-secondary ml-4 flex-shrink-0">
                             <span class="text-xs" x-text="formatDate(msg.date)"></span>
                             <div class="flex space-x-1">
-                              <button @click.stop="toggle(msg)" class="hover:text-white p-1 rounded transition-colors" title="Collapse">
+                              <button @click.stop="toggle(msg)" class="hover-primary p-1 rounded transition-colors" title="Collapse">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
                               </button>
-                              <button @click.stop="reply(msg)" class="hover:text-white p-1 rounded transition-colors" title="Reply">
+                              <button @click.stop="reply(msg)" class="hover-primary p-1 rounded transition-colors" title="Reply">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/></svg>
                               </button>
                             </div>
@@ -550,13 +572,13 @@
                         <div style="margin-left:3.25rem">
                           <template x-if="!msg.body"><p class="text-tertiary text-xs italic">Loading…</p></template>
                           <template x-if="msg.body && !msg.body.trim().startsWith('<')">
-                            <pre class="text-white text-sm whitespace-pre-wrap font-sans leading-relaxed message-body" x-text="msg.body"></pre>
+                            <pre class="text-primary text-sm whitespace-pre-wrap font-sans leading-relaxed message-body" x-text="msg.body"></pre>
                           </template>
                           <template x-if="msg.body && msg.body.trim().startsWith('<')">
-                            <div class="text-white text-sm message-body" x-html="msg.body"></div>
+                            <div class="text-primary text-sm message-body" x-html="msg.body"></div>
                           </template>
                           <template x-if="msg.hasAttachments">
-                            <div class="mt-3 inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+                            <div class="mt-3 inline-flex items-center bg-subtle rounded px-2 py-1 text-xs text-primary">
                               <svg class="w-3 h-3 mr-1.5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"/>
                               </svg>
@@ -575,7 +597,7 @@
                   <div class="mt-6">
                     <button @click="reply(store.messages[store.messages.length - 1])"
                             class="w-full text-left border border-divider rounded-lg px-4 py-3
-                                   hover:bg-white/5 text-secondary text-sm transition-colors cursor-text">
+                                   hover-bg text-secondary text-sm transition-colors cursor-text">
                       Reply…
                     </button>
                   </div>
@@ -595,16 +617,16 @@
                 <div class="flex items-center space-x-2 min-w-0 flex-1 mr-3">
                   <span class="text-blue-400 text-xs font-semibold flex-shrink-0 uppercase tracking-wide"
                         x-text="store.composeMode === 'forward' ? 'Fwd' : 'Re'"></span>
-                  <span class="text-divider flex-shrink-0">·</span>
+                  <span class="text-secondary flex-shrink-0">·</span>
                   <input type="text" x-model="data.to" placeholder="To"
-                         class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary min-w-0"/>
+                         class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed min-w-0"/>
                   <template x-if="store.composeMode === 'forward'">
                     <input type="text" x-model="data.subject" placeholder="Subject"
-                           class="w-48 bg-transparent text-secondary text-xs focus:outline-none placeholder-tertiary flex-shrink-0"/>
+                           class="w-48 bg-transparent text-secondary text-xs focus:outline-none placeholder-themed flex-shrink-0"/>
                   </template>
                 </div>
                 <button @click="store.closeCompose()"
-                        class="text-secondary hover:text-white transition-colors flex-shrink-0" title="Discard (Esc)">
+                        class="text-secondary hover-primary transition-colors flex-shrink-0" title="Discard (Esc)">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
@@ -617,18 +639,18 @@
                 <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
                 <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
                 <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
-                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <div class="w-px h-4 toolbar-sep mx-1"></div>
                 <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/></svg>
                 </button>
                 <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
                 </button>
-                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <div class="w-px h-4 toolbar-sep mx-1"></div>
                 <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
                 </button>
-                <div class="w-px h-4 bg-white/10 mx-1"></div>
+                <div class="w-px h-4 toolbar-sep mx-1"></div>
                 <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/></svg>
                 </button>
@@ -639,7 +661,7 @@
                 <div contenteditable="true" x-ref="editor"
                      @input="store.composeData.body = $el.innerHTML"
                      data-placeholder="Write your reply…"
-                     class="compose-editor text-white text-sm leading-relaxed"></div>
+                     class="compose-editor text-primary text-sm leading-relaxed"></div>
               </div>
 
               <!-- Footer -->

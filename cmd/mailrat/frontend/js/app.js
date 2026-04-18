@@ -130,7 +130,16 @@ document.addEventListener('alpine:init', () => {
     sending: false,
     sendError: null,
 
+    // Theme
+    theme: localStorage.getItem('mailrat-theme') || 'dark',
+    toggleTheme() {
+      this.theme = this.theme === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('mailrat-theme', this.theme);
+      document.documentElement.setAttribute('data-theme', this.theme);
+    },
+
     async init() {
+      document.documentElement.setAttribute('data-theme', this.theme);
       await this.loadAccounts();
       await this.loadInbox();
 
