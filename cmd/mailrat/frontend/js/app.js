@@ -380,15 +380,15 @@ document.addEventListener('alpine:init', () => {
     avatarColor,
     get store() { return Alpine.store('mail'); },
 
-    // Gmail system star label ID → display character + Tailwind colour class.
+    // Gmail system star label ID → SVG icon ID + Tailwind colour class.
     // All starred messages carry STARRED; coloured stars add a second label ID.
     _STAR_LABELS: {
-      'YELLOW_STAR':   { char: '★', cls: 'text-yellow-400' },
-      'BLUE_STAR':     { char: '★', cls: 'text-blue-400'   },
-      'RED_CIRCLE':    { char: '●', cls: 'text-red-500'    },
-      'ORANGE_CIRCLE': { char: '●', cls: 'text-orange-400' },
-      'GREEN_CIRCLE':  { char: '●', cls: 'text-green-500'  },
-      'PURPLE_CIRCLE': { char: '●', cls: 'text-purple-500' },
+      'YELLOW_STAR':   { icon: 'icon-star-filled',    cls: 'text-yellow-400' },
+      'BLUE_STAR':     { icon: 'icon-star-filled',    cls: 'text-blue-400'   },
+      'RED_CIRCLE':    { icon: 'icon-star-bang',      cls: 'text-red-500'    },
+      'ORANGE_CIRCLE': { icon: 'icon-star-guillemet', cls: 'text-orange-400' },
+      'GREEN_CIRCLE':  { icon: 'icon-star-check',     cls: 'text-green-500'  },
+      'PURPLE_CIRCLE': { icon: 'icon-star-question',  cls: 'text-purple-500' },
     },
 
     labelName(id) {
