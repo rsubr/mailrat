@@ -11,7 +11,7 @@
   --c-border:       #38383a;
   --c-active:       #38383a;
   --c-hover:        rgba(255,255,255,0.05);
-  --c-input-bg:     rgba(0,0,0,0.20);
+  --c-input-bg:     #3a3a3c;
   --c-subtle:       rgba(255,255,255,0.10);
   --c-toolbar-sep:  rgba(255,255,255,0.10);
   --c-scrollbar:    #4a4a4a;
@@ -20,6 +20,8 @@
   --c-blockquote:   #38383a;
   --c-quote-line:   #4a4a4a;
   --c-link:         #409cff;
+  --bg-email-html:  #f0f0f0;
+  --c-email-html:   #000000;
 }
 
 [data-theme="light"] {
@@ -42,6 +44,8 @@
   --c-blockquote:   #d1d1d6;
   --c-quote-line:   #c7c7cc;
   --c-link:         #0071e3;
+  --bg-email-html:  unset;
+  --c-email-html:   unset;
 }
 
 /* ── Base ───────────────────────────────────────────────────────────────────── */
@@ -106,6 +110,12 @@ input.bg-input {
 
 /* ── Message body HTML content ──────────────────────────────────────────────── */
 .message-body { line-height: 1.6; }
+.message-body-html {
+  background-color: var(--bg-email-html);
+  color: var(--c-email-html);
+  padding: 12px 16px;
+  border-radius: 4px;
+}
 .message-body a { color: var(--c-link); text-decoration: underline; }
 .message-body p { margin-bottom: 0.75em; }
 .message-body blockquote {
