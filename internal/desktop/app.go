@@ -172,7 +172,7 @@ func (a *App) SearchInbox(query string, limit int) ([]ThreadItem, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	summaries, err := a.store.SearchAllThreadSummaries(query, limit)
+	summaries, err := a.store.LocalSearchThreadSummaries(query, limit)
 	if err != nil {
 		return nil, err
 	}

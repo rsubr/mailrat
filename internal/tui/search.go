@@ -72,7 +72,7 @@ func (m model) renderSearch() string {
 		if query != "" && !m.search.inputFocused {
 			sb.WriteString(dimStyle.Render("  No results for \"" + query + "\"."))
 		} else {
-			sb.WriteString(dimStyle.Render("  Type a query and press Enter to search."))
+			sb.WriteString(dimStyle.Render("  Type terms and press Enter to search (space-separated terms ranked by match count)."))
 		}
 		return sb.String()
 	}

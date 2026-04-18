@@ -108,20 +108,99 @@ func (s *Store) ListAllThreadSummaries(limit, offset int) ([]ThreadSummary, erro
 	return scanThreadSummaries(rows)
 }
 
-// SearchAllThreadSummaries searches threads across all accounts by subject, snippet, or sender.
-func (s *Store) SearchAllThreadSummaries(query string, limit int) ([]ThreadSummary, error) {
-	like := "%" + query + "%"
-	rows, err := s.db.Query(
-		threadSummarySQL+
-			`WHERE (LOWER(m.subject) LIKE LOWER(?) OR LOWER(m.snippet) LIKE LOWER(?) OR LOWER(m.from_addr) LIKE LOWER(?)) `+
-			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
-		like, like, like, limit,
-	)
+// LocalSearchThreadSummaries searches threads locally across all accounts.
+// It splits rawQuery into whitespace-delimited terms and searches subject,
+// body, from/to/cc/bcc addresses, and attachment filenames. Results are
+// ordered by the number of terms matched (descending), then by date.
+func (s *Store) LocalSearchThreadSummaries(rawQuery string, limit int) ([]ThreadSummary, error) {
+	terms := splitSearchTerms(rawQuery)
+	if len(terms) == 0 {
+		return nil, nil
+	}
+
+	// Build one CASE WHEN column per term in the msg_scores CTE.
+	var cteArgs []any
+	var termCols []string
+	var termExprs []string
+	var maxExprs []string
+
+	for i, term := range terms {
+		like := "%" + strings.ToLower(term) + "%"
+		col := fmt.Sprintf("t%d", i)
+		termCols = append(termCols, col)
+		maxExprs = append(maxExprs, "MAX("+col+")")
+		termExprs = append(termExprs, fmt.Sprintf(
+			`CASE WHEN (LOWER(m2.subject) LIKE ? OR LOWER(m2.body) LIKE ?
+			       OR LOWER(m2.from_addr) LIKE ? OR LOWER(m2.to_addr) LIKE ?
+			       OR LOWER(m2.cc_addr) LIKE ? OR LOWER(m2.bcc_addr) LIKE ?
+			       OR EXISTS (SELECT 1 FROM attachments ax
+			                  WHERE ax.message_id = m2.id AND ax.account_id = m2.account_id
+			                  AND LOWER(ax.name) LIKE ?))
+			      THEN 1 ELSE 0 END AS %s`, col,
+		))
+		cteArgs = append(cteArgs, like, like, like, like, like, like, like)
+	}
+
+	cte := fmt.Sprintf(`
+WITH msg_scores AS (
+    SELECT m2.thread_id, m2.account_id,
+        %s
+    FROM messages m2
+),
+ranked AS (
+    SELECT thread_id, account_id, %s AS score
+    FROM msg_scores
+    GROUP BY thread_id, account_id
+    HAVING score > 0
+)
+`, strings.Join(termExprs, ",\n        "), strings.Join(maxExprs, " + "))
+
+	mainSQL := `
+SELECT
+    m.thread_id,
+    m.account_id,
+    COUNT(*) AS message_count,
+    SUM(m.is_unread) AS unread_count,
+    MAX(m.internal_date) AS last_date,
+    MAX(m.has_attachments) AS has_attachments,
+    GROUP_CONCAT(DISTINCT m.from_addr) AS participants,
+    (SELECT subject FROM messages m3
+     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
+     ORDER BY m3.internal_date DESC LIMIT 1) AS subject,
+    (SELECT snippet FROM messages m3
+     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
+     ORDER BY m3.internal_date DESC LIMIT 1) AS snippet,
+    (SELECT GROUP_CONCAT(DISTINCT ml.label_id)
+     FROM message_labels ml
+     JOIN messages m3 ON m3.id = ml.message_id AND m3.account_id = ml.account_id
+     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id) AS label_ids,
+    (SELECT COUNT(*) FROM message_labels ml
+     JOIN messages m3 ON m3.id = ml.message_id AND m3.account_id = ml.account_id
+     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
+       AND ml.label_id = 'STARRED') AS is_starred
+FROM messages m
+JOIN ranked ON ranked.thread_id = m.thread_id AND ranked.account_id = m.account_id
+GROUP BY m.thread_id, m.account_id
+ORDER BY MAX(ranked.score) DESC, last_date DESC
+LIMIT ?`
+
+	args := append(cteArgs, limit)
+	rows, err := s.db.Query(cte+mainSQL, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	return scanThreadSummaries(rows)
+}
+
+func splitSearchTerms(query string) []string {
+	var terms []string
+	for _, t := range strings.Fields(query) {
+		if t != "" {
+			terms = append(terms, t)
+		}
+	}
+	return terms
 }
 
 // ListThreadSummaries returns inbox threads for a single account, newest first.

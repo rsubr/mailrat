@@ -122,7 +122,7 @@ func removeLocalLabel(store *storage.Store, acctID, msgID, labelID string) error
 
 func searchThreadsCmd(store *storage.Store, query string) tea.Cmd {
 	return func() tea.Msg {
-		results, err := store.SearchAllThreadSummaries(query, 100)
+		results, err := store.LocalSearchThreadSummaries(query, 200)
 		return msgSearchLoaded{results: results, err: err}
 	}
 }
