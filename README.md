@@ -22,6 +22,12 @@ All interfaces ship as a single binary:
 - **Full Gmail label support** — system and user-defined labels
 - **Contacts** — sync, search, create, edit, and delete Google contacts
 - **No IMAP** — uses the Gmail API directly for reliable sync via `historyId`
+- **Rich text compose** — Gmail-style editor with bold, italic, underline, strikethrough, bullet/numbered lists, and hyperlinks; HTML emails sent as `multipart/alternative` with plain-text fallback
+- **Reply/forward with quoted original** — Gmail-style attribution (`On Mon, Jan 2, 2026 at 3:04 PM, sender wrote:`) with blockquote
+- **Reply threading** — RFC 2822 `In-Reply-To` and `References` headers so replies thread correctly in Gmail
+- **Inline compose** — reply and forward open at the bottom of the thread (new mail takes over the reading pane), no modal
+- **Auto mark-as-read** — threads are marked read automatically after 5 seconds of viewing
+- **Trash and mark-as-unread** — one-click delete (moves to Trash) and mark-as-unread from the toolbar
 
 ---
 
@@ -78,6 +84,15 @@ mailrat
 ```
 
 Launches the Wails desktop app — a native window running the Alpine.js + Tailwind CSS SPA. No separate build step or npm required; the frontend is embedded in the binary.
+
+#### Compose shortcuts
+
+| Shortcut | Action |
+|---|---|
+| `C` (toolbar) | New message (takes over reading pane) |
+| `Reply` / `Forward` (toolbar) | Inline compose at bottom of thread |
+| `Ctrl+Enter` / `⌘+Enter` | Send |
+| `Esc` | Discard compose |
 
 ---
 
@@ -153,8 +168,13 @@ Open `http://<host>:<port>` in any browser. The same UI that runs in the desktop
 | `GET` | `/api/message?accountId=&messageId=` | Single message (lazy body fetch) |
 | `POST` | `/api/send` | Send a message (JSON body) |
 | `POST` | `/api/sync?accountId=` | Run incremental sync |
+| `POST` | `/api/trash?accountId=&threadId=` | Move thread to Trash |
+| `POST` | `/api/mark-read?accountId=&messageId=` | Mark message as read |
+| `POST` | `/api/mark-unread?accountId=&messageId=` | Mark message as unread |
 | `GET` | `/api/labels?accountId=` | Gmail labels |
 | `GET` | `/api/events` | SSE stream — `sync:progress`, `sync:complete`, `inbox:updated` |
+
+> **Note:** `/api/trash`, `/api/mark-read`, and `/api/mark-unread` are wired in the desktop app (Wails) but not yet implemented in the HTTP web server — they will silently no-op in `mailrat web` mode.
 
 ---
 
