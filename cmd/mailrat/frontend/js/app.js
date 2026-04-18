@@ -380,6 +380,50 @@ document.addEventListener('alpine:init', () => {
     avatarColor,
     get store() { return Alpine.store('mail'); },
 
+    // Gmail star label name → display character + Tailwind colour class
+    _STAR_LABELS: {
+      'yellow star':      { char: '★', cls: 'text-yellow-400' },
+      'red star':         { char: '★', cls: 'text-red-500'   },
+      'orange star':      { char: '★', cls: 'text-orange-400' },
+      'green star':       { char: '★', cls: 'text-green-500' },
+      'blue star':        { char: '★', cls: 'text-blue-400'  },
+      'purple star':      { char: '★', cls: 'text-purple-500' },
+      'red-bang':         { char: '!', cls: 'font-bold text-red-500'   },
+      'orange guillemet': { char: '»', cls: 'font-bold text-orange-400' },
+      'green check':      { char: '✓', cls: 'font-bold text-green-500' },
+      'blue info':        { char: 'ℹ', cls: 'text-blue-400'  },
+      'purple question':  { char: '?', cls: 'font-bold text-purple-500' },
+    },
+
+    labelName(id) {
+      const found = this.store.labels.find(l => l.id === id);
+      return found ? found.name : id;
+    },
+
+    // Returns {char, cls} for the thread's star type, or null if not starred.
+    starInfo(thread) {
+      for (const id of (thread.labelIds || [])) {
+        if (id === 'STARRED') continue;
+        const lbl = this.store.labels.find(l => l.id === id);
+        if (!lbl) continue;
+        const match = this._STAR_LABELS[lbl.name.toLowerCase()];
+        if (match) return match;
+      }
+      if (thread.isStarred) return this._STAR_LABELS['yellow star'];
+      return null;
+    },
+
+    // Returns user-created label IDs that should appear as chips (max 2).
+    // Hides all system labels and star-type user labels.
+    visibleLabels(thread) {
+      const starNames = new Set(Object.keys(this._STAR_LABELS));
+      return (thread.labelIds || []).filter(id => {
+        const lbl = this.store.labels.find(l => l.id === id);
+        if (!lbl || lbl.type !== 'user') return false;
+        return !starNames.has(lbl.name.toLowerCase());
+      }).slice(0, 2);
+    },
+
     isActive(thread) {
       return this.store.activeThread?.id === thread.id &&
              this.store.activeThread?.accountId === thread.accountId;

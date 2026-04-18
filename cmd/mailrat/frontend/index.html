@@ -310,9 +310,11 @@
                   <template x-if="thread.isUnread">
                     <span class="unread-dot flex-shrink-0"></span>
                   </template>
-                  <!-- Star indicator -->
-                  <template x-if="thread.isStarred">
-                    <svg class="w-3 h-3 flex-shrink-0 text-yellow-400"><use href="#icon-star-filled"/></svg>
+                  <!-- Star indicator: character + colour from starInfo() -->
+                  <template x-if="starInfo(thread)">
+                    <span class="flex-shrink-0 text-xs leading-none"
+                          :class="starInfo(thread).cls"
+                          x-text="starInfo(thread).char"></span>
                   </template>
                   <h3 class="truncate text-sm font-medium text-primary"
                       x-text="thread.participants || thread.accountId"></h3>
@@ -328,16 +330,15 @@
               <p :class="thread.isUnread ? 'font-semibold text-primary' : 'text-secondary'"
                  class="text-xs truncate mb-0.5" x-text="thread.subject || '(no subject)'"></p>
 
-              <!-- Row 3: snippet -->
-              <p class="text-secondary text-xs truncate mb-0.5" x-text="thread.snippet"></p>
-
-              <!-- Row 4: label chips + attachment icon -->
-              <div class="flex items-center gap-1 flex-wrap">
-                <template x-for="lid in (thread.labelIds || []).filter(l => !['INBOX','UNREAD','IMPORTANT','CATEGORY_PERSONAL','CATEGORY_SOCIAL','CATEGORY_PROMOTIONS','CATEGORY_UPDATES','CATEGORY_FORUMS'].includes(l))" :key="lid">
-                  <span class="text-xs px-1.5 py-0.5 rounded bg-subtle text-tertiary leading-none" x-text="lid.replace(/^CATEGORY_/,'').toLowerCase()"></span>
+              <!-- Row 3: snippet + label chips + attachment icon (same line) -->
+              <div class="flex items-center gap-1 min-w-0">
+                <p class="text-secondary text-xs truncate flex-1 min-w-0" x-text="thread.snippet"></p>
+                <template x-for="lid in visibleLabels(thread)" :key="lid">
+                  <span class="text-xs px-1.5 py-0.5 rounded bg-subtle text-tertiary leading-none flex-shrink-0"
+                        x-text="labelName(lid)"></span>
                 </template>
                 <template x-if="thread.hasAttachments">
-                  <svg class="w-3 h-3 text-tertiary flex-shrink-0 ml-auto"><use href="#icon-attachment"/></svg>
+                  <svg class="w-3 h-3 text-tertiary flex-shrink-0"><use href="#icon-attachment"/></svg>
                 </template>
               </div>
 
