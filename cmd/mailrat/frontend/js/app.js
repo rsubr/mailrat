@@ -320,17 +320,8 @@ document.addEventListener('alpine:init', () => {
     // Fallback names when labels haven't loaded yet
     LABEL_NAMES: { INBOX: 'Inbox', STARRED: 'Starred', SENT: 'Sent', DRAFT: 'Drafts',
                    IMPORTANT: 'Important', SPAM: 'Spam', TRASH: 'Trash' },
-    // SVG path data keyed by label ID
-    ICON_PATHS: {
-      INBOX:     'M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4',
-      STARRED:   'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
-      SENT:      'M12 19l9 2-9-18-9 18 9-2zm0 0v-8',
-      DRAFT:     'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z',
-      IMPORTANT: 'M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z',
-      SPAM:      'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
-      TRASH:     'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16',
-    },
-    USER_ICON:   'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z',
+    // Known system label IDs that have dedicated icons in the sprite
+    ICON_IDS: new Set(['INBOX','STARRED','SENT','DRAFT','IMPORTANT','SPAM','TRASH','ALL_MAIL','SNOOZED']),
 
     get store() { return Alpine.store('mail'); },
 
@@ -352,7 +343,7 @@ document.addEventListener('alpine:init', () => {
       return this.moreSystemLabels.length > 0 || this.userLabels.length > 0;
     },
 
-    iconPath(id)       { return this.ICON_PATHS[id] || this.USER_ICON; },
+    iconKey(id)        { return this.ICON_IDS.has(id) ? id : '_tag'; },
     isActiveLabel(id)  { return this.store.activeLabel === id; },
     selectLabel(id)    { this.store.activeLabel = id; if (id === 'INBOX') this.store.loadInbox(); },
 
