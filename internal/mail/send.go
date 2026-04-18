@@ -34,6 +34,12 @@ func buildRaw(msg OutboundMessage) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("From: %s\r\n", msg.From))
 	b.WriteString(fmt.Sprintf("To: %s\r\n", msg.To))
+	if msg.Cc != "" {
+		b.WriteString(fmt.Sprintf("Cc: %s\r\n", msg.Cc))
+	}
+	if msg.Bcc != "" {
+		b.WriteString(fmt.Sprintf("Bcc: %s\r\n", msg.Bcc))
+	}
 	b.WriteString(fmt.Sprintf("Subject: %s\r\n", msg.Subject))
 	if msg.InReplyTo != "" {
 		b.WriteString(fmt.Sprintf("In-Reply-To: %s\r\n", msg.InReplyTo))

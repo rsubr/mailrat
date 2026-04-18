@@ -127,7 +127,9 @@ document.addEventListener('alpine:init', () => {
     // Compose
     composing: false,
     composeMode: 'new',
-    composeData: { accountId: '', to: '', subject: '', body: '', inReplyTo: '', threadId: '' },
+    composeData: { accountId: '', to: '', cc: '', bcc: '', subject: '', body: '', inReplyTo: '', threadId: '' },
+    showCc: false,
+    showBcc: false,
     sending: false,
     sendError: null,
 
@@ -288,12 +290,29 @@ document.addEventListener('alpine:init', () => {
     openCompose(mode = 'new', replyTo = null) {
       this.composeMode = mode;
       this.sendError = null;
+      this.showCc = false;
+      this.showBcc = false;
       const defaultAccountId = this.accounts.length > 0 ? this.accounts[0].id : '';
       if (mode === 'reply' && replyTo) {
         const subj = replyTo.subject || '';
         this.composeData = {
           accountId: replyTo.accountId || defaultAccountId,
           to:        replyTo.from || '',
+          cc:        '',
+          bcc:       '',
+          subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
+          body:      buildQuote(replyTo),
+          inReplyTo: replyTo.id || '',
+          threadId:  replyTo.threadId,
+        };
+      } else if (mode === 'reply-all' && replyTo) {
+        const subj = replyTo.subject || '';
+        this.showCc = true;
+        this.composeData = {
+          accountId: replyTo.accountId || defaultAccountId,
+          to:        replyTo.from || '',
+          cc:        replyTo.to || '',
+          bcc:       '',
           subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
           body:      buildQuote(replyTo),
           inReplyTo: replyTo.id || '',
@@ -304,18 +323,20 @@ document.addEventListener('alpine:init', () => {
         this.composeData = {
           accountId: replyTo.accountId || defaultAccountId,
           to:        '',
+          cc:        '',
+          bcc:       '',
           subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
           body:      buildQuote(replyTo),
           inReplyTo: '',
           threadId:  '',
         };
       } else {
-        this.composeData = { accountId: defaultAccountId, to: '', subject: '', body: '', inReplyTo: '', threadId: '' };
+        this.composeData = { accountId: defaultAccountId, to: '', cc: '', bcc: '', subject: '', body: '', inReplyTo: '', threadId: '' };
       }
       this.composing = true;
     },
 
-    closeCompose() { this.composing = false; this.sendError = null; },
+    closeCompose() { this.composing = false; this.sendError = null; this.showCc = false; this.showBcc = false; },
 
     async sendCompose() {
       if (this.sending) return;
@@ -461,8 +482,9 @@ document.addEventListener('alpine:init', () => {
 
     isExpanded(id) { return this.expanded.includes(id); },
 
-    reply(msg)   { this.store.openCompose('reply', msg); },
-    forward(msg) { this.store.openCompose('forward', msg); },
+    reply(msg)      { this.store.openCompose('reply', msg); },
+    replyAll(msg)   { this.store.openCompose('reply-all', msg); },
+    forward(msg)    { this.store.openCompose('forward', msg); },
 
     // Called by x-init on compose container when it's inserted into DOM
     initEditor() {
@@ -502,8 +524,10 @@ document.addEventListener('alpine:init', () => {
 
     handleKeydown(e) {
       if (!this.store.composing) return;
-      if (e.key === 'Escape') { e.preventDefault(); this.store.closeCompose(); }
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.syncAndSend(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.store.closeCompose(); return; }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); this.syncAndSend(); return; }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'C') { e.preventDefault(); this.store.showCc = !this.store.showCc; return; }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'B') { e.preventDefault(); this.store.showBcc = !this.store.showBcc; return; }
     },
   }));
 });

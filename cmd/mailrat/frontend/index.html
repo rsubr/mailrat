@@ -411,6 +411,26 @@
           <span class="text-secondary text-xs w-16 flex-shrink-0">To</span>
           <input type="text" x-model="data.to" placeholder="Recipients"
                  class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+          <div class="flex items-center space-x-2 ml-2 flex-shrink-0">
+            <button @click="store.showCc = !store.showCc"
+                    :class="store.showCc ? 'text-blue-400' : 'text-tertiary hover-primary'"
+                    class="text-xs transition-colors" title="CC (⌘⇧C)">Cc</button>
+            <button @click="store.showBcc = !store.showBcc"
+                    :class="store.showBcc ? 'text-blue-400' : 'text-tertiary hover-primary'"
+                    class="text-xs transition-colors" title="BCC (⌘⇧B)">Bcc</button>
+          </div>
+        </div>
+
+        <div x-show="store.showCc" class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
+          <span class="text-secondary text-xs w-16 flex-shrink-0">Cc</span>
+          <input type="text" x-model="data.cc" placeholder="CC recipients"
+                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+        </div>
+
+        <div x-show="store.showBcc" class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
+          <span class="text-secondary text-xs w-16 flex-shrink-0">Bcc</span>
+          <input type="text" x-model="data.bcc" placeholder="BCC recipients"
+                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
         </div>
 
         <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
@@ -505,6 +525,14 @@
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                       d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"/>
+              </svg>
+            </button>
+            <!-- Reply All -->
+            <button @click="store.activeThread && replyAll(store.messages[store.messages.length - 1])"
+                    class="hover-primary transition-colors" title="Reply All">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6M7 10h3"/>
               </svg>
             </button>
             <!-- Forward -->
@@ -621,7 +649,7 @@
                             <pre class="text-primary text-sm whitespace-pre-wrap font-sans leading-relaxed message-body" x-text="msg.body"></pre>
                           </template>
                           <template x-if="msg.body && msg.body.trim().startsWith('<')">
-                            <div class="text-primary text-sm message-body" x-html="msg.body"></div>
+                            <div class="text-sm message-body message-body-html" x-html="msg.body"></div>
                           </template>
                           <template x-if="msg.hasAttachments">
                             <div class="mt-3 inline-flex items-center bg-subtle rounded px-2 py-1 text-xs text-primary">
@@ -670,6 +698,14 @@
                     <input type="text" x-model="data.subject" placeholder="Subject"
                            class="w-48 bg-transparent text-secondary text-xs focus:outline-none placeholder-themed flex-shrink-0"/>
                   </template>
+                  <div class="flex items-center space-x-2 flex-shrink-0">
+                    <button @click="store.showCc = !store.showCc"
+                            :class="store.showCc ? 'text-blue-400' : 'text-tertiary hover-primary'"
+                            class="text-xs transition-colors" title="CC (⌘⇧C)">Cc</button>
+                    <button @click="store.showBcc = !store.showBcc"
+                            :class="store.showBcc ? 'text-blue-400' : 'text-tertiary hover-primary'"
+                            class="text-xs transition-colors" title="BCC (⌘⇧B)">Bcc</button>
+                  </div>
                 </div>
                 <button @click="store.closeCompose()"
                         class="text-secondary hover-primary transition-colors flex-shrink-0" title="Discard (Esc)">
@@ -677,6 +713,20 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                   </svg>
                 </button>
+              </div>
+
+              <!-- CC row -->
+              <div x-show="store.showCc" class="px-5 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
+                <span class="text-secondary text-xs w-8 flex-shrink-0">Cc</span>
+                <input type="text" x-model="data.cc" placeholder="CC recipients"
+                       class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+              </div>
+
+              <!-- BCC row -->
+              <div x-show="store.showBcc" class="px-5 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
+                <span class="text-secondary text-xs w-8 flex-shrink-0">Bcc</span>
+                <input type="text" x-model="data.bcc" placeholder="BCC recipients"
+                       class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
               </div>
 
               <!-- Formatting toolbar -->

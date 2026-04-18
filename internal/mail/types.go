@@ -4,6 +4,8 @@ package mail
 type OutboundMessage struct {
 	From    string
 	To      string
+	Cc      string
+	Bcc     string
 	Subject string
 	Body    string
 	// InReplyTo is the Message-ID header value when replying.

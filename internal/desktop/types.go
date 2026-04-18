@@ -50,6 +50,8 @@ type LabelItem struct {
 type OutboundMsg struct {
 	AccountID string `json:"accountId"`
 	To        string `json:"to"`
+	Cc        string `json:"cc"`
+	Bcc       string `json:"bcc"`
 	Subject   string `json:"subject"`
 	Body      string `json:"body"`
 	InReplyTo string `json:"inReplyTo"`

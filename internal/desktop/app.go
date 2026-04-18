@@ -240,6 +240,8 @@ func (a *App) SendMessage(msg OutboundMsg) error {
 	_, err = svc.Send(a.ctx, mail.OutboundMessage{
 		From:      acc.Email,
 		To:        msg.To,
+		Cc:        msg.Cc,
+		Bcc:       msg.Bcc,
 		Subject:   msg.Subject,
 		Body:      msg.Body,
 		InReplyTo: msg.InReplyTo,
