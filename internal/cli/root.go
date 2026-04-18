@@ -1,23 +1,17 @@
 package cli
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
-var rootCmd = newRootCmd()
-
-func newRootCmd() *cobra.Command {
+// NewRootCmd returns the mailrat root command with all CLI subcommands attached.
+// rootRunE is called when mailrat is invoked with no subcommand (nil = show help).
+func NewRootCmd(rootRunE func(*cobra.Command, []string) error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "mailrat",
 		Short: "A native Gmail client",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return launchTUI()
-		},
+		RunE:  rootRunE,
 	}
-
 	cmd.AddCommand(
 		newAccountsCmd(),
 		newContactsCmd(),
@@ -27,13 +21,5 @@ func newRootCmd() *cobra.Command {
 		newSendCmd(),
 		newSyncCmd(),
 	)
-
 	return cmd
-}
-
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }

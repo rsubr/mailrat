@@ -2,10 +2,10 @@
   "$schema": "https://wails.io/schemas/config.v2.json",
   "name": "mailrat",
   "outputfilename": "mailrat",
-  "frontend:dir": "cmd/desktop/frontend",
+  "frontend:dir": "cmd/mailrat/frontend",
   "frontend:install": "",
   "frontend:build": "",
-  "frontend:devPath": "cmd/desktop/frontend",
+  "frontend:devPath": "cmd/mailrat/frontend",
   "wailsjsdir": "",
   "version": "2",
   "info": {

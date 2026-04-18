@@ -2,11 +2,14 @@
 
 A native Gmail desktop client built with Go. Backend-driven architecture: Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
 
-Three interfaces share the same backend:
+All interfaces ship as a single binary:
 
-- **CLI** — headless mail engine for scripting and backend testing
-- **TUI** — full-featured terminal UI built with Bubbletea
-- **Desktop / Web** — Wails desktop app or browser-accessible HTTP server
+| Invocation | Interface |
+|---|---|
+| `mailrat` | Desktop app (Wails WebView) |
+| `mailrat tui` | Terminal UI (Bubbletea) |
+| `mailrat web` | HTTP server for remote browser access |
+| `mailrat <command>` | CLI (accounts, sync, inbox, send, …) |
 
 ---
 
@@ -38,7 +41,13 @@ Place `credentials.json` in `~/.mailrat/credentials.json` before running any com
 ```bash
 git clone https://github.com/mailrat/mailrat.git
 cd mailrat
-go build ./...
+go build -o mailrat ./cmd/mailrat
+```
+
+Or run directly without installing:
+
+```bash
+go run ./cmd/mailrat <command>
 ```
 
 ---
@@ -47,48 +56,35 @@ go build ./...
 
 ```bash
 # 1. Add a Gmail account (opens browser OAuth flow)
-go run ./cmd/cli accounts add
+mailrat accounts add
 
 # 2. Sync the last 30 days
-go run ./cmd/cli sync --days=30
+mailrat sync --days=30
 
-# 3. Pick an interface
-go run ./cmd/cli tui          # terminal UI
-go run ./cmd/webserver        # open http://localhost:8080 in a browser
+# 3. Pick an interface — or run without args for the desktop app
+mailrat tui          # terminal UI
+mailrat web          # open http://localhost:8080 in a browser
+mailrat              # desktop app (Wails WebView)
 ```
 
 ---
 
 ## Interfaces
 
-### CLI
+### Desktop app (default)
 
 ```bash
-go run ./cmd/cli <command>
+mailrat
 ```
 
-| Command | Description |
-|---|---|
-| `accounts add` | OAuth flow to add a Gmail account |
-| `accounts list` | List connected accounts |
-| `accounts remove <id\|email>` | Remove an account and its local data |
-| `sync [--days=N] [--account=id]` | Sync mail (initial or incremental) |
-| `inbox list [--label=L] [--limit=N] [--account=id]` | Print unified inbox |
-| `message read <id> [--account=id]` | Print a message body |
-| `send [--to=] [--subject=] [--body=] [--account=id]` | Send an email |
-| `labels list [--account=id]` | List Gmail labels |
-| `contacts list [--sync] [--search=q]` | List / search contacts |
-| `contacts add [--name=] [--email=]` | Add a contact |
-| `contacts edit <id>` | Edit a contact |
-| `contacts delete <id> [--force]` | Delete a contact |
-| `tui` | Launch the terminal UI |
+Launches the Wails desktop app — a native window running the Alpine.js + Tailwind CSS SPA. No separate build step or npm required; the frontend is embedded in the binary.
 
 ---
 
-### TUI
+### Terminal UI
 
 ```bash
-go run ./cmd/cli tui
+mailrat tui
 ```
 
 Full-screen terminal UI powered by [Bubbletea](https://github.com/charmbracelet/bubbletea).
@@ -125,44 +121,28 @@ Full-screen terminal UI powered by [Bubbletea](https://github.com/charmbracelet/
 
 ---
 
-### Desktop app (Wails)
-
-Requires [Wails v2](https://wails.io) installed (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`).
+### Web server
 
 ```bash
-wails build        # production binary
-wails dev          # live-reload dev mode
+mailrat web [--addr host:port] [--static path]
 ```
 
-The frontend is an Alpine.js + Tailwind CSS SPA embedded into the binary at build time. No npm or frontend build step required — CDN-loaded.
-
----
-
-### Web server (remote browser access)
-
-Serves the same UI and backend over plain HTTP — useful for testing on a remote machine or from a phone/tablet.
-
-```bash
-# Run from the project root
-go run ./cmd/webserver
-
-# Custom address
-go run ./cmd/webserver -addr 0.0.0.0:9090
-
-# All flags
-go run ./cmd/webserver -addr 0.0.0.0:8080 -static cmd/desktop/frontend
-```
+Serves the same frontend and backend over HTTP — useful for testing on a remote machine or from any browser on the network.
 
 | Flag | Default | Description |
 |---|---|---|
-| `-addr` | `0.0.0.0:8080` | Listen address (`host:port`) |
-| `-static` | `cmd/desktop/frontend` | Path to frontend files (relative to cwd) |
+| `--addr` | `0.0.0.0:8080` | Listen address (`host:port`) |
+| `--static` | *(embedded)* | Override frontend path (dev mode) |
 
-Open `http://<host>:<port>` in any browser.
+```bash
+mailrat web                        # http://0.0.0.0:8080
+mailrat web --addr 0.0.0.0:9090
+mailrat web --addr :8080 --static cmd/mailrat/frontend   # live-reload dev
+```
+
+Open `http://<host>:<port>` in any browser. The same UI that runs in the desktop WebView works in the browser — a small shim (`wails-compat.js`) bridges `window.go.*` calls to the REST API and subscribes to the SSE stream for push events.
 
 #### REST API
-
-The web server exposes the backend as a JSON API used by the browser frontend:
 
 | Method | Path | Description |
 |---|---|---|
@@ -174,9 +154,30 @@ The web server exposes the backend as a JSON API used by the browser frontend:
 | `POST` | `/api/send` | Send a message (JSON body) |
 | `POST` | `/api/sync?accountId=` | Run incremental sync |
 | `GET` | `/api/labels?accountId=` | Gmail labels |
-| `GET` | `/api/events` | SSE stream — push `sync:progress`, `sync:complete`, `inbox:updated` |
+| `GET` | `/api/events` | SSE stream — `sync:progress`, `sync:complete`, `inbox:updated` |
 
-The same `index.html` works inside the Wails WebView and in a plain browser. A small shim (`js/wails-compat.js`) maps `window.go.desktop.App.*` to `fetch()` calls when running outside Wails, and subscribes to the SSE stream for push events.
+---
+
+### CLI
+
+```bash
+mailrat <command> [flags]
+```
+
+| Command | Description |
+|---|---|
+| `accounts add` | OAuth flow to add a Gmail account |
+| `accounts list` | List connected accounts |
+| `accounts remove <id\|email>` | Remove an account and its local data |
+| `sync [--days=N] [--account=id]` | Sync mail (initial or incremental) |
+| `inbox list [--label=L] [--limit=N] [--account=id]` | Print unified inbox |
+| `message read <id> [--account=id]` | Print a message body |
+| `send [--to=] [--subject=] [--body=] [--account=id]` | Send an email |
+| `labels list [--account=id]` | List Gmail labels |
+| `contacts list [--sync] [--search=q]` | List / search contacts |
+| `contacts add [--name=] [--email=]` | Add a contact |
+| `contacts edit <id>` | Edit a contact |
+| `contacts delete <id> [--force]` | Delete a contact |
 
 ---
 
@@ -229,22 +230,20 @@ Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Wails /
 ### Package layout
 
 ```
-cmd/
-  cli/              CLI entry point (also launches TUI)
-  desktop/          Wails desktop entry point
-    frontend/       Alpine.js + Tailwind SPA (embedded into binary at build time)
-  webserver/        HTTP server for remote browser access
+cmd/mailrat/              single binary entry point
+  main.go                 root command + desktop launch + web server
+  frontend/               Alpine.js + Tailwind SPA (embedded into binary)
 
 internal/
-  accounts/         OAuth2 flow and token management
-  cli/              Cobra commands
-  contacts/         Google People API integration
-  desktop/          Wails-bound App struct and frontend-facing types
-  gmail/            Gmail API client wrapper with retry / backoff
-  mail/             Business logic — inbox, send, labels, drafts
-  storage/          SQLite schema and CRUD
-  sync/             Initial and incremental sync engine
-  tui/              Bubbletea models and views
+  accounts/               OAuth2 flow and token management
+  cli/                    Cobra commands + TUI launch
+  contacts/               Google People API integration
+  desktop/                Wails-bound App struct and frontend-facing types
+  gmail/                  Gmail API client wrapper with retry / backoff
+  mail/                   Business logic — inbox, send, labels, drafts
+  storage/                SQLite schema and CRUD
+  sync/                   Initial and incremental sync engine
+  tui/                    Bubbletea models and views
 ```
 
 ---
@@ -252,9 +251,12 @@ internal/
 ## Development
 
 ```bash
-go test ./...    # run tests
-go build ./...   # build all binaries
-go vet ./...     # vet
+go test ./...                          # run tests
+go build -o mailrat ./cmd/mailrat      # build binary
+go vet ./...                           # vet
+
+# Live-reload web frontend (no rebuild needed)
+go run ./cmd/mailrat web --static cmd/mailrat/frontend
 ```
 
 ---
