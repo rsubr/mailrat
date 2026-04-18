@@ -82,7 +82,7 @@ func newWebCmd(embeddedFS fs.FS) *cobra.Command {
 
 func runWebServer(addr string, frontendFS fs.FS) error {
 	app := desktop.NewApp()
-	app.OnStartup(context.Background())
+	app.StartWeb(context.Background())
 
 	events := newHub()
 	mux := http.NewServeMux()

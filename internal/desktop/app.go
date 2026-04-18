@@ -17,6 +17,7 @@ import (
 // App is the Wails application struct. All exported methods are bound to the frontend.
 type App struct {
 	ctx      context.Context
+	isWails  bool
 	store    *storage.Store
 	accounts *accounts.Manager
 }
@@ -26,19 +27,30 @@ func NewApp() *App {
 	return &App{}
 }
 
-// OnStartup initialises storage and the account manager when the app starts.
+// OnStartup is called by Wails on desktop startup.
 func (a *App) OnStartup(ctx context.Context) {
+	a.isWails = true
+	a.startup(ctx)
+}
+
+// StartWeb initialises the app for use in the HTTP web server (no Wails runtime).
+func (a *App) StartWeb(ctx context.Context) {
+	a.isWails = false
+	a.startup(ctx)
+}
+
+func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	dir, err := dataDir()
 	if err != nil {
-		runtime.LogError(ctx, "data dir: "+err.Error())
+		a.logError("data dir: " + err.Error())
 		return
 	}
 
 	store, err := storage.Open(filepath.Join(dir, "mailrat.db"))
 	if err != nil {
-		runtime.LogError(ctx, "open db: "+err.Error())
+		a.logError("open db: " + err.Error())
 		return
 	}
 	a.store = store
@@ -46,10 +58,33 @@ func (a *App) OnStartup(ctx context.Context) {
 	credPath := filepath.Join(dir, "credentials.json")
 	mgr, err := accounts.NewManager(store, credPath)
 	if err != nil {
-		runtime.LogWarning(ctx, "no credentials: "+err.Error())
+		a.logWarning("no credentials: " + err.Error())
 		return
 	}
 	a.accounts = mgr
+}
+
+// emitEvent sends a Wails runtime event only when running inside the desktop app.
+func (a *App) emitEvent(name string, data any) {
+	if a.isWails {
+		runtime.EventsEmit(a.ctx, name, data)
+	}
+}
+
+func (a *App) logError(msg string) {
+	if a.isWails {
+		runtime.LogError(a.ctx, msg)
+	} else {
+		fmt.Fprintln(os.Stderr, "ERROR:", msg)
+	}
+}
+
+func (a *App) logWarning(msg string) {
+	if a.isWails {
+		runtime.LogWarning(a.ctx, msg)
+	} else {
+		fmt.Fprintln(os.Stderr, "WARN:", msg)
+	}
 }
 
 // OnShutdown closes the database when the app exits.
@@ -202,17 +237,17 @@ func (a *App) Sync(accountID string) error {
 		}
 		client, err := a.gmailClient(acc.ID)
 		if err != nil {
-			runtime.LogWarning(a.ctx, "sync client "+acc.Email+": "+err.Error())
+			a.logWarning("sync client " + acc.Email + ": " + err.Error())
 			continue
 		}
-		runtime.EventsEmit(a.ctx, "sync:progress", map[string]string{"account": acc.Email})
+		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
 		mgr := mailsync.NewManager(a.store, client)
 		if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
-			runtime.LogWarning(a.ctx, "sync "+acc.Email+": "+err.Error())
+			a.logWarning("sync " + acc.Email + ": " + err.Error())
 		}
 	}
-	runtime.EventsEmit(a.ctx, "sync:complete", nil)
-	runtime.EventsEmit(a.ctx, "inbox:updated", nil)
+	a.emitEvent("sync:complete", nil)
+	a.emitEvent("inbox:updated", nil)
 	return nil
 }
 
