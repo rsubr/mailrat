@@ -49,25 +49,29 @@ function formatReplyDate(ms) {
   return dateStr + ' at ' + timeStr;
 }
 
-function stripHtml(html) {
-  if (!html) return '';
-  return html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
-    .trim();
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function buildQuote(msg) {
-  const rawBody = msg.body || '';
-  const plain = rawBody.trim().startsWith('<') ? stripHtml(rawBody) : rawBody.trim();
-  const body = plain || (msg.snippet || '(no body)');
-  const lines = body.split('\n').map(l => '> ' + l).join('\n');
   const date = formatReplyDate(msg.date);
-  const attr = date ? `On ${date}, ${msg.from} wrote:` : `${msg.from} wrote:`;
-  return `\n\n${attr}\n${lines}`;
+  const attr = date
+    ? `On ${date}, ${escHtml(msg.from)} wrote:`
+    : `${escHtml(msg.from)} wrote:`;
+
+  let bodyHtml = msg.body || '';
+  if (bodyHtml.trim() && !bodyHtml.trim().startsWith('<')) {
+    bodyHtml = escHtml(bodyHtml).replace(/\n/g, '<br>');
+  }
+  if (!bodyHtml.trim()) {
+    bodyHtml = escHtml(msg.snippet) || '<i>(no body)</i>';
+  }
+
+  return `<div><br></div>` +
+    `<div class="gmail-quote">` +
+      `<div class="gmail-quote-attr">${attr}</div>` +
+      `<blockquote class="gmail-blockquote">${bodyHtml}</blockquote>` +
+    `</div>`;
 }
 
 function avatarColor(str) {
@@ -316,9 +320,51 @@ document.addEventListener('alpine:init', () => {
     get store() { return Alpine.store('mail'); },
     get data()  { return Alpine.store('mail').composeData; },
 
+    init() {
+      this.$watch('store.composing', val => {
+        if (!val) return;
+        this.$nextTick(() => {
+          const ed = this.$refs.editor;
+          if (!ed) return;
+          ed.innerHTML = this.data.body || '';
+          ed.focus();
+          // Position cursor at the very start (before any quote)
+          const sel = window.getSelection();
+          if (sel) {
+            const range = document.createRange();
+            range.setStart(ed, 0);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        });
+      });
+    },
+
+    exec(cmd, val = null) {
+      this.$refs.editor.focus();
+      document.execCommand(cmd, false, val);
+      this.store.composeData.body = this.$refs.editor.innerHTML;
+    },
+
+    insertLink() {
+      const url = window.prompt('Enter URL:', 'https://');
+      if (url) this.exec('createLink', url);
+    },
+
+    syncAndSend() {
+      if (this.$refs.editor) {
+        this.store.composeData.body = this.$refs.editor.innerHTML;
+      }
+      this.store.sendCompose();
+    },
+
     handleKeydown(e) {
       if (e.key === 'Escape') this.store.closeCompose();
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') this.store.sendCompose();
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        this.syncAndSend();
+      }
     },
   }));
 });

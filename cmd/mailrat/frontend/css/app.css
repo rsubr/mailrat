@@ -76,3 +76,49 @@ textarea {
   outline: none;
 }
 textarea:focus { outline: none; }
+
+/* Rich text compose editor */
+.compose-editor {
+  outline: none;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-height: 100%;
+  caret-color: #e0e0e0;
+}
+.compose-editor:empty::before {
+  content: attr(data-placeholder);
+  color: #636366;
+  pointer-events: none;
+  display: block;
+}
+.compose-editor a { color: #409cff; text-decoration: underline; }
+.compose-editor ul { list-style: disc; padding-left: 1.5em; margin: 0.25em 0; }
+.compose-editor ol { list-style: decimal; padding-left: 1.5em; margin: 0.25em 0; }
+
+/* Toolbar buttons */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 5px;
+  border-radius: 4px;
+  color: #8e8e93;
+  transition: background-color 0.15s, color 0.15s;
+  cursor: pointer;
+  border: none;
+  background: none;
+  line-height: 1;
+}
+.toolbar-btn:hover { background-color: rgba(255,255,255,0.08); color: #e0e0e0; }
+
+/* Gmail-style quoted content inside compose */
+.gmail-quote { margin-top: 4px; }
+.gmail-quote-attr { color: #636366; font-size: 0.8em; margin-bottom: 2px; }
+.gmail-blockquote {
+  margin: 0 0 0 0.8ex;
+  border-left: 2px solid #4a4a4a;
+  padding-left: 1ex;
+  color: #8e8e93;
+}

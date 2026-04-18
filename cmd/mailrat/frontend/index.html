@@ -558,7 +558,7 @@
 
     <!-- Modal card -->
     <div class="bg-sidebar border border-divider rounded-xl shadow-2xl w-full max-w-lg flex flex-col"
-         style="height: 480px"
+         style="height: 560px"
          @click.stop>
 
       <!-- Modal header -->
@@ -603,12 +603,48 @@
                class="flex-1 bg-transparent text-white text-sm focus:outline-none placeholder-tertiary"/>
       </div>
 
-      <!-- Body -->
-      <div class="flex-1 overflow-hidden px-4 py-3">
-        <textarea x-model="data.body"
-                  placeholder="Write your message…"
-                  class="w-full h-full bg-transparent text-white text-sm
-                         placeholder-tertiary focus:outline-none leading-relaxed"></textarea>
+      <!-- Formatting toolbar -->
+      <div class="px-3 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="gap:2px">
+        <button @mousedown.prevent="exec('bold')"          class="toolbar-btn" title="Bold (⌘B)"><span class="font-bold text-xs">B</span></button>
+        <button @mousedown.prevent="exec('italic')"        class="toolbar-btn" title="Italic (⌘I)"><span class="italic text-xs">I</span></button>
+        <button @mousedown.prevent="exec('underline')"     class="toolbar-btn" title="Underline (⌘U)"><span class="underline text-xs">U</span></button>
+        <button @mousedown.prevent="exec('strikeThrough')" class="toolbar-btn" title="Strikethrough"><span class="line-through text-xs">S</span></button>
+        <div class="w-px h-4 bg-white/10 mx-1"></div>
+        <button @mousedown.prevent="exec('insertUnorderedList')" class="toolbar-btn" title="Bullet list">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01"/>
+          </svg>
+        </button>
+        <button @mousedown.prevent="exec('insertOrderedList')" class="toolbar-btn" title="Numbered list">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 5h11M10 12h11M10 19h11M4 5v3m0 0v.01M4 8h-.01M4 12a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+          </svg>
+        </button>
+        <div class="w-px h-4 bg-white/10 mx-1"></div>
+        <button @mousedown.prevent="insertLink()" class="toolbar-btn" title="Insert link">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.1-1.1m-.757-4.9a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
+          </svg>
+        </button>
+        <div class="w-px h-4 bg-white/10 mx-1"></div>
+        <button @mousedown.prevent="exec('removeFormat')" class="toolbar-btn" title="Remove formatting">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M6 18L18 6M10 4l4 4-7.94 7.94L4 20h8"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Rich text editor body -->
+      <div class="flex-1 overflow-y-auto px-4 py-3">
+        <div contenteditable="true"
+             x-ref="editor"
+             @input="store.composeData.body = $el.innerHTML"
+             data-placeholder="Write your message…"
+             class="compose-editor text-white text-sm leading-relaxed"></div>
       </div>
 
       <!-- Footer -->
@@ -618,7 +654,7 @@
            class="text-red-400 text-xs truncate pr-4"></p>
         <span x-show="!store.sendError" class="text-tertiary text-xs">⌘↩ to send</span>
 
-        <button @click="store.sendCompose()"
+        <button @click="syncAndSend()"
                 :disabled="store.sending || !data.to || !data.subject"
                 class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40
                        text-white text-sm font-medium rounded-lg transition-colors flex-shrink-0">
