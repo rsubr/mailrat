@@ -530,4 +530,58 @@ document.addEventListener('alpine:init', () => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'B') { e.preventDefault(); this.store.showBcc = !this.store.showBcc; return; }
     },
   }));
+
+  // ── Address autocomplete ───────────────────────────────────────────────────
+  Alpine.data('addressField', (field, placeholder) => ({
+    suggestions: [],
+    open: false,
+    activeIdx: -1,
+    _timer: null,
+
+    get value()  { return this.$store.mail.composeData[field]; },
+    set value(v) { this.$store.mail.composeData[field] = v; },
+
+    lastToken() {
+      const parts = this.value.split(',');
+      return parts[parts.length - 1].trim();
+    },
+
+    async fetchSuggestions() {
+      const q = this.lastToken();
+      if (q.length < 1) { this.suggestions = []; this.open = false; return; }
+      const accountId = this.$store.mail.composeData.accountId || 'unified';
+      try {
+        const r = await Wails.call('SearchContacts', accountId, q, 8);
+        this.suggestions = r || [];
+        this.activeIdx = -1;
+        this.open = this.suggestions.length > 0;
+      } catch(_) { this.suggestions = []; }
+    },
+
+    onInput() {
+      clearTimeout(this._timer);
+      this._timer = setTimeout(() => this.fetchSuggestions(), 150);
+    },
+
+    select(s) {
+      const parts = this.value.split(',').map(p => p.trim()).filter(Boolean);
+      parts.pop();
+      parts.push(s.name ? `${s.name} <${s.email}>` : s.email);
+      this.value = parts.join(', ') + ', ';
+      this.close();
+      this.$nextTick(() => this.$refs.input.focus());
+    },
+
+    close() { this.suggestions = []; this.open = false; this.activeIdx = -1; },
+
+    onKeydown(e) {
+      if (!this.open) return;
+      if (e.key === 'ArrowDown')  { e.preventDefault(); this.activeIdx = Math.min(this.activeIdx + 1, this.suggestions.length - 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); this.activeIdx = Math.max(this.activeIdx - 1, -1); }
+      else if ((e.key === 'Enter' || e.key === 'Tab') && this.activeIdx >= 0) { e.preventDefault(); this.select(this.suggestions[this.activeIdx]); }
+      else if (e.key === 'Escape') { e.preventDefault(); this.close(); }
+    },
+
+    onBlur() { setTimeout(() => this.close(), 200); },
+  }));
 });

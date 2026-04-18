@@ -381,7 +381,7 @@
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <main class="flex-1 bg-reading flex flex-col h-full min-w-0"
         x-data="readingPane"
-        @keydown.window="handleKeydown($event)">
+        @keydown.window.capture="handleKeydown($event)">
 
     <!-- ── Full-pane compose (new message) ─────────────────────────────────── -->
     <template x-if="store.composing && store.composeMode === 'new'">
@@ -409,8 +409,18 @@
 
         <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
           <span class="text-secondary text-xs w-16 flex-shrink-0">To</span>
-          <input type="text" x-model="data.to" placeholder="Recipients"
-                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+          <div class="relative flex-1" x-data="addressField('to')">
+            <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="Recipients"
+                   class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+            <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+              <template x-for="(s, i) in suggestions" :key="s.email">
+                <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                  <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                  <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                </div>
+              </template>
+            </div>
+          </div>
           <div class="flex items-center space-x-2 ml-2 flex-shrink-0">
             <button @click="store.showCc = !store.showCc"
                     :class="store.showCc ? 'text-blue-400' : 'text-tertiary hover-primary'"
@@ -423,14 +433,34 @@
 
         <div x-show="store.showCc" class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
           <span class="text-secondary text-xs w-16 flex-shrink-0">Cc</span>
-          <input type="text" x-model="data.cc" placeholder="CC recipients"
-                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+          <div class="relative flex-1" x-data="addressField('cc')">
+            <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="CC recipients"
+                   class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+            <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+              <template x-for="(s, i) in suggestions" :key="s.email">
+                <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                  <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                  <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
 
         <div x-show="store.showBcc" class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
           <span class="text-secondary text-xs w-16 flex-shrink-0">Bcc</span>
-          <input type="text" x-model="data.bcc" placeholder="BCC recipients"
-                 class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+          <div class="relative flex-1" x-data="addressField('bcc')">
+            <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="BCC recipients"
+                   class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+            <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+              <template x-for="(s, i) in suggestions" :key="s.email">
+                <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                  <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                  <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                </div>
+              </template>
+            </div>
+          </div>
         </div>
 
         <div class="px-5 py-2.5 border-b border-divider flex items-center flex-shrink-0">
@@ -698,8 +728,18 @@
                   <span class="text-blue-400 text-xs font-semibold flex-shrink-0 uppercase tracking-wide"
                         x-text="store.composeMode === 'forward' ? 'Fwd' : 'Re'"></span>
                   <span class="text-secondary flex-shrink-0">·</span>
-                  <input type="text" x-model="data.to" placeholder="To"
-                         class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed min-w-0"/>
+                  <div class="relative flex-1 min-w-0" x-data="addressField('to')">
+                    <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="To"
+                           class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+                    <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+                      <template x-for="(s, i) in suggestions" :key="s.email">
+                        <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                          <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                          <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
                   <template x-if="store.composeMode === 'forward'">
                     <input type="text" x-model="data.subject" placeholder="Subject"
                            class="w-48 bg-transparent text-secondary text-xs focus:outline-none placeholder-themed flex-shrink-0"/>
@@ -724,15 +764,35 @@
               <!-- CC row -->
               <div x-show="store.showCc" class="px-5 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
                 <span class="text-secondary text-xs w-8 flex-shrink-0">Cc</span>
-                <input type="text" x-model="data.cc" placeholder="CC recipients"
-                       class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+                <div class="relative flex-1" x-data="addressField('cc')">
+                  <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="CC recipients"
+                         class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+                  <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+                    <template x-for="(s, i) in suggestions" :key="s.email">
+                      <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                        <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                        <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
               </div>
 
               <!-- BCC row -->
               <div x-show="store.showBcc" class="px-5 py-1.5 border-b border-divider flex items-center flex-shrink-0" style="display:none">
                 <span class="text-secondary text-xs w-8 flex-shrink-0">Bcc</span>
-                <input type="text" x-model="data.bcc" placeholder="BCC recipients"
-                       class="flex-1 bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+                <div class="relative flex-1" x-data="addressField('bcc')">
+                  <input type="text" x-model="value" x-ref="input" @input="onInput()" @keydown="onKeydown($event)" @blur="onBlur()" placeholder="BCC recipients"
+                         class="w-full bg-transparent text-primary text-sm focus:outline-none placeholder-themed"/>
+                  <div x-show="open" class="absolute top-full left-0 z-50 w-72 bg-surface border border-divider rounded-md shadow-lg overflow-hidden" style="display:none">
+                    <template x-for="(s, i) in suggestions" :key="s.email">
+                      <div @mousedown.prevent="select(s)" :class="i === activeIdx ? 'bg-selected' : 'hover:bg-hover'" class="px-3 py-2 cursor-pointer">
+                        <div class="text-primary text-xs font-medium" x-text="s.name || s.email"></div>
+                        <div x-show="s.name" class="text-secondary text-xs" x-text="s.email"></div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
               </div>
 
               <!-- Formatting toolbar -->

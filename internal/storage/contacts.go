@@ -50,6 +50,20 @@ func (s *Store) SearchContacts(accountID, query string, limit int) ([]Contact, e
 	return scanContacts(rows)
 }
 
+func (s *Store) SearchAllContacts(query string, limit int) ([]Contact, error) {
+	rows, err := s.db.Query(`
+		SELECT id, account_id, name, email, resource_name, etag FROM contacts
+		WHERE name LIKE ? OR email LIKE ?
+		ORDER BY name ASC
+		LIMIT ?
+	`, "%"+query+"%", "%"+query+"%", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanContacts(rows)
+}
+
 func (s *Store) ListContacts(accountID string) ([]Contact, error) {
 	rows, err := s.db.Query(`
 		SELECT id, account_id, name, email, resource_name, etag FROM contacts

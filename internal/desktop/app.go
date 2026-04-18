@@ -386,6 +386,32 @@ func (a *App) Sync(accountID string) error {
 	return nil
 }
 
+// SearchContacts returns contacts matching the query string (name or email prefix).
+// Pass accountID="unified" or "" to search across all accounts.
+func (a *App) SearchContacts(accountID, query string, limit int) ([]ContactItem, error) {
+	if a.store == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+	var contacts []storage.Contact
+	var err error
+	if accountID == "" || accountID == "unified" {
+		contacts, err = a.store.SearchAllContacts(query, limit)
+	} else {
+		contacts, err = a.store.SearchContacts(accountID, query, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ContactItem, len(contacts))
+	for i, c := range contacts {
+		out[i] = ContactItem{Name: c.Name, Email: c.Email}
+	}
+	return out, nil
+}
+
 // GetLabels returns all labels for an account.
 func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 	if a.store == nil {

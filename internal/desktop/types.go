@@ -48,6 +48,12 @@ type LabelItem struct {
 	Type string `json:"type"`
 }
 
+// ContactItem is the frontend representation of an address book contact.
+type ContactItem struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
 // OutboundMsg is the frontend payload for sending an email.
 type OutboundMsg struct {
 	AccountID string `json:"accountId"`
