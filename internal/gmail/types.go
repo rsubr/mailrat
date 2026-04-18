@@ -39,9 +39,11 @@ type Thread struct {
 
 // Label is a Gmail label.
 type Label struct {
-	ID        string
-	Name      string
-	LabelType string // "system" or "user"
+	ID              string
+	Name            string
+	LabelType       string // "system" or "user"
+	TextColor       string // hex color for label text, e.g. "#ffffff"
+	BackgroundColor string // hex color for label background, e.g. "#4a86e8"
 }
 
 // HistoryEvent represents a change from the history list.

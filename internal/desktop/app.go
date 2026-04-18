@@ -423,7 +423,7 @@ func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 	}
 	out := make([]LabelItem, len(labels))
 	for i, l := range labels {
-		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType}
+		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
 	}
 	return out, nil
 }

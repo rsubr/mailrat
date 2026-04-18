@@ -52,6 +52,8 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE messages ADD COLUMN message_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN cc_addr TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN bcc_addr TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE labels ADD COLUMN text_color TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE labels ADD COLUMN background_color TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine

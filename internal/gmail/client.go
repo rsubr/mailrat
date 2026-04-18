@@ -118,11 +118,16 @@ func (c *Client) ListLabels(ctx context.Context) ([]Label, error) {
 
 	var out []Label
 	for _, l := range resp.Labels {
-		out = append(out, Label{
+		lbl := Label{
 			ID:        l.Id,
 			Name:      l.Name,
 			LabelType: strings.ToLower(l.Type),
-		})
+		}
+		if l.Color != nil {
+			lbl.TextColor = l.Color.TextColor
+			lbl.BackgroundColor = l.Color.BackgroundColor
+		}
+		out = append(out, lbl)
 	}
 	return out, nil
 }

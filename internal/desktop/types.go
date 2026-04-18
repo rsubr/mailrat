@@ -43,9 +43,11 @@ type MessageItem struct {
 
 // LabelItem is the frontend representation of a Gmail label.
 type LabelItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Type            string `json:"type"`
+	TextColor       string `json:"textColor"`
+	BackgroundColor string `json:"backgroundColor"`
 }
 
 // ContactItem is the frontend representation of an address book contact.

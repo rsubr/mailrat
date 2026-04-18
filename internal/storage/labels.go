@@ -1,26 +1,31 @@
 package storage
 
 type Label struct {
-	ID        string
-	AccountID string
-	Name      string
-	LabelType string
+	ID              string
+	AccountID       string
+	Name            string
+	LabelType       string
+	TextColor       string
+	BackgroundColor string
 }
 
 func (s *Store) UpsertLabel(l Label) error {
 	_, err := s.db.Exec(`
-		INSERT INTO labels (id, account_id, name, label_type)
-		VALUES (?, ?, ?, ?)
+		INSERT INTO labels (id, account_id, name, label_type, text_color, background_color)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id, account_id) DO UPDATE SET
-			name       = excluded.name,
-			label_type = excluded.label_type
-	`, l.ID, l.AccountID, l.Name, l.LabelType)
+			name             = excluded.name,
+			label_type       = excluded.label_type,
+			text_color       = excluded.text_color,
+			background_color = excluded.background_color
+	`, l.ID, l.AccountID, l.Name, l.LabelType, l.TextColor, l.BackgroundColor)
 	return err
 }
 
 func (s *Store) ListLabels(accountID string) ([]Label, error) {
 	rows, err := s.db.Query(`
-		SELECT id, account_id, name, label_type FROM labels WHERE account_id = ?
+		SELECT id, account_id, name, label_type, text_color, background_color
+		FROM labels WHERE account_id = ?
 		ORDER BY name ASC
 	`, accountID)
 	if err != nil {
@@ -31,7 +36,7 @@ func (s *Store) ListLabels(accountID string) ([]Label, error) {
 	var out []Label
 	for rows.Next() {
 		var l Label
-		if err := rows.Scan(&l.ID, &l.AccountID, &l.Name, &l.LabelType); err != nil {
+		if err := rows.Scan(&l.ID, &l.AccountID, &l.Name, &l.LabelType, &l.TextColor, &l.BackgroundColor); err != nil {
 			return nil, err
 		}
 		out = append(out, l)

@@ -165,10 +165,12 @@ func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 	}
 	for _, l := range labels {
 		if err := m.store.UpsertLabel(storage.Label{
-			ID:        l.ID,
-			AccountID: accountID,
-			Name:      l.Name,
-			LabelType: l.LabelType,
+			ID:              l.ID,
+			AccountID:       accountID,
+			Name:            l.Name,
+			LabelType:       l.LabelType,
+			TextColor:       l.TextColor,
+			BackgroundColor: l.BackgroundColor,
 		}); err != nil {
 			return err
 		}

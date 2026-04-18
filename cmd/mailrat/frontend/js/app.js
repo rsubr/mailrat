@@ -447,6 +447,10 @@ document.addEventListener('alpine:init', () => {
       return found ? found.name : id;
     },
 
+    labelInfo(id) {
+      return this.store.labels.find(l => l.id === id) || null;
+    },
+
     // Returns {char, cls} for the thread's star type, or null if not starred.
     // Checks for a specific coloured-star label first; falls back to yellow ★.
     starInfo(thread) {
