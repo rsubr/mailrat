@@ -61,6 +61,9 @@
 
         GetLabelThreads: (accountId, labelId, limit) =>
           api('/api/label-threads' + qs({ accountId: accountId || '', labelId, limit: limit || 60 })),
+
+        SearchContacts: (accountId, q, limit) =>
+          api('/api/contacts/search' + qs({ accountId: accountId || '', q, limit: limit || 8 })),
       },
     },
   };
