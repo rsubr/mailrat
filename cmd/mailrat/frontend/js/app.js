@@ -380,19 +380,15 @@ document.addEventListener('alpine:init', () => {
     avatarColor,
     get store() { return Alpine.store('mail'); },
 
-    // Gmail star label name → display character + Tailwind colour class
+    // Gmail system star label ID → display character + Tailwind colour class.
+    // All starred messages carry STARRED; coloured stars add a second label ID.
     _STAR_LABELS: {
-      'yellow star':      { char: '★', cls: 'text-yellow-400' },
-      'red star':         { char: '★', cls: 'text-red-500'   },
-      'orange star':      { char: '★', cls: 'text-orange-400' },
-      'green star':       { char: '★', cls: 'text-green-500' },
-      'blue star':        { char: '★', cls: 'text-blue-400'  },
-      'purple star':      { char: '★', cls: 'text-purple-500' },
-      'red-bang':         { char: '!', cls: 'font-bold text-red-500'   },
-      'orange guillemet': { char: '»', cls: 'font-bold text-orange-400' },
-      'green check':      { char: '✓', cls: 'font-bold text-green-500' },
-      'blue info':        { char: 'ℹ', cls: 'text-blue-400'  },
-      'purple question':  { char: '?', cls: 'font-bold text-purple-500' },
+      'YELLOW_STAR':   { char: '★', cls: 'text-yellow-400' },
+      'BLUE_STAR':     { char: '★', cls: 'text-blue-400'   },
+      'RED_CIRCLE':    { char: '●', cls: 'text-red-500'    },
+      'ORANGE_CIRCLE': { char: '●', cls: 'text-orange-400' },
+      'GREEN_CIRCLE':  { char: '●', cls: 'text-green-500'  },
+      'PURPLE_CIRCLE': { char: '●', cls: 'text-purple-500' },
     },
 
     labelName(id) {
@@ -401,26 +397,22 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Returns {char, cls} for the thread's star type, or null if not starred.
+    // Checks for a specific coloured-star label first; falls back to yellow ★.
     starInfo(thread) {
       for (const id of (thread.labelIds || [])) {
-        if (id === 'STARRED') continue;
-        const lbl = this.store.labels.find(l => l.id === id);
-        if (!lbl) continue;
-        const match = this._STAR_LABELS[lbl.name.toLowerCase()];
+        const match = this._STAR_LABELS[id];
         if (match) return match;
       }
-      if (thread.isStarred) return this._STAR_LABELS['yellow star'];
+      if (thread.isStarred) return this._STAR_LABELS['YELLOW_STAR'];
       return null;
     },
 
     // Returns user-created label IDs that should appear as chips (max 2).
-    // Hides all system labels and star-type user labels.
+    // Hides all system labels (they are already represented in the sidebar).
     visibleLabels(thread) {
-      const starNames = new Set(Object.keys(this._STAR_LABELS));
       return (thread.labelIds || []).filter(id => {
         const lbl = this.store.labels.find(l => l.id === id);
-        if (!lbl || lbl.type !== 'user') return false;
-        return !starNames.has(lbl.name.toLowerCase());
+        return lbl && lbl.type === 'user';
       }).slice(0, 2);
     },
 
