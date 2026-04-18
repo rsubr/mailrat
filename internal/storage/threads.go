@@ -94,12 +94,12 @@ const inboxFilterForAccount = `
 `
 
 // ListAllThreadSummaries returns inbox threads across all accounts, newest first.
-func (s *Store) ListAllThreadSummaries(limit int) ([]ThreadSummary, error) {
+func (s *Store) ListAllThreadSummaries(limit, offset int) ([]ThreadSummary, error) {
 	rows, err := s.db.Query(
 		threadSummarySQL+
 			`WHERE `+inboxFilter+
-			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
-		limit,
+			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
+		limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -125,12 +125,12 @@ func (s *Store) SearchAllThreadSummaries(query string, limit int) ([]ThreadSumma
 }
 
 // ListThreadSummaries returns inbox threads for a single account, newest first.
-func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummary, error) {
+func (s *Store) ListThreadSummaries(accountID string, limit, offset int) ([]ThreadSummary, error) {
 	rows, err := s.db.Query(
 		threadSummarySQL+
 			`WHERE `+inboxFilterForAccount+
-			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
-		accountID, accountID, limit,
+			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
+		accountID, accountID, limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummar
 }
 
 // ListAllThreadSummariesByLabel returns threads carrying a given label across all accounts.
-func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit int) ([]ThreadSummary, error) {
+func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit, offset int) ([]ThreadSummary, error) {
 	filter := `m.thread_id IN (
 		SELECT DISTINCT m2.thread_id
 		FROM messages m2
@@ -149,8 +149,8 @@ func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit int) ([]Thre
 	)`
 	rows, err := s.db.Query(
 		threadSummarySQL+`WHERE `+filter+
-			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
-		labelID, limit,
+			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
+		labelID, limit, offset,
 	)
 	if err != nil {
 		return nil, err
@@ -160,7 +160,7 @@ func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit int) ([]Thre
 }
 
 // ListThreadSummariesByLabel returns threads carrying a given label for one account.
-func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit int) ([]ThreadSummary, error) {
+func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit, offset int) ([]ThreadSummary, error) {
 	filter := `m.account_id = ? AND m.thread_id IN (
 		SELECT DISTINCT m2.thread_id
 		FROM messages m2
@@ -169,8 +169,8 @@ func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit int)
 	)`
 	rows, err := s.db.Query(
 		threadSummarySQL+`WHERE `+filter+
-			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
-		accountID, accountID, labelID, limit,
+			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
+		accountID, accountID, labelID, limit, offset,
 	)
 	if err != nil {
 		return nil, err

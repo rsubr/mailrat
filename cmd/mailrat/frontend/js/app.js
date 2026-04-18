@@ -109,6 +109,8 @@ document.addEventListener('alpine:init', () => {
     threads: [],
     labels: [],
     loading: false,
+    loadingMore: false,
+    allLoaded: false,
 
     // Reading pane
     activeThread: null,
@@ -171,10 +173,12 @@ document.addEventListener('alpine:init', () => {
 
     async loadInbox() {
       this.loading = true;
+      this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetInbox', this.activeAccountId, 60);
+        const threads = await Wails.call('GetInbox', this.activeAccountId, 60, 0);
         this.threads = threads || [];
+        if (this.threads.length < 60) this.allLoaded = true;
       } catch (e) { this.error = e.toString(); }
       finally { this.loading = false; }
     },
@@ -266,16 +270,42 @@ document.addEventListener('alpine:init', () => {
 
     async loadLabelThreads(labelId) {
       this.loading = true;
+      this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, 60);
+        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, 60, 0);
         this.threads = threads || [];
+        if (this.threads.length < 60) this.allLoaded = true;
       } catch (e) { this.error = e.toString(); }
       finally { this.loading = false; }
     },
 
+    onListScroll(e) {
+      const el = e.target;
+      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) this.loadMore();
+    },
+
+    async loadMore() {
+      if (this.loadingMore || this.allLoaded || this.loading || this.searchQuery) return;
+      this.loadingMore = true;
+      try {
+        const offset = this.threads.length;
+        let more;
+        if (this.activeLabel === 'INBOX') {
+          more = await Wails.call('GetInbox', this.activeAccountId, 60, offset);
+        } else {
+          more = await Wails.call('GetLabelThreads', this.activeAccountId, this.activeLabel, 60, offset);
+        }
+        more = more || [];
+        if (more.length < 60) this.allLoaded = true;
+        this.threads = [...this.threads, ...more];
+      } catch (_) { /* silently ignore load-more errors */ }
+      finally { this.loadingMore = false; }
+    },
+
     async search(q) {
       this.searchQuery = q;
+      this.allLoaded = true; // no pagination for search results
       if (!q.trim()) { await this.loadInbox(); return; }
       this.loading = true;
       try {

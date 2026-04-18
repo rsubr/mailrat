@@ -112,7 +112,7 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 
 // GetInbox returns thread summaries for the inbox.
 // Pass accountID="unified" or "" to get the unified inbox across all accounts.
-func (a *App) GetInbox(accountID string, limit int) ([]ThreadItem, error) {
+func (a *App) GetInbox(accountID string, limit, offset int) ([]ThreadItem, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("store not initialised")
 	}
@@ -123,9 +123,9 @@ func (a *App) GetInbox(accountID string, limit int) ([]ThreadItem, error) {
 	var summaries []storage.ThreadSummary
 	var err error
 	if accountID == "" || accountID == "unified" {
-		summaries, err = a.store.ListAllThreadSummaries(limit)
+		summaries, err = a.store.ListAllThreadSummaries(limit, offset)
 	} else {
-		summaries, err = a.store.ListThreadSummaries(accountID, limit)
+		summaries, err = a.store.ListThreadSummaries(accountID, limit, offset)
 	}
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func (a *App) GetInbox(accountID string, limit int) ([]ThreadItem, error) {
 
 // GetLabelThreads returns thread summaries for a given Gmail label.
 // Pass accountID="unified" or "" for all accounts.
-func (a *App) GetLabelThreads(accountID, labelID string, limit int) ([]ThreadItem, error) {
+func (a *App) GetLabelThreads(accountID, labelID string, limit, offset int) ([]ThreadItem, error) {
 	if a.store == nil {
 		return nil, fmt.Errorf("store not initialised")
 	}
@@ -150,9 +150,9 @@ func (a *App) GetLabelThreads(accountID, labelID string, limit int) ([]ThreadIte
 	var summaries []storage.ThreadSummary
 	var err error
 	if accountID == "" || accountID == "unified" {
-		summaries, err = a.store.ListAllThreadSummariesByLabel(labelID, limit)
+		summaries, err = a.store.ListAllThreadSummariesByLabel(labelID, limit, offset)
 	} else {
-		summaries, err = a.store.ListThreadSummariesByLabel(accountID, labelID, limit)
+		summaries, err = a.store.ListThreadSummariesByLabel(accountID, labelID, limit, offset)
 	}
 	if err != nil {
 		return nil, err

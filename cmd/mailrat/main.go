@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/mailrat/mailrat/internal/cli"
@@ -128,7 +129,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := app.GetInbox(qp(r, "accountId"), 60)
+		threads, err := app.GetInbox(qp(r, "accountId"), 60, qpi(r, "offset"))
 		if err != nil { errJSON(w, err); return }
 		writeJSON(w, http.StatusOK, threads)
 	})
@@ -146,7 +147,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/label-threads", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60)
+		threads, err := app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60, qpi(r, "offset"))
 		if err != nil { errJSON(w, err); return }
 		writeJSON(w, http.StatusOK, threads)
 	})
@@ -294,4 +295,9 @@ func errJSON(w http.ResponseWriter, err error) {
 
 func qp(r *http.Request, key string) string {
 	return r.URL.Query().Get(key)
+}
+
+func qpi(r *http.Request, key string) int {
+	v, _ := strconv.Atoi(r.URL.Query().Get(key))
+	return v
 }

@@ -25,8 +25,8 @@
         GetAccounts: () =>
           api('/api/accounts'),
 
-        GetInbox: (accountId, limit) =>
-          api('/api/inbox' + qs({ accountId: accountId || '', limit: limit || 60 })),
+        GetInbox: (accountId, limit, offset) =>
+          api('/api/inbox' + qs({ accountId: accountId || '', limit: limit || 60, offset: offset || 0 })),
 
         SearchInbox: (q, limit) =>
           api('/api/search' + qs({ q, limit: limit || 50 })),
@@ -59,8 +59,8 @@
         TrashThread: (accountId, threadId) =>
           api('/api/trash' + qs({ accountId, threadId }), { method: 'POST' }),
 
-        GetLabelThreads: (accountId, labelId, limit) =>
-          api('/api/label-threads' + qs({ accountId: accountId || '', labelId, limit: limit || 60 })),
+        GetLabelThreads: (accountId, labelId, limit, offset) =>
+          api('/api/label-threads' + qs({ accountId: accountId || '', labelId, limit: limit || 60, offset: offset || 0 })),
 
         SearchContacts: (accountId, q, limit) =>
           api('/api/contacts/search' + qs({ accountId: accountId || '', q, limit: limit || 8 })),

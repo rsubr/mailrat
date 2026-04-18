@@ -29,9 +29,9 @@ func loadInboxCmd(store *storage.Store, acctID string) tea.Cmd {
 		)
 
 		if acctID == "" {
-			threads, err = store.ListAllThreadSummaries(100)
+			threads, err = store.ListAllThreadSummaries(100, 0)
 		} else {
-			threads, err = store.ListThreadSummaries(acctID, 100)
+			threads, err = store.ListThreadSummaries(acctID, 100, 0)
 		}
 
 		return msgInboxLoaded{threads: threads, err: err}
