@@ -2,7 +2,11 @@ package storage
 
 import "time"
 
-const OpMarkRead = "mark_read"
+const (
+	OpMarkRead    = "mark_read"
+	OpMarkUnread  = "mark_unread"
+	OpTrashThread = "trash_thread"
+)
 
 // PendingOp is an operation that failed while offline and must be retried.
 type PendingOp struct {

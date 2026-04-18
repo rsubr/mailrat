@@ -176,6 +176,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 			errJSON(w, err)
 			return
 		}
+		app.DrainPendingOps()
 		events.emit("sync:complete", nil)
 		events.emit("inbox:updated", nil)
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

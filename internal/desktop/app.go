@@ -223,41 +223,110 @@ func (a *App) SendMessage(msg OutboundMsg) error {
 }
 
 // MarkMessageRead removes the UNREAD label from a message.
+// Optimistically updates SQLite first; queues the Gmail API call if offline.
 func (a *App) MarkMessageRead(accountID, messageID string) error {
+	if a.store != nil {
+		if msg, err := a.store.GetMessage(accountID, messageID); err == nil {
+			msg.IsUnread = false
+			_ = a.store.UpsertMessage(msg)
+		}
+	}
 	client, err := a.gmailClient(accountID)
 	if err != nil {
-		return err
+		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
+		return nil
 	}
-	return mail.NewLabelService(a.store, client).MarkRead(a.ctx, accountID, messageID)
+	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{"UNREAD"}); err != nil {
+		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
+	}
+	return nil
 }
 
 // MarkMessageUnread adds the UNREAD label to a message.
+// Optimistically updates SQLite first; queues the Gmail API call if offline.
 func (a *App) MarkMessageUnread(accountID, messageID string) error {
+	if a.store != nil {
+		if msg, err := a.store.GetMessage(accountID, messageID); err == nil {
+			msg.IsUnread = true
+			_ = a.store.UpsertMessage(msg)
+		}
+	}
 	client, err := a.gmailClient(accountID)
 	if err != nil {
-		return err
+		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
+		return nil
 	}
-	return mail.NewLabelService(a.store, client).MarkUnread(a.ctx, accountID, messageID)
+	if err := client.ModifyLabels(a.ctx, messageID, []string{"UNREAD"}, nil); err != nil {
+		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
+	}
+	return nil
 }
 
 // TrashThread moves all messages in a thread to the Trash.
+// If offline, queues the operation for replay on the next sync.
 func (a *App) TrashThread(accountID, threadID string) error {
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
-	}
 	client, err := a.gmailClient(accountID)
+	if err != nil {
+		_ = a.store.AddPendingOp(storage.OpTrashThread, accountID, threadID)
+		return nil
+	}
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
 	if err != nil {
 		return err
 	}
 	svc := mail.NewLabelService(a.store, client)
 	for _, msg := range msgs {
 		if err := svc.Trash(a.ctx, accountID, msg.ID); err != nil {
-			return err
+			_ = a.store.AddPendingOp(storage.OpTrashThread, accountID, threadID)
+			return nil
 		}
 	}
 	a.emitEvent("inbox:updated", nil)
 	return nil
+}
+
+// DrainPendingOps replays queued offline operations against the Gmail API.
+// Called after a successful sync when connectivity is confirmed.
+func (a *App) DrainPendingOps() {
+	if a.store == nil || a.accounts == nil {
+		return
+	}
+	ops, err := a.store.ListPendingOps()
+	if err != nil || len(ops) == 0 {
+		return
+	}
+	ctx := a.ctx
+	clients := make(map[string]*gmail.Client)
+	for _, op := range ops {
+		client, ok := clients[op.AccountID]
+		if !ok {
+			client, err = a.gmailClient(op.AccountID)
+			if err != nil {
+				continue
+			}
+			clients[op.AccountID] = client
+		}
+		var applyErr error
+		switch op.OpType {
+		case storage.OpMarkRead:
+			applyErr = client.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"})
+		case storage.OpMarkUnread:
+			applyErr = client.ModifyLabels(ctx, op.MessageID, []string{"UNREAD"}, nil)
+		case storage.OpTrashThread:
+			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+			if err != nil {
+				continue
+			}
+			for _, msg := range msgs {
+				if applyErr = client.TrashMessage(ctx, msg.ID); applyErr != nil {
+					break
+				}
+			}
+		}
+		if applyErr == nil {
+			_ = a.store.DeletePendingOp(op.ID)
+		}
+	}
 }
 
 // Sync runs an incremental sync. Pass accountID="unified" to sync all accounts.

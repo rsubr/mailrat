@@ -105,12 +105,26 @@ func drainPendingOpsCmd(store *storage.Store, accMgr *accounts.Manager) tea.Cmd 
 				continue
 			}
 
+			var applyErr error
 			switch op.OpType {
 			case storage.OpMarkRead:
-				if err := gmailClient.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"}); err == nil {
-					_ = store.DeletePendingOp(op.ID)
-					applied++
+				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"})
+			case storage.OpMarkUnread:
+				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, []string{"UNREAD"}, nil)
+			case storage.OpTrashThread:
+				msgs, err := store.ListMessagesByThread(op.AccountID, op.MessageID)
+				if err != nil {
+					continue
 				}
+				for _, msg := range msgs {
+					if applyErr = gmailClient.TrashMessage(ctx, msg.ID); applyErr != nil {
+						break
+					}
+				}
+			}
+			if applyErr == nil {
+				_ = store.DeletePendingOp(op.ID)
+				applied++
 			}
 		}
 
