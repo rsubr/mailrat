@@ -49,6 +49,15 @@
 
         GetLabels: (accountId) =>
           api('/api/labels' + qs({ accountId })),
+
+        MarkMessageRead: (accountId, messageId) =>
+          api('/api/mark-read' + qs({ accountId, messageId }), { method: 'POST' }),
+
+        MarkMessageUnread: (accountId, messageId) =>
+          api('/api/mark-unread' + qs({ accountId, messageId }), { method: 'POST' }),
+
+        TrashThread: (accountId, threadId) =>
+          api('/api/trash' + qs({ accountId, threadId }), { method: 'POST' }),
       },
     },
   };

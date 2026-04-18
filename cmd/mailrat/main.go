@@ -187,6 +187,43 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, labels)
 	})
 
+	mux.HandleFunc("/api/mark-read", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := app.MarkMessageRead(qp(r, "accountId"), qp(r, "messageId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	mux.HandleFunc("/api/mark-unread", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := app.MarkMessageUnread(qp(r, "accountId"), qp(r, "messageId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	mux.HandleFunc("/api/trash", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := app.TrashThread(qp(r, "accountId"), qp(r, "threadId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		events.emit("inbox:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
 	log.Printf("mailrat web → http://%s", addr)
 	return http.ListenAndServe(addr, mux)
 }
