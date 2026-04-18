@@ -201,6 +201,7 @@ func messageUpsertArgs(m Message) []any {
 		string(m.CacheState),
 		boolToInt(m.HasAttachments),
 		m.MessageID,
+		m.MessageID,
 	}
 }
 
