@@ -36,6 +36,16 @@ func newSyncCmd() *cobra.Command {
 					continue
 				}
 
+				// Sync labels and contacts alongside mail.
+				if err := mgr.SyncLabels(ctx, acc.ID); err != nil {
+					fmt.Printf("warning: sync labels for %s: %v\n", acc.Email, err)
+				}
+				if contactsSvc, err := a.contactsService(ctx, acc.ID); err == nil {
+					if err := contactsSvc.Sync(ctx); err != nil {
+						fmt.Printf("warning: sync contacts for %s: %v\n", acc.Email, err)
+					}
+				}
+
 				// Use incremental sync if history ID is stored, otherwise initial.
 				stored, _ := a.store.GetAccount(acc.ID)
 				if stored.HistoryID == "" {

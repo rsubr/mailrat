@@ -158,6 +158,11 @@ func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, ma
 	return nil
 }
 
+// SyncLabels fetches all labels from the Gmail API and upserts them into the store.
+func (m *Manager) SyncLabels(ctx context.Context, accountID string) error {
+	return m.syncLabels(ctx, accountID)
+}
+
 func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 	labels, err := m.client.ListLabels(ctx)
 	if err != nil {
