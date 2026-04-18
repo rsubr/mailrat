@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Email Client Dark Mode</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style data-purpose="custom-styles">
+    body {
+      background-color: #1e1e1e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    
+    /* Scrollbar styling for a cleaner look */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #4a4a4a;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #555;
+    }
+
+    /* specific column backgrounds to match mock exactly */
+    .bg-sidebar { background-color: #2b2b2d; }
+    .bg-list { background-color: #222223; }
+    .bg-reading { background-color: #1e1e1f; }
+    
+    /* Text colors */
+    .text-secondary { color: #8e8e93; }
+    .text-tertiary { color: #636366; }
+    
+    /* Borders */
+    .border-divider { border-color: #38383a; }
+    
+    /* Active states */
+    .bg-active-item { background-color: #38383a; }
+    
+    /* Tags */
+    .tag-blue { background-color: rgba(64, 156, 255, 0.2); color: #7cb5ec; }
+    .tag-purple { background-color: rgba(191, 90, 242, 0.2); color: #d49aed; }
+    .tag-green { background-color: rgba(50, 215, 75, 0.2); color: #87d995; }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex text-sm">
+<!-- BEGIN: Left Sidebar Navigation -->
+<aside class="w-64 bg-sidebar border-r border-divider flex flex-col h-full flex-shrink-0">
+<!-- Mac Window Controls & Compose -->
+<div class="h-14 flex items-center justify-between px-4">
+<div class="flex space-x-2">
+<div class="w-3 h-3 rounded-full bg-red-500"></div>
+<div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+<div class="w-3 h-3 rounded-full bg-green-500"></div>
+</div>
+<button class="text-secondary hover:text-white">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- Top Account Switcher -->
+<div class="px-3 pb-4">
+<div class="flex space-x-1">
+<button class="flex-1 bg-active-item rounded-lg py-1.5 px-2 flex flex-col items-center justify-center text-xs text-white">
+<svg class="w-5 h-5 text-blue-500 mb-0.5" fill="currentColor" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"></path></svg>
+          Personal
+        </button>
+<button class="flex-1 hover:bg-white/5 rounded-lg py-1.5 px-2 flex flex-col items-center justify-center text-xs text-secondary">
+<svg class="w-5 h-5 text-red-500 mb-0.5" fill="currentColor" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 110 2h-3a1 1 0 01-1-1v-2a1 1 0 00-1-1H9a1 1 0 00-1 1v2a1 1 0 01-1 1H4a1 1 0 110-2V4zm3 1h2v2H7V5zm2 4H7v2h2V9zm2-4h2v2h-2V5zm2 4h-2v2h2V9z" fill-rule="evenodd"></path></svg>
+          Work
+        </button>
+<button class="w-10 hover:bg-white/5 rounded-lg py-1.5 px-2 flex flex-col items-center justify-center text-secondary">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+</button>
+</div>
+</div>
+<!-- Navigation List -->
+<div class="flex-1 overflow-y-auto px-2 pb-4 space-y-6">
+<!-- Inboxes Section -->
+<div>
+<h3 class="text-xs font-semibold text-tertiary uppercase tracking-wider px-2 mb-1">Inboxes</h3>
+<ul class="space-y-0.5">
+<li>
+<button class="w-full flex items-center justify-between px-2 py-1.5 rounded-md bg-blue-600/20 text-blue-400 group">
+<div class="flex items-center">
+<svg class="w-3 h-3 mr-1 opacity-50" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Primary</span>
+</div>
+</button>
+<ul class="ml-6 mt-0.5 space-y-0.5">
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" fill-rule="evenodd"></path></svg>
+<span>Personal</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-4 h-4 mr-2 text-blue-500" fill="currentColor" viewbox="0 0 20 20"><path d="M10.394 2.08a1 1 0 00-.788 0l-7 3a1 1 0 000 1.84L5.25 8.051a.999.999 0 01.356-.257l4-1.714a1 1 0 11.788 1.838L7.667 9.088l1.94.831a1 1 0 00.787 0l7-3a1 1 0 000-1.838l-7-3zM3.31 9.397L5 10.12v4.102a8.969 8.969 0 00-1.05-.174 1 1 0 01-.89-.89 11.115 11.115 0 01.25-3.762zM9.3 16.573A9.026 9.026 0 007 14.935v-3.957l1.818.78a3 3 0 002.364 0l5.508-2.361a11.026 11.026 0 01.25 3.762 1 1 0 01-.89.89 8.968 8.968 0 00-5.35 2.524 1 1 0 01-1.4 0zM6 18a1 1 0 001-1v-2.065a8.935 8.935 0 00-2-.712V17a1 1 0 001 1z"></path></svg>
+<span>School</span>
+</button>
+</li>
+</ul>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-teal-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Social</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-green-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Promotions</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-yellow-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Updates</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Forums</span>
+</button>
+</li>
+</ul>
+</div>
+<!-- Favorites Section -->
+<div>
+<h3 class="text-xs font-semibold text-tertiary uppercase tracking-wider px-2 mb-1">Favorites</h3>
+<ul class="space-y-0.5 ml-4">
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-yellow-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Starred</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-orange-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Snoozed</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-blue-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Drafts</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-green-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Sent</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-purple-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>All Mail</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-red-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Spam</span>
+</button>
+</li>
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-red-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<span>Trash</span>
+</button>
+</li>
+</ul>
+</div>
+<!-- Personal Section -->
+<div>
+<h3 class="text-xs font-semibold text-tertiary uppercase tracking-wider px-2 mb-1">Personal</h3>
+<ul class="space-y-0.5 ml-4">
+<li>
+<button class="w-full flex items-center px-2 py-1.5 rounded-md hover:bg-white/5 text-white">
+<svg class="w-3 h-3 mr-1 opacity-50 -rotate-90 -ml-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+<svg class="w-4 h-4 mr-2 text-red-500" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M17.707 9.293a1 1 0 010 1.414l-7 7a1 1 0 01-1.414 0l-7-7A.997.997 0 012 10V5a3 3 0 013-3h5c.256 0 .512.098.707.293l7 7zM5 6a1 1 0 100-2 1 1 0 000 2z" fill-rule="evenodd"></path></svg>
+<span>Awaiting</span>
+</button>
+</li>
+</ul>
+</div>
+</div>
+</aside>
+<!-- END: Left Sidebar Navigation -->
+<!-- BEGIN: Middle Column Email List -->
+<section class="w-80 bg-list border-r border-divider flex flex-col h-full flex-shrink-0">
+<!-- List Header -->
+<header class="h-14 flex items-center justify-between px-4 border-b border-divider">
+<h2 class="font-semibold text-white">Inbox: Primary</h2>
+<button class="text-secondary hover:text-white">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</header>
+<!-- Email List -->
+<div class="flex-1 overflow-y-auto">
+<!-- Email Item 1 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Dan Smith <span class="text-secondary font-normal text-xs ml-1">5</span></h3>
+<span class="text-xs text-secondary">1:12 PM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Positions at Mimestream?</p>
+<div class="flex items-start justify-between">
+<p class="text-secondary text-sm truncate pr-2">Hey Neil, I hope all is well. I'm...</p>
+<span class="tag-blue px-1.5 py-0.5 rounded text-xs whitespace-nowrap">Inquiries</span>
+</div>
+</article>
+<!-- Email Item 2 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Keith, Bruce, Neil <span class="text-secondary font-normal text-xs ml-1">5</span></h3>
+<span class="text-xs text-secondary">1:03 PM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Lake Tahoe Trip</p>
+<div class="flex items-start justify-between mb-1.5">
+<p class="text-secondary text-sm truncate pr-2">I might also come in on the eveni...</p>
+<span class="tag-purple px-1.5 py-0.5 rounded text-xs whitespace-nowrap">Travel</span>
+</div>
+<div class="inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+<svg class="w-3 h-3 text-purple-400 mr-1.5" fill="currentColor" viewbox="0 0 20 20"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z"></path></svg>
+          Lake Tahoe Cabin.mp4
+        </div>
+</article>
+<!-- Email Item 3 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Jerry Flores</h3>
+<span class="text-xs text-secondary">11:29 AM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Home Office Remodel</p>
+<div class="flex items-start justify-between mb-1.5">
+<p class="text-secondary text-sm truncate pr-2">Neil, I have some availability next...</p>
+<span class="tag-green px-1.5 py-0.5 rounded text-xs whitespace-nowrap">Home</span>
+</div>
+<div class="inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+<svg class="w-3 h-3 text-green-400 mr-1.5" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M5 4a3 3 0 00-3 3v6a3 3 0 003 3h10a3 3 0 003-3V7a3 3 0 00-3-3H5zm-1 9v-1h5v2H5a1 1 0 01-1-1zm7 1h4a1 1 0 001-1v-1h-5v2zm0-4h5V8h-5v2zM9 8H4v2h5V8z" fill-rule="evenodd"></path></svg>
+          Remodel estimate.xlsx
+        </div>
+</article>
+<!-- Email Item 4 (Active) -->
+<article class="p-3 border-b border-divider bg-active-item cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Ben, Neil <span class="text-secondary font-normal text-xs ml-1">3</span></h3>
+<span class="text-xs text-secondary">10:58 AM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Lunch this Friday?</p>
+<p class="text-secondary text-sm truncate">12PM at Delarosa sounds great to me! Se...</p>
+</article>
+<!-- Email Item 5 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Samantha Schultz</h3>
+<span class="text-xs text-secondary">8:04 AM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Interesting Article</p>
+<p class="text-secondary text-sm truncate">I thought you might like reading this article.</p>
+</article>
+<!-- Email Item 6 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Gregory Gardner</h3>
+<span class="text-xs text-secondary">1:34 AM</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Referral?</p>
+<p class="text-secondary text-sm truncate">Hey Neil! I was interested in a job at your...</p>
+</article>
+<!-- Email Item 7 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Sara Stewart</h3>
+<span class="text-xs text-secondary">Yesterday</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">London hotel recs?</p>
+<p class="text-secondary text-sm truncate mb-1.5">Hey buddy, For your trip to London, I wou...</p>
+<div class="inline-flex items-center bg-white/10 rounded px-2 py-1 text-xs text-white">
+<svg class="w-3 h-3 text-red-400 mr-1.5" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" fill-rule="evenodd"></path></svg>
+          2018 London hotel.png
+        </div>
+</article>
+<!-- Email Item 8 -->
+<article class="p-3 border-b border-divider hover:bg-white/5 cursor-pointer">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="font-semibold text-white">Aaron, Neil <span class="text-secondary font-normal text-xs ml-1">2</span></h3>
+<span class="text-xs text-secondary">Yesterday</span>
+</div>
+<p class="font-semibold text-white text-sm mb-0.5">Visiting D.C.</p>
+<p class="text-secondary text-sm truncate">I was thinking of visiting you that weekend...</p>
+</article>
+</div>
+</section>
+<!-- END: Middle Column Email List -->
+<!-- BEGIN: Right Column Reading Pane -->
+<main class="flex-1 bg-reading flex flex-col h-full min-w-0">
+<!-- Reading Pane Toolbar -->
+<div class="h-14 flex items-center justify-between px-6 border-b border-divider">
+<div class="flex items-center space-x-6 text-secondary">
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<div class="w-px h-5 bg-divider mx-2"></div>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+<div class="relative w-64">
+<span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-secondary">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+<input class="w-full bg-black/20 border border-divider text-white text-sm rounded-md pl-9 pr-3 py-1.5 focus:outline-none focus:border-secondary focus:ring-1 focus:ring-secondary placeholder-secondary" placeholder="Search" type="text"/>
+</div>
+</div>
+<!-- Email Content Area -->
+<div class="flex-1 overflow-y-auto p-6 lg:p-10 max-w-4xl mx-auto w-full">
+<!-- Email Subject -->
+<div class="flex items-center justify-between mb-8">
+<div class="flex items-center space-x-3">
+<h1 class="text-2xl font-bold text-white">Lunch this Friday?</h1>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white/10 text-secondary">
+            Inbox <button class="ml-1 hover:text-white">×</button>
+</span>
+</div>
+<button class="text-secondary hover:text-white">
+<svg class="w-5 h-5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</button>
+</div>
+<!-- Thread Item 1 -->
+<div class="mb-6 group">
+<div class="flex items-start justify-between">
+<div class="flex items-center space-x-3">
+<img alt="Ben Johnson" class="w-10 h-10 rounded-full bg-gray-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzO-YhzJWSm067lbhvWMTG5DkPtgS_AE9qARZuqkGnxTbiOf9rJBqZb8qyB3t7cn5lXGXHTDPvOPweXTl0ubvELzxuodAcmdwdOauKg_D0i_uaht3dg6h20CeWbCfaPWPvCNlSEedw6qT-rNgziqH8XzfH7og11E6Tjd59qWKRrvlVu0cv_E6qDZEWB4e_SpNATD3M7FhUJcuxwCDBtvZFdPW8WfMfl5-s62T6I-1X-fMGnCFv1QLaWs47dkR7Ezmj4dN3wglSAw"/>
+<div>
+<div class="flex items-baseline space-x-2">
+<span class="font-bold text-white">Ben Johnson</span>
+</div>
+<p class="text-white mt-0.5">Hey Neil, It's been a while since we've caught up! I'm going to be in...</p>
+</div>
+</div>
+<div class="flex items-center space-x-3 text-secondary">
+<span class="text-xs">Yesterday at 7:42PM</span>
+<button class="hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+</div>
+<!-- Thread Item 2 -->
+<div class="mb-6 group">
+<div class="flex items-start justify-between">
+<div class="flex items-center space-x-3">
+<img alt="Neil Jhaveri" class="w-10 h-10 rounded-full bg-gray-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBiHG6CKm3W8Ea-FFfFI2YlnRXdpLO59HoQQ-eg_LrodSHLJB5RKT5VVjexTEs4GGfTFtTJWpAZWSmBP1S5xQsmsjtjqQCRTsL-ulLEmmmlBQG_rPknoWRNRbHwtuoVZl_ZjhGjc_XXT17TpdzVyCP0MRT4wtlBoomSkHkgF5uqqZkBQZnl3PLyOlDgkagxLhP3gWaj1DZouOGIPpwFY3llBKOQeTHHRSREBUnlnjTs8GfJ1oHsKlCwZUaOQH85w1MOwJRjK2fxVw"/>
+<div>
+<div class="flex items-baseline space-x-2">
+<span class="font-bold text-white">Neil Jhaveri</span>
+</div>
+<p class="text-white mt-0.5">Hey Ben, Yes! Lunch on Friday sounds great to me! Where is your h...</p>
+</div>
+</div>
+<div class="flex items-center space-x-3 text-secondary">
+<span class="text-xs">Yesterday at 10:12PM</span>
+<button class="hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+</div>
+<!-- Thread Item 3 (Expanded) -->
+<div class="">
+<div class="flex items-start justify-between mb-4">
+<div class="flex items-center space-x-3">
+<img alt="Ben Johnson" class="w-10 h-10 rounded-full bg-gray-700" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB9fjEVLRaWQYa5hSmOFY5P0OTvFCLr3cT3VuhlsVKEcoXmiiVumxmOatJKAgqU3yVy22ALdVNNfGsI0MjVghWjbjuUxCGveQ6L69y4bPCcNn0QzF5LgPxS0dtvlLF8ZnTFzzjX4ijnJ4R5qmrK9VKV2ajHWs43u_8NTvBTBU0nmGOOpTl8HLcHPWr1ewLc9Rgm7qlvgzeNE4dfhWVGM2nrUjX92Kl_ehSFhJnuki3cr6AiO4JiCFot9Dgn3Nd1CbVJ5a7AnWRHcg"/>
+<div>
+<div class="flex items-baseline space-x-2">
+<span class="font-bold text-white">Ben Johnson</span>
+</div>
+<div class="text-xs text-secondary mt-0.5">
+                To: <span class="text-white">Neil Jhaveri</span>
+</div>
+</div>
+</div>
+<div class="flex items-center space-x-3 text-secondary">
+<span class="text-xs">Today at 10:58AM</span>
+<div class="flex space-x-2">
+<button class="hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+<button class="hover:text-white"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg></button>
+</div>
+</div>
+</div>
+<!-- Email Body -->
+<div class="text-white space-y-4 pl-14">
+<p>12PM at Delarosa sounds great to me!</p>
+<p>See you on Friday!</p>
+<p>– Ben</p>
+<button class="bg-white/10 hover:bg-white/20 text-secondary rounded-full px-3 py-1 mt-2 text-xs flex items-center">
+<svg class="w-4 h-4" fill="currentColor" viewbox="0 0 20 20"><path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zM12 10a2 2 0 11-4 0 2 2 0 014 0zM16 12a2 2 0 100-4 2 2 0 000 4z"></path></svg>
+</button>
+</div>
+</div>
+</div>
+</main>
+<!-- END: Right Column Reading Pane -->
+</body></html>

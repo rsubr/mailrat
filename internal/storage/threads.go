@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ThreadSummary is a thread as shown in the inbox: aggregated from its messages.
@@ -17,6 +18,8 @@ type ThreadSummary struct {
 	UnreadCount    int
 	LastDate       int64
 	HasAttachments bool
+	IsStarred      bool
+	LabelIDs       []string // distinct label IDs across all messages in thread
 }
 
 const threadSummarySQL = `
@@ -33,7 +36,15 @@ const threadSummarySQL = `
 		 ORDER BY m2.internal_date DESC LIMIT 1)                   AS subject,
 		(SELECT snippet  FROM messages m2
 		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
-		 ORDER BY m2.internal_date DESC LIMIT 1)                   AS snippet
+		 ORDER BY m2.internal_date DESC LIMIT 1)                   AS snippet,
+		(SELECT GROUP_CONCAT(DISTINCT ml.label_id)
+		 FROM message_labels ml
+		 JOIN messages m2 ON m2.id = ml.message_id AND m2.account_id = ml.account_id
+		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id) AS label_ids,
+		(SELECT COUNT(*) FROM message_labels ml
+		 JOIN messages m2 ON m2.id = ml.message_id AND m2.account_id = ml.account_id
+		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
+		   AND ml.label_id = 'STARRED')                            AS is_starred
 	FROM messages m
 `
 
@@ -41,15 +52,21 @@ func scanThreadSummaries(rows *sql.Rows) ([]ThreadSummary, error) {
 	var out []ThreadSummary
 	for rows.Next() {
 		var t ThreadSummary
-		var hasAttachments int
+		var hasAttachments, isStarred int
+		var labelIDs sql.NullString
 		if err := rows.Scan(
 			&t.ThreadID, &t.AccountID,
 			&t.MessageCount, &t.UnreadCount, &t.LastDate, &hasAttachments,
 			&t.Participants, &t.Subject, &t.Snippet,
+			&labelIDs, &isStarred,
 		); err != nil {
 			return nil, err
 		}
 		t.HasAttachments = hasAttachments == 1
+		t.IsStarred = isStarred > 0
+		if labelIDs.Valid && labelIDs.String != "" {
+			t.LabelIDs = strings.Split(labelIDs.String, ",")
+		}
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -114,6 +131,46 @@ func (s *Store) ListThreadSummaries(accountID string, limit int) ([]ThreadSummar
 			`WHERE `+inboxFilterForAccount+
 			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
 		accountID, accountID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
+// ListAllThreadSummariesByLabel returns threads carrying a given label across all accounts.
+func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit int) ([]ThreadSummary, error) {
+	filter := `m.thread_id IN (
+		SELECT DISTINCT m2.thread_id
+		FROM messages m2
+		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
+		WHERE ml.label_id = ?
+	)`
+	rows, err := s.db.Query(
+		threadSummarySQL+`WHERE `+filter+
+			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
+		labelID, limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
+// ListThreadSummariesByLabel returns threads carrying a given label for one account.
+func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit int) ([]ThreadSummary, error) {
+	filter := `m.account_id = ? AND m.thread_id IN (
+		SELECT DISTINCT m2.thread_id
+		FROM messages m2
+		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
+		WHERE m2.account_id = ? AND ml.label_id = ?
+	)`
+	rows, err := s.db.Query(
+		threadSummarySQL+`WHERE `+filter+
+			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ?`,
+		accountID, accountID, labelID, limit,
 	)
 	if err != nil {
 		return nil, err

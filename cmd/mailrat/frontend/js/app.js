@@ -250,6 +250,28 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
+    async selectLabel(labelId) {
+      this.activeLabel = labelId;
+      this.activeThread = null;
+      this.messages = [];
+      this.composing = false;
+      if (labelId === 'INBOX') {
+        await this.loadInbox();
+      } else {
+        await this.loadLabelThreads(labelId);
+      }
+    },
+
+    async loadLabelThreads(labelId) {
+      this.loading = true;
+      this.error = null;
+      try {
+        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, 60);
+        this.threads = threads || [];
+      } catch (e) { this.error = e.toString(); }
+      finally { this.loading = false; }
+    },
+
     async search(q) {
       this.searchQuery = q;
       if (!q.trim()) { await this.loadInbox(); return; }
@@ -345,7 +367,7 @@ document.addEventListener('alpine:init', () => {
 
     iconKey(id)        { return this.ICON_IDS.has(id) ? id : '_tag'; },
     isActiveLabel(id)  { return this.store.activeLabel === id; },
-    selectLabel(id)    { this.store.activeLabel = id; if (id === 'INBOX') this.store.loadInbox(); },
+    selectLabel(id)    { this.store.selectLabel(id); },
 
     selectAccount(id)  { this.store.selectAccount(id); },
     openCompose()      { this.store.openCompose('new'); },

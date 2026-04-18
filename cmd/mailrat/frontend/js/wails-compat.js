@@ -58,6 +58,9 @@
 
         TrashThread: (accountId, threadId) =>
           api('/api/trash' + qs({ accountId, threadId }), { method: 'POST' }),
+
+        GetLabelThreads: (accountId, labelId, limit) =>
+          api('/api/label-threads' + qs({ accountId: accountId || '', labelId, limit: limit || 60 })),
       },
     },
   };

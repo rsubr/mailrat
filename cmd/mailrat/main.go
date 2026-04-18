@@ -139,6 +139,12 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, threads)
 	})
 
+	mux.HandleFunc("/api/label-threads", func(w http.ResponseWriter, r *http.Request) {
+		threads, err := app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60)
+		if err != nil { errJSON(w, err); return }
+		writeJSON(w, http.StatusOK, threads)
+	})
+
 	mux.HandleFunc("/api/thread", func(w http.ResponseWriter, r *http.Request) {
 		msgs, err := app.GetThread(qp(r, "accountId"), qp(r, "threadId"))
 		if err != nil { errJSON(w, err); return }

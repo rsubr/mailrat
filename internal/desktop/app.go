@@ -138,6 +138,32 @@ func (a *App) GetInbox(accountID string, limit int) ([]ThreadItem, error) {
 	return out, nil
 }
 
+// GetLabelThreads returns thread summaries for a given Gmail label.
+// Pass accountID="unified" or "" for all accounts.
+func (a *App) GetLabelThreads(accountID, labelID string, limit int) ([]ThreadItem, error) {
+	if a.store == nil {
+		return nil, fmt.Errorf("store not initialised")
+	}
+	if limit <= 0 {
+		limit = 60
+	}
+	var summaries []storage.ThreadSummary
+	var err error
+	if accountID == "" || accountID == "unified" {
+		summaries, err = a.store.ListAllThreadSummariesByLabel(labelID, limit)
+	} else {
+		summaries, err = a.store.ListThreadSummariesByLabel(accountID, labelID, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ThreadItem, len(summaries))
+	for i, s := range summaries {
+		out[i] = threadSummaryToItem(s)
+	}
+	return out, nil
+}
+
 // SearchInbox searches threads by subject, snippet, or sender across all accounts.
 func (a *App) SearchInbox(query string, limit int) ([]ThreadItem, error) {
 	if a.store == nil {

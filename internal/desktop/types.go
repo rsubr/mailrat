@@ -10,15 +10,17 @@ type AccountItem struct {
 
 // ThreadItem is the frontend representation of an inbox thread.
 type ThreadItem struct {
-	ID             string `json:"id"`
-	AccountID      string `json:"accountId"`
-	Subject        string `json:"subject"`
-	Participants   string `json:"participants"`
-	Snippet        string `json:"snippet"`
-	Date           int64  `json:"date"`
-	IsUnread       bool   `json:"isUnread"`
-	MessageCount   int    `json:"messageCount"`
-	HasAttachments bool   `json:"hasAttachments"`
+	ID             string   `json:"id"`
+	AccountID      string   `json:"accountId"`
+	Subject        string   `json:"subject"`
+	Participants   string   `json:"participants"`
+	Snippet        string   `json:"snippet"`
+	Date           int64    `json:"date"`
+	IsUnread       bool     `json:"isUnread"`
+	IsStarred      bool     `json:"isStarred"`
+	MessageCount   int      `json:"messageCount"`
+	HasAttachments bool     `json:"hasAttachments"`
+	LabelIDs       []string `json:"labelIds"`
 }
 
 // MessageItem is the frontend representation of a single message.
@@ -55,6 +57,10 @@ type OutboundMsg struct {
 }
 
 func threadSummaryToItem(t storage.ThreadSummary) ThreadItem {
+	labelIDs := t.LabelIDs
+	if labelIDs == nil {
+		labelIDs = []string{}
+	}
 	return ThreadItem{
 		ID:             t.ThreadID,
 		AccountID:      t.AccountID,
@@ -63,8 +69,10 @@ func threadSummaryToItem(t storage.ThreadSummary) ThreadItem {
 		Snippet:        t.Snippet,
 		Date:           t.LastDate,
 		IsUnread:       t.UnreadCount > 0,
+		IsStarred:      t.IsStarred,
 		MessageCount:   t.MessageCount,
 		HasAttachments: t.HasAttachments,
+		LabelIDs:       labelIDs,
 	}
 }
 
