@@ -41,6 +41,35 @@ function initials(str) {
   return parts.slice(0, 2).map(p => p[0]).join('').toUpperCase() || '?';
 }
 
+function formatReplyDate(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const dateStr = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return dateStr + ' at ' + timeStr;
+}
+
+function stripHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+    .trim();
+}
+
+function buildQuote(msg) {
+  const rawBody = msg.body || '';
+  const plain = rawBody.trim().startsWith('<') ? stripHtml(rawBody) : rawBody.trim();
+  const body = plain || (msg.snippet || '(no body)');
+  const lines = body.split('\n').map(l => '> ' + l).join('\n');
+  const date = formatReplyDate(msg.date);
+  const attr = date ? `On ${date}, ${msg.from} wrote:` : `${msg.from} wrote:`;
+  return `\n\n${attr}\n${lines}`;
+}
+
 function avatarColor(str) {
   const colors = [
     '#5e6ad2','#26b5ce','#e16f3d','#32c27a',
@@ -182,9 +211,19 @@ document.addEventListener('alpine:init', () => {
           accountId: replyTo.accountId || defaultAccountId,
           to:        replyTo.from || '',
           subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
-          body:      '',
-          inReplyTo: replyTo.messageId || '',
+          body:      buildQuote(replyTo),
+          inReplyTo: replyTo.id || '',
           threadId:  replyTo.threadId,
+        };
+      } else if (mode === 'forward' && replyTo) {
+        const subj = replyTo.subject || '';
+        this.composeData = {
+          accountId: replyTo.accountId || defaultAccountId,
+          to:        '',
+          subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
+          body:      buildQuote(replyTo),
+          inReplyTo: '',
+          threadId:  '',
         };
       } else {
         this.composeData = { accountId: defaultAccountId, to: '', subject: '', body: '', inReplyTo: '', threadId: '' };
@@ -268,7 +307,8 @@ document.addEventListener('alpine:init', () => {
 
     isExpanded(id) { return this.expanded.includes(id); },
 
-    reply(msg) { this.store.openCompose('reply', msg); },
+    reply(msg)   { this.store.openCompose('reply', msg); },
+    forward(msg) { this.store.openCompose('forward', msg); },
   }));
 
   // ── Compose modal component ────────────────────────────────────────────────

@@ -359,7 +359,8 @@
           </svg>
         </button>
         <!-- Forward -->
-        <button class="hover:text-white transition-colors" title="Forward">
+        <button @click="store.activeThread && forward(store.messages[store.messages.length - 1])"
+                class="hover:text-white transition-colors" title="Forward">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"/>
@@ -563,7 +564,7 @@
       <!-- Modal header -->
       <div class="flex items-center justify-between px-4 py-3 border-b border-divider flex-shrink-0">
         <h3 class="font-semibold text-white text-sm"
-            x-text="store.composeMode === 'reply' ? 'Reply' : 'New Message'"></h3>
+            x-text="store.composeMode === 'reply' ? 'Reply' : store.composeMode === 'forward' ? 'Forward' : 'New Message'"></h3>
         <button @click="store.closeCompose()" class="text-secondary hover:text-white transition-colors">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>

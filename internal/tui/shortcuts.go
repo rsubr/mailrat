@@ -82,7 +82,7 @@ func (m model) beginReplyAll(msg storage.Message) model {
 	m.compose.focus = composeFocusBody
 	m.compose.to.SetValue(strings.Join(addrs, ", "))
 	m.compose.subject.SetValue(replySubject(msg.Subject))
-	m.compose.body.SetValue("")
+	m.compose.body.SetValue(quoteBody(msg))
 	m.compose.to.Blur()
 	m.compose.subject.Blur()
 	m.compose.body.Focus()
@@ -96,7 +96,7 @@ func (m model) beginReply(msg storage.Message) model {
 	m.compose.focus = composeFocusBody
 	m.compose.to.SetValue(msg.FromAddr)
 	m.compose.subject.SetValue(replySubject(msg.Subject))
-	m.compose.body.SetValue("")
+	m.compose.body.SetValue(quoteBody(msg))
 	m.compose.to.Blur()
 	m.compose.subject.Blur()
 	m.compose.body.Focus()

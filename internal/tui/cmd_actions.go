@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mailrat/mailrat/internal/accounts"
@@ -127,9 +128,10 @@ func searchThreadsCmd(store *storage.Store, query string) tea.Cmd {
 }
 
 func quoteBody(msg storage.Message) string {
-	date := ""
+	attr := msg.FromAddr + " wrote:"
 	if msg.InternalDate > 0 {
-		date = ", " + formatHeaderDate(msg.InternalDate)
+		t := time.UnixMilli(msg.InternalDate).Format("Mon, Jan 2, 2006 at 3:04 PM")
+		attr = "On " + t + ", " + msg.FromAddr + " wrote:"
 	}
 	body := strings.TrimSpace(stripHTML(msg.Body))
 	if body == "" {
@@ -142,5 +144,5 @@ func quoteBody(msg storage.Message) string {
 	for _, line := range strings.Split(body, "\n") {
 		quoted = append(quoted, "> "+line)
 	}
-	return fmt.Sprintf("\n\nOn %s%s wrote:\n%s", msg.FromAddr, date, strings.Join(quoted, "\n"))
+	return fmt.Sprintf("\n\n%s\n%s", attr, strings.Join(quoted, "\n"))
 }
