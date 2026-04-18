@@ -32,6 +32,8 @@ type MessageItem struct {
 	Subject        string `json:"subject"`
 	FromAddr       string `json:"from"`
 	ToAddr         string `json:"to"`
+	CcAddr         string `json:"cc"`
+	BccAddr        string `json:"bcc"`
 	Body           string `json:"body"`
 	Snippet        string `json:"snippet"`
 	Date           int64  `json:"date"`
@@ -87,6 +89,8 @@ func messageToItem(m storage.Message) MessageItem {
 		Subject:        m.Subject,
 		FromAddr:       m.FromAddr,
 		ToAddr:         m.ToAddr,
+		CcAddr:         m.CcAddr,
+		BccAddr:        m.BccAddr,
 		Body:           m.Body,
 		Snippet:        m.Snippet,
 		Date:           m.InternalDate,

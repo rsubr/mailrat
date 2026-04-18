@@ -8,6 +8,8 @@ type MessageMeta struct {
 	Subject      string
 	From         string
 	To           string
+	Cc           string
+	Bcc          string
 	Snippet      string
 	InternalDate int64
 	LabelIDs     []string

@@ -32,6 +32,8 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 		Subject:      meta.Subject,
 		FromAddr:     meta.From,
 		ToAddr:       meta.To,
+		CcAddr:       meta.Cc,
+		BccAddr:      meta.Bcc,
 		Snippet:      meta.Snippet,
 		InternalDate: meta.InternalDate,
 		IsUnread:     meta.IsUnread,

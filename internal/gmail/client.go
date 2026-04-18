@@ -67,7 +67,7 @@ func (c *Client) GetMessageMeta(ctx context.Context, id string) (MessageMeta, er
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Get("me", id).
 			Format("metadata").
-			MetadataHeaders("Subject", "From", "To", "Message-ID").
+			MetadataHeaders("Subject", "From", "To", "Cc", "Bcc", "Message-ID").
 			Context(ctx).Do()
 	})
 	if err != nil {
@@ -279,6 +279,10 @@ func parseMessageMeta(m *gmailv1.Message) MessageMeta {
 				meta.From = h.Value
 			case "To":
 				meta.To = h.Value
+			case "Cc":
+				meta.Cc = h.Value
+			case "Bcc":
+				meta.Bcc = h.Value
 			case "Message-ID":
 				meta.MessageID = h.Value
 			}

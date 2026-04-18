@@ -50,6 +50,8 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE messages ADD COLUMN has_attachments INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sync_config ADD COLUMN backfilled INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN message_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN cc_addr TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE messages ADD COLUMN bcc_addr TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine
