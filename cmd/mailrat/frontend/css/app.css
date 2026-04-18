@@ -1,5 +1,6 @@
 /* ── Colour tokens ──────────────────────────────────────────────────────────── */
 :root {
+  color-scheme: light; /* app owns theming — prevent browser UA dark-mode on form elements */
   --bg-app:         #1e1e1e;
   --bg-sidebar:     #2b2b2d;
   --bg-list:        #222223;
@@ -71,9 +72,15 @@ body {
 .hover-primary:hover { color: var(--c-primary); }
 
 /* ── Backgrounds ────────────────────────────────────────────────────────────── */
-.bg-input  { background-color: var(--c-input-bg); }
 .bg-subtle { background-color: var(--c-subtle); }
 .toolbar-sep { background-color: var(--c-toolbar-sep); }
+
+/* Input overrides — element+class specificity beats any single-class or UA rule */
+input.bg-input {
+  background-color: var(--c-input-bg);
+  color: var(--c-primary);
+  -webkit-text-fill-color: var(--c-primary); /* WebKit uses this over 'color' inside inputs */
+}
 
 /* ── Placeholder ────────────────────────────────────────────────────────────── */
 .placeholder-themed::placeholder { color: var(--c-tertiary); }
