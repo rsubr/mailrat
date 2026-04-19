@@ -23,6 +23,19 @@ type msgActionDone struct {
 	setStarred bool // true if we are updating star status
 }
 
+func getGmailClient(accMgr *accounts.Manager, acctID string) (*gmail.Client, context.Context, error) {
+	ctx := context.Background()
+	httpClient, err := accMgr.GetClient(ctx, acctID)
+	if err != nil {
+		return nil, nil, err
+	}
+	gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return gmailClient, ctx, nil
+}
+
 func archiveThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadID string) tea.Cmd {
 	return func() tea.Msg {
 		msgs, err := store.ListMessagesByThread(acctID, threadID)
@@ -92,10 +105,9 @@ func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID
 
 func markReadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
 		markMessageReadLocally(store, acctID, msgID)
 
-		if applyMarkRead(ctx, accMgr, acctID, msgID) == nil {
+		if applyMarkRead(accMgr, acctID, msgID) == nil {
 			return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: false}
 		}
 
@@ -114,13 +126,8 @@ func markMessageReadLocally(store *storage.Store, acctID, msgID string) {
 	_ = store.UpsertMessage(msg)
 }
 
-func applyMarkRead(ctx context.Context, accMgr *accounts.Manager, acctID, msgID string) error {
-	httpClient, err := accMgr.GetClient(ctx, acctID)
-	if err != nil {
-		return err
-	}
-
-	gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
+func applyMarkRead(accMgr *accounts.Manager, acctID, msgID string) error {
+	gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 	if err != nil {
 		return err
 	}
@@ -242,14 +249,9 @@ func trashThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, thre
 			return msgActionDone{status: "Nothing to trash"}
 		}
 
-		ctx := context.Background()
-		httpClient, err := accMgr.GetClient(ctx, acctID)
+		gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 		if err != nil {
 			return msgActionDone{err: fmt.Errorf("auth: %w", err)}
-		}
-		gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
-		if err != nil {
-			return msgActionDone{err: fmt.Errorf("gmail client: %w", err)}
 		}
 
 		for _, msg := range msgs {
@@ -267,14 +269,9 @@ func trashThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, thre
 
 func trashMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		httpClient, err := accMgr.GetClient(ctx, acctID)
+		gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 		if err != nil {
 			return msgActionDone{err: fmt.Errorf("auth: %w", err)}
-		}
-		gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
-		if err != nil {
-			return msgActionDone{err: fmt.Errorf("gmail client: %w", err)}
 		}
 		if err := gmailClient.TrashMessage(ctx, msgID); err != nil {
 			return msgActionDone{err: fmt.Errorf("trash: %w", err)}
@@ -288,12 +285,7 @@ func trashMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msg
 }
 
 func modifyMessages(accMgr *accounts.Manager, acctID string, msgs []storage.Message, add, remove []string) error {
-	ctx := context.Background()
-	httpClient, err := accMgr.GetClient(ctx, acctID)
-	if err != nil {
-		return err
-	}
-	gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
+	gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 	if err != nil {
 		return err
 	}

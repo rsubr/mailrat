@@ -1,27 +1,19 @@
 package tui
 
 import (
-	"context"
 	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mailrat/mailrat/internal/accounts"
-	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
 func sendEmailCmd(accMgr *accounts.Manager, store *storage.Store, acctID string, outMsg mail.OutboundMessage, draftID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		httpClient, err := accMgr.GetClient(ctx, acctID)
+		gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 		if err != nil {
 			return msgSendDone{err: fmt.Errorf("get client: %w", err)}
-		}
-
-		gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
-		if err != nil {
-			return msgSendDone{err: fmt.Errorf("gmail client: %w", err)}
 		}
 
 		svc := mail.NewSendService(gmailClient)
@@ -36,15 +28,9 @@ func sendEmailCmd(accMgr *accounts.Manager, store *storage.Store, acctID string,
 
 func saveDraftCmd(accMgr *accounts.Manager, store *storage.Store, acctID string, outMsg mail.OutboundMessage, draftID string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		httpClient, err := accMgr.GetClient(ctx, acctID)
+		gmailClient, ctx, err := getGmailClient(accMgr, acctID)
 		if err != nil {
 			return msgSaveDraftDone{err: fmt.Errorf("get client: %w", err)}
-		}
-
-		gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
-		if err != nil {
-			return msgSaveDraftDone{err: fmt.Errorf("gmail client: %w", err)}
 		}
 
 		svc := mail.NewDraftService(store, gmailClient)
