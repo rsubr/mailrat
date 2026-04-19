@@ -8,6 +8,15 @@ import (
 	"github.com/mailrat/mailrat/internal/mail"
 )
 
+const numComposeFocusFields = 5
+
+func renderLabeledField(label string, focused bool, fieldView string) string {
+	if focused {
+		return accentStyle.Render(label) + fieldView + "\n"
+	}
+	return dimStyle.Render(label) + fieldView + "\n"
+}
+
 func (m model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -18,7 +27,7 @@ func (m model) updateCompose(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "tab":
 			// Cycle focus: To → Cc → Bcc → Subject → Body → To
-			m.compose.focus = (m.compose.focus + 1) % 5
+			m.compose.focus = (m.compose.focus + 1) % numComposeFocusFields
 			m = applyComposeFocus(m)
 			return m, nil
 		case "ctrl+s":
@@ -152,58 +161,24 @@ func (m model) renderCompose() string {
 		title = fmt.Sprintf("Reply to %s", truncStr(m.compose.replyTo.FromAddr, 40))
 	}
 
-	labelStyle := dimStyle
-	focusedLabelStyle := accentStyle
-
 	var sb strings.Builder
 	sb.WriteString("  " + boldStyle.Render(title) + "\n\n")
 
-	// To
-	toLabel := "  To:      "
-	if m.compose.focus == composeFocusTo {
-		toLabel = focusedLabelStyle.Render(toLabel)
-	} else {
-		toLabel = labelStyle.Render(toLabel)
-	}
-	sb.WriteString(toLabel + m.compose.to.View() + "\n")
-
-	// Cc
-	ccLabel := "  Cc:      "
-	if m.compose.focus == composeFocusCc {
-		ccLabel = focusedLabelStyle.Render(ccLabel)
-	} else {
-		ccLabel = labelStyle.Render(ccLabel)
-	}
-	sb.WriteString(ccLabel + m.compose.cc.View() + "\n")
-
-	// Bcc
-	bccLabel := "  Bcc:     "
-	if m.compose.focus == composeFocusBcc {
-		bccLabel = focusedLabelStyle.Render(bccLabel)
-	} else {
-		bccLabel = labelStyle.Render(bccLabel)
-	}
-	sb.WriteString(bccLabel + m.compose.bcc.View() + "\n")
-
-	// Subject
-	subjLabel := "  Subject: "
-	if m.compose.focus == composeFocusSubject {
-		subjLabel = focusedLabelStyle.Render(subjLabel)
-	} else {
-		subjLabel = labelStyle.Render(subjLabel)
-	}
-	sb.WriteString(subjLabel + m.compose.subject.View() + "\n")
+	sb.WriteString(renderLabeledField("  To:      ", m.compose.focus == composeFocusTo, m.compose.to.View()))
+	sb.WriteString(renderLabeledField("  Cc:      ", m.compose.focus == composeFocusCc, m.compose.cc.View()))
+	sb.WriteString(renderLabeledField("  Bcc:     ", m.compose.focus == composeFocusBcc, m.compose.bcc.View()))
+	sb.WriteString(renderLabeledField("  Subject: ", m.compose.focus == composeFocusSubject, m.compose.subject.View()))
 
 	// Separator
 	sep := separatorStyle.Render("  " + strings.Repeat("─", m.layout.width-4))
 	sb.WriteString(sep + "\n")
 
-	// Body
+	// Body label (no trailing newline from helper; body view follows directly)
 	bodyLabel := "  Body:\n"
 	if m.compose.focus == composeFocusBody {
-		bodyLabel = focusedLabelStyle.Render(bodyLabel)
+		bodyLabel = accentStyle.Render(bodyLabel)
 	} else {
-		bodyLabel = labelStyle.Render(bodyLabel)
+		bodyLabel = dimStyle.Render(bodyLabel)
 	}
 	sb.WriteString(bodyLabel)
 	sb.WriteString(m.compose.body.View())
