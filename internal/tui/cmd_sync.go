@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mailrat/mailrat/internal/accounts"
 	"github.com/mailrat/mailrat/internal/gmail"
+	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 	mailsync "github.com/mailrat/mailrat/internal/sync"
 )
@@ -68,9 +69,9 @@ func drainPendingOpsCmd(store *storage.Store, accMgr *accounts.Manager) tea.Cmd 
 			var applyErr error
 			switch op.OpType {
 			case storage.OpMarkRead:
-				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"})
+				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
 			case storage.OpMarkUnread:
-				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, []string{"UNREAD"}, nil)
+				applyErr = gmailClient.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
 			case storage.OpTrashThread:
 				msgs, err := store.ListMessagesByThread(op.AccountID, op.MessageID)
 				if err != nil {

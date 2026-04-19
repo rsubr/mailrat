@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
@@ -43,7 +44,7 @@ func configRowForLabel(label storage.Label, cfgMap map[string]storage.SyncConfig
 		return row
 	}
 
-	if label.ID == "INBOX" || label.ID == "STARRED" {
+	if label.ID == mail.LabelInbox || label.ID == mail.LabelStarred {
 		row.DaysToSync = 0
 		row.FetchAttachments = true
 	}

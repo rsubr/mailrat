@@ -51,11 +51,11 @@ func archiveThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, th
 		if len(msgs) == 0 {
 			return msgActionDone{status: "Nothing to archive"}
 		}
-		if err := modifyMessages(accMgr, acctID, msgs, nil, []string{"INBOX"}); err != nil {
+		if err := modifyMessages(accMgr, acctID, msgs, nil, []string{mail.LabelInbox}); err != nil {
 			return msgActionDone{err: fmt.Errorf("archive: %w", err)}
 		}
 		for _, msg := range msgs {
-			_ = removeLocalLabel(store, acctID, msg.ID, "INBOX")
+			_ = removeLocalLabel(store, acctID, msg.ID, mail.LabelInbox)
 		}
 		return msgActionDone{
 			status: "Conversation archived",
@@ -73,12 +73,12 @@ func markSpamCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadI
 		if len(msgs) == 0 {
 			return msgActionDone{status: "Nothing to mark as spam"}
 		}
-		if err := modifyMessages(accMgr, acctID, msgs, []string{"SPAM"}, []string{"INBOX"}); err != nil {
+		if err := modifyMessages(accMgr, acctID, msgs, []string{mail.LabelSpam}, []string{mail.LabelInbox}); err != nil {
 			return msgActionDone{err: fmt.Errorf("mark spam: %w", err)}
 		}
 		for _, msg := range msgs {
-			_ = removeLocalLabel(store, acctID, msg.ID, "INBOX")
-			_ = addLocalLabel(store, acctID, msg.ID, "SPAM")
+			_ = removeLocalLabel(store, acctID, msg.ID, mail.LabelInbox)
+			_ = addLocalLabel(store, acctID, msg.ID, mail.LabelSpam)
 		}
 		return msgActionDone{
 			status: "Conversation marked as spam",
@@ -89,10 +89,10 @@ func markSpamCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadI
 
 func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
-		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{"UNREAD"}, nil); err != nil {
+		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{mail.LabelUnread}, nil); err != nil {
 			return msgActionDone{err: fmt.Errorf("mark unread: %w", err)}
 		}
-		if err := addLocalLabel(store, acctID, msgID, "UNREAD"); err != nil {
+		if err := addLocalLabel(store, acctID, msgID, mail.LabelUnread); err != nil {
 			return msgActionDone{err: fmt.Errorf("update local label: %w", err)}
 		}
 		msg, err := store.GetMessage(acctID, msgID)
@@ -139,7 +139,7 @@ func applyMarkRead(accMgr *accounts.Manager, acctID, msgID string) error {
 		return err
 	}
 
-	return gmailClient.ModifyLabels(ctx, msgID, nil, []string{"UNREAD"})
+	return gmailClient.ModifyLabels(ctx, msgID, nil, []string{mail.LabelUnread})
 }
 
 func toggleStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
@@ -211,9 +211,9 @@ func toggleThreadStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID,
 
 		var add, remove []string
 		if isStarred {
-			remove = []string{"STARRED"}
+			remove = []string{mail.LabelStarred}
 		} else {
-			add = []string{"STARRED"}
+			add = []string{mail.LabelStarred}
 		}
 
 		if err := modifyMessages(accMgr, acctID, msgs, add, remove); err != nil {
@@ -222,9 +222,9 @@ func toggleThreadStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID,
 
 		for _, msg := range msgs {
 			if isStarred {
-				_ = removeLocalLabel(store, acctID, msg.ID, "STARRED")
+				_ = removeLocalLabel(store, acctID, msg.ID, mail.LabelStarred)
 			} else {
-				_ = addLocalLabel(store, acctID, msg.ID, "STARRED")
+				_ = addLocalLabel(store, acctID, msg.ID, mail.LabelStarred)
 			}
 		}
 
