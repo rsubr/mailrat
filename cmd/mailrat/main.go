@@ -273,7 +273,10 @@ func (h *hub) unsubscribe(ch chan []byte) {
 }
 
 func (h *hub) emit(event string, data any) {
-	payload, _ := json.Marshal(map[string]any{"event": event, "data": data})
+	payload, err := json.Marshal(map[string]any{"event": event, "data": data})
+	if err != nil {
+		return
+	}
 	h.mu.Lock()
 	for ch := range h.clients {
 		select {
