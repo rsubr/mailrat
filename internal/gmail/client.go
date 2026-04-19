@@ -33,8 +33,7 @@ const (
 
 // Client wraps the Gmail v1 API.
 type Client struct {
-	svc       *gmailv1.Service
-	accountID string
+	svc *gmailv1.Service
 }
 
 // NewClient creates a Gmail client from an authenticated HTTP client.
@@ -43,7 +42,7 @@ func NewClient(ctx context.Context, httpClient *http.Client, accountID string) (
 	if err != nil {
 		return nil, fmt.Errorf("create gmail service: %w", err)
 	}
-	return &Client{svc: svc, accountID: accountID}, nil
+	return &Client{svc: svc}, nil
 }
 
 // ListMessages returns message metadata matching the given query.
