@@ -124,49 +124,69 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 
 	mux.HandleFunc("/api/accounts", func(w http.ResponseWriter, r *http.Request) {
 		accs, err := app.GetAccounts()
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, accs)
 	})
 
 	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) {
 		threads, err := app.GetInbox(qp(r, "accountId"), 60, qpi(r, "offset"))
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, threads)
 	})
 
 	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
 		threads, err := app.SearchInbox(qp(r, "q"), 50)
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, threads)
 	})
 
 	mux.HandleFunc("/api/contacts/search", func(w http.ResponseWriter, r *http.Request) {
 		contacts, err := app.SearchContacts(qp(r, "accountId"), qp(r, "q"), 8)
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, contacts)
 	})
 
 	mux.HandleFunc("/api/label-threads", func(w http.ResponseWriter, r *http.Request) {
 		threads, err := app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60, qpi(r, "offset"))
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, threads)
 	})
 
 	mux.HandleFunc("/api/thread", func(w http.ResponseWriter, r *http.Request) {
 		msgs, err := app.GetThread(qp(r, "accountId"), qp(r, "threadId"))
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, msgs)
 	})
 
 	mux.HandleFunc("/api/message", func(w http.ResponseWriter, r *http.Request) {
 		msg, err := app.GetMessage(qp(r, "accountId"), qp(r, "messageId"))
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, msg)
 	})
 
 	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		var msg desktop.OutboundMsg
@@ -174,13 +194,15 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 			errJSON(w, fmt.Errorf("bad request: %w", err))
 			return
 		}
-		if err := app.SendMessage(msg); err != nil { errJSON(w, err); return }
+		if err := app.SendMessage(msg); err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("/api/sync", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		events.emit("sync:progress", map[string]string{"status": "started"})
@@ -197,13 +219,15 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 
 	mux.HandleFunc("/api/labels", func(w http.ResponseWriter, r *http.Request) {
 		labels, err := app.GetLabels(qp(r, "accountId"))
-		if err != nil { errJSON(w, err); return }
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, labels)
 	})
 
 	mux.HandleFunc("/api/mark-read", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		if err := app.MarkMessageRead(qp(r, "accountId"), qp(r, "messageId")); err != nil {
@@ -214,8 +238,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/mark-unread", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		if err := app.MarkMessageUnread(qp(r, "accountId"), qp(r, "messageId")); err != nil {
@@ -226,8 +249,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/trash", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		if err := app.TrashThread(qp(r, "accountId"), qp(r, "threadId")); err != nil {
@@ -239,8 +261,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/spam", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		if err := app.MarkThreadSpam(qp(r, "accountId"), qp(r, "threadId")); err != nil {
@@ -252,8 +273,7 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 	})
 
 	mux.HandleFunc("/api/not-spam", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		if !requirePOST(w, r) {
 			return
 		}
 		if err := app.MarkThreadNotSpam(qp(r, "accountId"), qp(r, "threadId")); err != nil {
@@ -305,6 +325,14 @@ func (h *hub) emit(event string, data any) {
 }
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
+
+func requirePOST(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
