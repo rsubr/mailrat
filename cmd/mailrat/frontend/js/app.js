@@ -432,6 +432,48 @@ document.addEventListener('alpine:init', () => {
       finally { this.loading = false; }
     },
 
+    _replyData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        replyTo.from || '',
+        cc:        '',
+        bcc:       '',
+        subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: replyTo.id || '',
+        threadId:  replyTo.threadId,
+      };
+    },
+
+    _replyAllData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        replyTo.from || '',
+        cc:        replyTo.to || '',
+        bcc:       '',
+        subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: replyTo.id || '',
+        threadId:  replyTo.threadId,
+      };
+    },
+
+    _forwardData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        '',
+        cc:        '',
+        bcc:       '',
+        subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: '',
+        threadId:  '',
+      };
+    },
+
     openCompose(mode = 'new', replyTo = null) {
       this.composeMode = mode;
       this.sendError = null;
@@ -439,42 +481,12 @@ document.addEventListener('alpine:init', () => {
       this.showBcc = false;
       const defaultAccountId = this.accounts.length > 0 ? this.accounts[0].id : '';
       if (mode === 'reply' && replyTo) {
-        const subj = replyTo.subject || '';
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        replyTo.from || '',
-          cc:        '',
-          bcc:       '',
-          subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: replyTo.id || '',
-          threadId:  replyTo.threadId,
-        };
+        this.composeData = this._replyData(replyTo, defaultAccountId);
       } else if (mode === 'reply-all' && replyTo) {
-        const subj = replyTo.subject || '';
         this.showCc = true;
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        replyTo.from || '',
-          cc:        replyTo.to || '',
-          bcc:       '',
-          subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: replyTo.id || '',
-          threadId:  replyTo.threadId,
-        };
+        this.composeData = this._replyAllData(replyTo, defaultAccountId);
       } else if (mode === 'forward' && replyTo) {
-        const subj = replyTo.subject || '';
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        '',
-          cc:        '',
-          bcc:       '',
-          subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: '',
-          threadId:  '',
-        };
+        this.composeData = this._forwardData(replyTo, defaultAccountId);
       } else {
         this.composeData = { accountId: defaultAccountId, to: '', cc: '', bcc: '', subject: '', body: '', inReplyTo: '', threadId: '' };
       }
