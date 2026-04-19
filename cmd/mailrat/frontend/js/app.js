@@ -172,7 +172,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async loadLabels() {
-      const accountId = this.activeAccountId === 'unified'
+      const accountId = this.isUnifiedAccount(this.activeAccountId)
         ? (this.accounts[0]?.id || '')
         : this.activeAccountId;
       if (!accountId) return;
@@ -180,6 +180,10 @@ document.addEventListener('alpine:init', () => {
         const labels = await Wails.call('GetLabels', accountId);
         this.labels = labels || [];
       } catch (e) { /* labels are non-critical */ }
+    },
+
+    isUnifiedAccount(accountId) {
+      return accountId === '' || accountId === 'unified';
     },
 
     saveCurrentToCache() {
