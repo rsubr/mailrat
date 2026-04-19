@@ -44,13 +44,13 @@ func (a *App) startup(ctx context.Context) {
 
 	dir, err := dataDir()
 	if err != nil {
-		a.logError("data dir: " + err.Error())
+		a.logError(fmt.Sprintf("data dir: %v", err))
 		return
 	}
 
 	store, err := storage.Open(filepath.Join(dir, "mailrat.db"))
 	if err != nil {
-		a.logError("open db: " + err.Error())
+		a.logError(fmt.Sprintf("open db: %v", err))
 		return
 	}
 	a.store = store
@@ -58,7 +58,7 @@ func (a *App) startup(ctx context.Context) {
 	credPath := filepath.Join(dir, "credentials.json")
 	mgr, err := accounts.NewManager(store, credPath)
 	if err != nil {
-		a.logWarning("no credentials: " + err.Error())
+		a.logWarning(fmt.Sprintf("no credentials: %v", err))
 		return
 	}
 	a.accounts = mgr
@@ -421,13 +421,13 @@ func (a *App) Sync(accountID string) error {
 		}
 		client, err := a.gmailClient(acc.ID)
 		if err != nil {
-			a.logWarning("sync client " + acc.Email + ": " + err.Error())
+			a.logWarning(fmt.Sprintf("sync client %s: %v", acc.Email, err))
 			continue
 		}
 		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
 		mgr := mailsync.NewManager(a.store, client)
 		if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
-			a.logWarning("sync " + acc.Email + ": " + err.Error())
+			a.logWarning(fmt.Sprintf("sync %s: %v", acc.Email, err))
 		}
 	}
 	a.emitEvent("sync:complete", nil)
