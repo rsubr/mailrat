@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mailrat/mailrat/internal/accounts"
 	"github.com/mailrat/mailrat/internal/gmail"
+	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
@@ -142,44 +143,42 @@ func toggleStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID
 			return msgActionDone{err: fmt.Errorf("load message: %w", err)}
 		}
 
-		if msg.IsStarred {
-			return unstarCmd(store, accMgr, acctID, msgID)()
-		}
-		return starCmd(store, accMgr, acctID, msgID)()
+		return setStarCmd(store, accMgr, acctID, msgID, !msg.IsStarred)()
 	}
 }
 
-func starCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+func setStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string, star bool) tea.Cmd {
 	return func() tea.Msg {
-		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{"STARRED"}, nil); err != nil {
-			return msgActionDone{err: fmt.Errorf("star: %w", err)}
+		var add, remove []string
+		if star {
+			add = []string{mail.LabelStarred}
+		} else {
+			remove = []string{mail.LabelStarred}
 		}
-		if err := addLocalLabel(store, acctID, msgID, "STARRED"); err != nil {
-			return msgActionDone{err: err}
-		}
-		return msgActionDone{
-			status:     "Starred",
-			accountID:  acctID,
-			messageID:  msgID,
-			isStarred:  true,
-			setStarred: true,
-		}
-	}
-}
-
-func unstarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
-	return func() tea.Msg {
-		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, nil, []string{"STARRED"}); err != nil {
+		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, add, remove); err != nil {
+			if star {
+				return msgActionDone{err: fmt.Errorf("star: %w", err)}
+			}
 			return msgActionDone{err: fmt.Errorf("unstar: %w", err)}
 		}
-		if err := removeLocalLabel(store, acctID, msgID, "STARRED"); err != nil {
-			return msgActionDone{err: err}
+		if star {
+			if err := addLocalLabel(store, acctID, msgID, mail.LabelStarred); err != nil {
+				return msgActionDone{err: err}
+			}
+		} else {
+			if err := removeLocalLabel(store, acctID, msgID, mail.LabelStarred); err != nil {
+				return msgActionDone{err: err}
+			}
+		}
+		status := "Starred"
+		if !star {
+			status = "Unstarred"
 		}
 		return msgActionDone{
-			status:     "Unstarred",
+			status:     status,
 			accountID:  acctID,
 			messageID:  msgID,
-			isStarred:  false,
+			isStarred:  star,
 			setStarred: true,
 		}
 	}
