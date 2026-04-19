@@ -338,6 +338,47 @@ func (a *App) MarkThreadNotSpam(accountID, threadID string) error {
 	return nil
 }
 
+// applyPendingOp applies a single pending operation via the Gmail API.
+func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp, client *gmail.Client) error {
+	switch op.OpType {
+	case storage.OpMarkRead:
+		return client.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
+	case storage.OpMarkUnread:
+		return client.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
+	case storage.OpTrashThread:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.TrashMessage(ctx, msg.ID); err != nil {
+				return err
+			}
+		}
+	case storage.OpMarkSpam:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelSpam}, []string{mail.LabelInbox}); err != nil {
+				return err
+			}
+		}
+	case storage.OpMarkNotSpam:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelInbox}, []string{mail.LabelSpam}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // DrainPendingOps replays queued offline operations against the Gmail API.
 // Called after a successful sync when connectivity is confirmed.
 func (a *App) DrainPendingOps() {
@@ -359,44 +400,7 @@ func (a *App) DrainPendingOps() {
 			}
 			clients[op.AccountID] = client
 		}
-		var applyErr error
-		switch op.OpType {
-		case storage.OpMarkRead:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
-		case storage.OpMarkUnread:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
-		case storage.OpTrashThread:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.TrashMessage(ctx, msg.ID); applyErr != nil {
-					break
-				}
-			}
-		case storage.OpMarkSpam:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{mail.LabelSpam}, []string{mail.LabelInbox}); applyErr != nil {
-					break
-				}
-			}
-		case storage.OpMarkNotSpam:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{mail.LabelInbox}, []string{mail.LabelSpam}); applyErr != nil {
-					break
-				}
-			}
-		}
-		if applyErr == nil {
+		if err := a.applyPendingOp(ctx, op, client); err == nil {
 			_ = a.store.DeletePendingOp(op.ID)
 		}
 	}
