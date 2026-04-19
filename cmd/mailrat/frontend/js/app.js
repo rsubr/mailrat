@@ -217,16 +217,16 @@ document.addEventListener('alpine:init', () => {
       return false;
     },
 
-    async loadInbox() {
-      const isActive = this.activeLabel === 'INBOX' && !this.searchQuery;
-      const key = `${this.activeAccountId}:INBOX`;
+    async _loadThreadList({ labelId, apiCall }) {
+      const isActive = this.activeLabel === labelId && !this.searchQuery;
+      const key = `${this.activeAccountId}:${labelId}`;
       const isCached = !!this.folderCache[key];
 
       if (isActive && !isCached) this.loading = true;
       this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, 0);
+        const threads = await apiCall();
         const threadsVal = threads || [];
         const isLoaded = threadsVal.length < THREADS_PER_PAGE;
 
@@ -242,6 +242,13 @@ document.addEventListener('alpine:init', () => {
         }
       } catch (e) { if (isActive && !isCached) this.error = e.toString(); }
       finally { if (isActive) this.loading = false; }
+    },
+
+    async loadInbox() {
+      return this._loadThreadList({
+        labelId: 'INBOX',
+        apiCall: () => Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, 0),
+      });
     },
 
     async selectAccount(id) {
@@ -380,30 +387,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     async loadLabelThreads(labelId) {
-      const isActive = this.activeLabel === labelId && !this.searchQuery;
-      const key = `${this.activeAccountId}:${labelId}`;
-      const isCached = !!this.folderCache[key];
-
-      if (isActive && !isCached) this.loading = true;
-      this.allLoaded = false;
-      this.error = null;
-      try {
-        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, THREADS_PER_PAGE, 0);
-        const threadsVal = threads || [];
-        const isLoaded = threadsVal.length < THREADS_PER_PAGE;
-
-        if (isActive) {
-          this.threads = threadsVal;
-          this.allLoaded = isLoaded;
-          this.saveCurrentToCache();
-        } else {
-          if (this.folderCache[key]) {
-            this.folderCache[key].threads = threadsVal;
-            this.folderCache[key].allLoaded = isLoaded;
-          }
-        }
-      } catch (e) { if (isActive && !isCached) this.error = e.toString(); }
-      finally { if (isActive) this.loading = false; }
+      return this._loadThreadList({
+        labelId,
+        apiCall: () => Wails.call('GetLabelThreads', this.activeAccountId, labelId, THREADS_PER_PAGE, 0),
+      });
     },
 
     onListScroll(e) {
