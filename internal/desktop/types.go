@@ -106,3 +106,43 @@ func messageToItem(m storage.Message) MessageItem {
 		HasAttachments: m.HasAttachments,
 	}
 }
+
+func threadSummariesToItems(summaries []storage.ThreadSummary) []ThreadItem {
+	out := make([]ThreadItem, len(summaries))
+	for i, s := range summaries {
+		out[i] = threadSummaryToItem(s)
+	}
+	return out
+}
+
+func messagesToItems(msgs []storage.Message) []MessageItem {
+	out := make([]MessageItem, len(msgs))
+	for i, m := range msgs {
+		out[i] = messageToItem(m)
+	}
+	return out
+}
+
+func accountsToItems(accs []storage.Account) []AccountItem {
+	out := make([]AccountItem, len(accs))
+	for i, acc := range accs {
+		out[i] = AccountItem{ID: acc.ID, Email: acc.Email}
+	}
+	return out
+}
+
+func contactsToItems(contacts []storage.Contact) []ContactItem {
+	out := make([]ContactItem, len(contacts))
+	for i, c := range contacts {
+		out[i] = ContactItem{Name: c.Name, Email: c.Email}
+	}
+	return out
+}
+
+func labelsToItems(labels []storage.Label) []LabelItem {
+	out := make([]LabelItem, len(labels))
+	for i, l := range labels {
+		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
+	}
+	return out
+}

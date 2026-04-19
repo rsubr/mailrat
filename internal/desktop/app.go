@@ -44,13 +44,13 @@ func (a *App) startup(ctx context.Context) {
 
 	dir, err := dataDir()
 	if err != nil {
-		a.logError("data dir: " + err.Error())
+		a.logError(fmt.Sprintf("data dir: %v", err))
 		return
 	}
 
 	store, err := storage.Open(filepath.Join(dir, "mailrat.db"))
 	if err != nil {
-		a.logError("open db: " + err.Error())
+		a.logError(fmt.Sprintf("open db: %v", err))
 		return
 	}
 	a.store = store
@@ -58,7 +58,7 @@ func (a *App) startup(ctx context.Context) {
 	credPath := filepath.Join(dir, "credentials.json")
 	mgr, err := accounts.NewManager(store, credPath)
 	if err != nil {
-		a.logWarning("no credentials: " + err.Error())
+		a.logWarning(fmt.Sprintf("no credentials: %v", err))
 		return
 	}
 	a.accounts = mgr
@@ -103,11 +103,7 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]AccountItem, len(accs))
-	for i, acc := range accs {
-		out[i] = AccountItem{ID: acc.ID, Email: acc.Email}
-	}
-	return out, nil
+	return accountsToItems(accs), nil
 }
 
 // GetInbox returns thread summaries for the inbox.
@@ -130,12 +126,7 @@ func (a *App) GetInbox(accountID string, limit, offset int) ([]ThreadItem, error
 	if err != nil {
 		return nil, err
 	}
-
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // GetLabelThreads returns thread summaries for a given Gmail label.
@@ -157,11 +148,7 @@ func (a *App) GetLabelThreads(accountID, labelID string, limit, offset int) ([]T
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // SearchInbox searches threads by subject, snippet, or sender across all accounts.
@@ -176,11 +163,7 @@ func (a *App) SearchInbox(query string, limit int) ([]ThreadItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // GetThread returns all messages in a thread, oldest first.
@@ -192,11 +175,7 @@ func (a *App) GetThread(accountID, threadID string) ([]MessageItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]MessageItem, len(msgs))
-	for i, m := range msgs {
-		out[i] = messageToItem(m)
-	}
-	return out, nil
+	return messagesToItems(msgs), nil
 }
 
 // GetMessage returns a single message, lazily fetching the body from Gmail if not cached.
@@ -264,7 +243,7 @@ func (a *App) MarkMessageRead(accountID, messageID string) error {
 		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
 		return nil
 	}
-	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{"UNREAD"}); err != nil {
+	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{mail.LabelUnread}); err != nil {
 		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
 	}
 	return nil
@@ -284,7 +263,7 @@ func (a *App) MarkMessageUnread(accountID, messageID string) error {
 		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
 		return nil
 	}
-	if err := client.ModifyLabels(a.ctx, messageID, []string{"UNREAD"}, nil); err != nil {
+	if err := client.ModifyLabels(a.ctx, messageID, []string{mail.LabelUnread}, nil); err != nil {
 		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
 	}
 	return nil
@@ -359,6 +338,47 @@ func (a *App) MarkThreadNotSpam(accountID, threadID string) error {
 	return nil
 }
 
+// applyPendingOp applies a single pending operation via the Gmail API.
+func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp, client *gmail.Client) error {
+	switch op.OpType {
+	case storage.OpMarkRead:
+		return client.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
+	case storage.OpMarkUnread:
+		return client.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
+	case storage.OpTrashThread:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.TrashMessage(ctx, msg.ID); err != nil {
+				return err
+			}
+		}
+	case storage.OpMarkSpam:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelSpam}, []string{mail.LabelInbox}); err != nil {
+				return err
+			}
+		}
+	case storage.OpMarkNotSpam:
+		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+		if err != nil {
+			return err
+		}
+		for _, msg := range msgs {
+			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelInbox}, []string{mail.LabelSpam}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // DrainPendingOps replays queued offline operations against the Gmail API.
 // Called after a successful sync when connectivity is confirmed.
 func (a *App) DrainPendingOps() {
@@ -380,44 +400,7 @@ func (a *App) DrainPendingOps() {
 			}
 			clients[op.AccountID] = client
 		}
-		var applyErr error
-		switch op.OpType {
-		case storage.OpMarkRead:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"})
-		case storage.OpMarkUnread:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, []string{"UNREAD"}, nil)
-		case storage.OpTrashThread:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.TrashMessage(ctx, msg.ID); applyErr != nil {
-					break
-				}
-			}
-		case storage.OpMarkSpam:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"SPAM"}, []string{"INBOX"}); applyErr != nil {
-					break
-				}
-			}
-		case storage.OpMarkNotSpam:
-			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-			if err != nil {
-				continue
-			}
-			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"INBOX"}, []string{"SPAM"}); applyErr != nil {
-					break
-				}
-			}
-		}
-		if applyErr == nil {
+		if err := a.applyPendingOp(ctx, op, client); err == nil {
 			_ = a.store.DeletePendingOp(op.ID)
 		}
 	}
@@ -438,13 +421,13 @@ func (a *App) Sync(accountID string) error {
 		}
 		client, err := a.gmailClient(acc.ID)
 		if err != nil {
-			a.logWarning("sync client " + acc.Email + ": " + err.Error())
+			a.logWarning(fmt.Sprintf("sync client %s: %v", acc.Email, err))
 			continue
 		}
 		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
 		mgr := mailsync.NewManager(a.store, client)
 		if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
-			a.logWarning("sync " + acc.Email + ": " + err.Error())
+			a.logWarning(fmt.Sprintf("sync %s: %v", acc.Email, err))
 		}
 	}
 	a.emitEvent("sync:complete", nil)
@@ -471,11 +454,7 @@ func (a *App) SearchContacts(accountID, query string, limit int) ([]ContactItem,
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ContactItem, len(contacts))
-	for i, c := range contacts {
-		out[i] = ContactItem{Name: c.Name, Email: c.Email}
-	}
-	return out, nil
+	return contactsToItems(contacts), nil
 }
 
 // GetLabels returns all labels for an account.
@@ -487,11 +466,7 @@ func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]LabelItem, len(labels))
-	for i, l := range labels {
-		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
-	}
-	return out, nil
+	return labelsToItems(labels), nil
 }
 
 // gmailClient returns an authenticated gmail.Client for the given account ID.
