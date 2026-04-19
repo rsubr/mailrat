@@ -13,6 +13,11 @@ import (
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
+const (
+	searchPageSize   = 200
+	searchDebounceMs = 300 * time.Millisecond
+)
+
 type msgActionDone struct {
 	status     string
 	err        error
@@ -88,13 +93,14 @@ func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID
 			return msgActionDone{err: fmt.Errorf("mark unread: %w", err)}
 		}
 		if err := addLocalLabel(store, acctID, msgID, "UNREAD"); err != nil {
-			return msgActionDone{err: err}
+			return msgActionDone{err: fmt.Errorf("update local label: %w", err)}
 		}
 		msg, err := store.GetMessage(acctID, msgID)
-		if err == nil {
-			msg.IsUnread = true
-			_ = store.UpsertMessage(msg)
+		if err != nil {
+			return msgActionDone{}
 		}
+		msg.IsUnread = true
+		_ = store.UpsertMessage(msg)
 		return msgActionDone{
 			status:     "Marked unread",
 			accountID:  acctID,
@@ -163,11 +169,11 @@ func setStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID st
 		}
 		if star {
 			if err := addLocalLabel(store, acctID, msgID, mail.LabelStarred); err != nil {
-				return msgActionDone{err: err}
+				return msgActionDone{err: fmt.Errorf("update local label: %w", err)}
 			}
 		} else {
 			if err := removeLocalLabel(store, acctID, msgID, mail.LabelStarred); err != nil {
-				return msgActionDone{err: err}
+				return msgActionDone{err: fmt.Errorf("update local label: %w", err)}
 			}
 		}
 		status := "Starred"
@@ -332,20 +338,20 @@ func searchThreadsCmd(store *storage.Store, acctID, query string) tea.Cmd {
 				err     error
 			)
 			if acctID == "" {
-				threads, err = store.ListAllThreadSummaries(200, 0)
+				threads, err = store.ListAllThreadSummaries(searchPageSize, 0)
 			} else {
-				threads, err = store.ListThreadSummaries(acctID, 200, 0)
+				threads, err = store.ListThreadSummaries(acctID, searchPageSize, 0)
 			}
 			return msgSearchLoaded{results: threads, err: err}
 		}
-		results, err := store.LocalSearchThreadSummaries(query, 200)
+		results, err := store.LocalSearchThreadSummaries(query, searchPageSize)
 		return msgSearchLoaded{results: results, err: err}
 	}
 }
 
 func searchDebounceCmd(token int) tea.Cmd {
 	return func() tea.Msg {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(searchDebounceMs)
 		return msgSearchDebounce{token: token}
 	}
 }
