@@ -560,19 +560,15 @@ document.addEventListener('alpine:init', () => {
     get store() { return Alpine.store('mail'); },
 
     init() {
-      this.$watch('store.activeLabel', () => {
-        this.$nextTick(() => {
-          if (this.$refs.threadList) {
-            this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
-          }
-        });
-      });
-      this.$watch('store.activeAccountId', () => {
-        this.$nextTick(() => {
-          if (this.$refs.threadList) {
-            this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
-          }
-        });
+      this.$watch('store.activeLabel',     () => this.restoreScroll());
+      this.$watch('store.activeAccountId', () => this.restoreScroll());
+    },
+
+    restoreScroll() {
+      this.$nextTick(() => {
+        if (this.$refs.threadList) {
+          this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
+        }
       });
     },
 
