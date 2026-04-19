@@ -46,7 +46,7 @@ type msgConfigSaved struct {
 }
 
 type msgMarkReadDone struct {
-	acctID    string
+	accountID string
 	messageID string
 	queued    bool // true when offline and op was deferred
 }

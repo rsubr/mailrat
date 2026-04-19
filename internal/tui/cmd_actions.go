@@ -115,11 +115,11 @@ func markReadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID s
 		markMessageReadLocally(store, acctID, msgID)
 
 		if applyMarkRead(accMgr, acctID, msgID) == nil {
-			return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: false}
+			return msgMarkReadDone{accountID: acctID, messageID: msgID, queued: false}
 		}
 
 		_ = store.AddPendingOp(storage.OpMarkRead, acctID, msgID)
-		return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: true}
+		return msgMarkReadDone{accountID: acctID, messageID: msgID, queued: true}
 	}
 }
 

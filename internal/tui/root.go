@@ -111,7 +111,7 @@ func (m model) handleMessageLoaded(msg msgMessageLoaded) (model, tea.Cmd) {
 func (m model) handleMarkReadDone(msg msgMarkReadDone) model {
 	threadID := m.reader.current.ThreadID
 	for i, t := range m.inbox.threads {
-		if t.ThreadID == threadID && t.AccountID == msg.acctID {
+		if t.ThreadID == threadID && t.AccountID == msg.accountID {
 			if m.inbox.threads[i].UnreadCount > 0 {
 				m.inbox.threads[i].UnreadCount--
 			}
