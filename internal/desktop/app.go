@@ -264,7 +264,7 @@ func (a *App) MarkMessageRead(accountID, messageID string) error {
 		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
 		return nil
 	}
-	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{"UNREAD"}); err != nil {
+	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{mail.LabelUnread}); err != nil {
 		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
 	}
 	return nil
@@ -284,7 +284,7 @@ func (a *App) MarkMessageUnread(accountID, messageID string) error {
 		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
 		return nil
 	}
-	if err := client.ModifyLabels(a.ctx, messageID, []string{"UNREAD"}, nil); err != nil {
+	if err := client.ModifyLabels(a.ctx, messageID, []string{mail.LabelUnread}, nil); err != nil {
 		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
 	}
 	return nil
@@ -383,9 +383,9 @@ func (a *App) DrainPendingOps() {
 		var applyErr error
 		switch op.OpType {
 		case storage.OpMarkRead:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, nil, []string{"UNREAD"})
+			applyErr = client.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
 		case storage.OpMarkUnread:
-			applyErr = client.ModifyLabels(ctx, op.MessageID, []string{"UNREAD"}, nil)
+			applyErr = client.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
 		case storage.OpTrashThread:
 			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
 			if err != nil {
@@ -402,7 +402,7 @@ func (a *App) DrainPendingOps() {
 				continue
 			}
 			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"SPAM"}, []string{"INBOX"}); applyErr != nil {
+				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{mail.LabelSpam}, []string{mail.LabelInbox}); applyErr != nil {
 					break
 				}
 			}
@@ -412,7 +412,7 @@ func (a *App) DrainPendingOps() {
 				continue
 			}
 			for _, msg := range msgs {
-				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"INBOX"}, []string{"SPAM"}); applyErr != nil {
+				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{mail.LabelInbox}, []string{mail.LabelSpam}); applyErr != nil {
 					break
 				}
 			}
