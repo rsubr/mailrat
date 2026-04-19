@@ -41,7 +41,8 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.nav.view = viewInbox
 			return m, trashMessageCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ID)
 		case "!":
-			return m.unsupportedShortcut("!"), nil
+			m.nav.view = viewInbox
+			return m, markSpamCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ThreadID)
 		}
 	}
 

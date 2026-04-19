@@ -45,6 +45,29 @@ func archiveThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, th
 	}
 }
 
+func markSpamCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadID string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := store.ListMessagesByThread(acctID, threadID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("load thread: %w", err)}
+		}
+		if len(msgs) == 0 {
+			return msgActionDone{status: "Nothing to mark as spam"}
+		}
+		if err := modifyMessages(accMgr, acctID, msgs, []string{"SPAM"}, []string{"INBOX"}); err != nil {
+			return msgActionDone{err: fmt.Errorf("mark spam: %w", err)}
+		}
+		for _, msg := range msgs {
+			_ = removeLocalLabel(store, acctID, msg.ID, "INBOX")
+			_ = addLocalLabel(store, acctID, msg.ID, "SPAM")
+		}
+		return msgActionDone{
+			status: "Conversation marked as spam",
+			cmd:    loadInboxCmd(store, ""),
+		}
+	}
+}
+
 func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
 		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{"UNREAD"}, nil); err != nil {
@@ -52,6 +75,11 @@ func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID
 		}
 		if err := addLocalLabel(store, acctID, msgID, "UNREAD"); err != nil {
 			return msgActionDone{err: err}
+		}
+		msg, err := store.GetMessage(acctID, msgID)
+		if err == nil {
+			msg.IsUnread = true
+			_ = store.UpsertMessage(msg)
 		}
 		return msgActionDone{
 			status:     "Marked unread",

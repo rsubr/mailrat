@@ -9,7 +9,7 @@
  [ ] Display all labels in left panel, but hide nonsense labels like stars variants
  [ ] Hide left panel like GMail
  [ ] The ? key should bring up shortcuts like GMail
- [ ] GMail shortcut key support, advanced shortcut keys like "g i" go to inbox, "/" search, "#" delete, "!" spam
+ [x] GMail shortcut key support, advanced shortcut keys like "g i" go to inbox, "/" search, "#" delete, "!" spam
  [x] Load label colors from the backend, now all labels are just grey
  [x] Inbox not loading all emails, it's limited view. Sync has everything though
  [ ] How should I fetch new mail? Use websocket from WebUI, sync from GMail API to golang backend?
@@ -17,8 +17,7 @@
  [ ] Pagination for mails (metadata only) for mails that are not yet synced.
  [ ] Implement right click functionality for advanced actions.
  [ ] Prevent mail send when To and CC are blank
- [x] Add CC, BCC fields
- [ ] Trash / mark-read / mark-unread not wired in web server (HTTP mode) — only works in Wails desktop
+ [x] Trash / mark-read / mark-unread wired in web server (HTTP mode) and Wails desktop
  [x] Star -- types to match GMail
  [ ] Star -- clicking on stars cycles through the star types
  [ ] Dark/Light mode must detect system settings and configure accordingly

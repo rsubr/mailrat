@@ -59,6 +59,12 @@
         TrashThread: (accountId, threadId) =>
           api('/api/trash' + qs({ accountId, threadId }), { method: 'POST' }),
 
+        MarkThreadSpam: (accountId, threadId) =>
+          api('/api/spam' + qs({ accountId, threadId }), { method: 'POST' }),
+
+        MarkThreadNotSpam: (accountId, threadId) =>
+          api('/api/not-spam' + qs({ accountId, threadId }), { method: 'POST' }),
+
         GetLabelThreads: (accountId, labelId, limit, offset) =>
           api('/api/label-threads' + qs({ accountId: accountId || '', labelId, limit: limit || 60, offset: offset || 0 })),
 

@@ -313,6 +313,52 @@ func (a *App) TrashThread(accountID, threadID string) error {
 	return nil
 }
 
+// MarkThreadSpam moves all messages in a thread to Spam and removes from Inbox.
+// If offline, queues the operation for replay on the next sync.
+func (a *App) MarkThreadSpam(accountID, threadID string) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		_ = a.store.AddPendingOp(storage.OpMarkSpam, accountID, threadID)
+		return nil
+	}
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
+	if err != nil {
+		return err
+	}
+	svc := mail.NewLabelService(a.store, client)
+	for _, msg := range msgs {
+		if err := svc.MarkAsSpam(a.ctx, accountID, msg.ID); err != nil {
+			_ = a.store.AddPendingOp(storage.OpMarkSpam, accountID, threadID)
+			return nil
+		}
+	}
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
+// MarkThreadNotSpam moves all messages in a thread from Spam to Inbox.
+// If offline, queues the operation for replay on the next sync.
+func (a *App) MarkThreadNotSpam(accountID, threadID string) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		_ = a.store.AddPendingOp(storage.OpMarkNotSpam, accountID, threadID)
+		return nil
+	}
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
+	if err != nil {
+		return err
+	}
+	svc := mail.NewLabelService(a.store, client)
+	for _, msg := range msgs {
+		if err := svc.MarkAsNotSpam(a.ctx, accountID, msg.ID); err != nil {
+			_ = a.store.AddPendingOp(storage.OpMarkNotSpam, accountID, threadID)
+			return nil
+		}
+	}
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
 // DrainPendingOps replays queued offline operations against the Gmail API.
 // Called after a successful sync when connectivity is confirmed.
 func (a *App) DrainPendingOps() {
@@ -347,6 +393,26 @@ func (a *App) DrainPendingOps() {
 			}
 			for _, msg := range msgs {
 				if applyErr = client.TrashMessage(ctx, msg.ID); applyErr != nil {
+					break
+				}
+			}
+		case storage.OpMarkSpam:
+			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+			if err != nil {
+				continue
+			}
+			for _, msg := range msgs {
+				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"SPAM"}, []string{"INBOX"}); applyErr != nil {
+					break
+				}
+			}
+		case storage.OpMarkNotSpam:
+			msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
+			if err != nil {
+				continue
+			}
+			for _, msg := range msgs {
+				if applyErr = client.ModifyLabels(ctx, msg.ID, []string{"INBOX"}, []string{"SPAM"}); applyErr != nil {
 					break
 				}
 			}

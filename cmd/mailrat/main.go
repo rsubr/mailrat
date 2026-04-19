@@ -238,6 +238,32 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
+	mux.HandleFunc("/api/spam", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := app.MarkThreadSpam(qp(r, "accountId"), qp(r, "threadId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		events.emit("inbox:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	mux.HandleFunc("/api/not-spam", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := app.MarkThreadNotSpam(qp(r, "accountId"), qp(r, "threadId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		events.emit("inbox:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
 	log.Printf("mailrat web → http://%s", addr)
 	return http.ListenAndServe(addr, mux)
 }

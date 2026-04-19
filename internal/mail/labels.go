@@ -85,6 +85,25 @@ func (s *LabelService) ApplyLabel(ctx context.Context, accountID, messageID, lab
 	return s.store.SetMessageLabels(accountID, messageID, ids)
 }
 
+// MarkAsSpam adds the SPAM label and removes the INBOX label.
+func (s *LabelService) MarkAsSpam(ctx context.Context, accountID, messageID string) error {
+	if err := s.client.ModifyLabels(ctx, messageID, []string{"SPAM"}, []string{"INBOX"}); err != nil {
+		return err
+	}
+	return s.removeLocalLabel(accountID, messageID, "INBOX")
+}
+
+// MarkAsNotSpam removes the SPAM label and adds the INBOX label.
+func (s *LabelService) MarkAsNotSpam(ctx context.Context, accountID, messageID string) error {
+	if err := s.client.ModifyLabels(ctx, messageID, []string{"INBOX"}, []string{"SPAM"}); err != nil {
+		return err
+	}
+	if err := s.removeLocalLabel(accountID, messageID, "SPAM"); err != nil {
+		return err
+	}
+	return s.ApplyLabel(ctx, accountID, messageID, "INBOX")
+}
+
 func (s *LabelService) removeLocalLabel(accountID, messageID, labelID string) error {
 	ids, err := s.store.GetMessageLabelIDs(accountID, messageID)
 	if err != nil {

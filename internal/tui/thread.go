@@ -72,7 +72,12 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// maybe just the message. Gmail's '#' usually trashes the thread.
 			return m, trashThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "!":
-			return m.unsupportedShortcut("!"), nil
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			sel := m.thread.messages[m.thread.cursor]
+			m.nav.view = viewInbox
+			return m, markSpamCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		}
 	}
 	return m, nil

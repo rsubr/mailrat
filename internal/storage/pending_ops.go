@@ -6,6 +6,8 @@ const (
 	OpMarkRead    = "mark_read"
 	OpMarkUnread  = "mark_unread"
 	OpTrashThread = "trash_thread"
+	OpMarkSpam    = "mark_spam"
+	OpMarkNotSpam = "mark_not_spam"
 )
 
 // PendingOp is an operation that failed while offline and must be retried.

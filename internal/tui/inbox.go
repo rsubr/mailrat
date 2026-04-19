@@ -86,7 +86,11 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sel := m.inbox.threads[m.inbox.cursor]
 			return m, trashThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "!":
-			return m.unsupportedShortcut("!"), nil
+			if len(m.inbox.threads) == 0 {
+				return m, nil
+			}
+			sel := m.inbox.threads[m.inbox.cursor]
+			return m, markSpamCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "u":
 			m.account.cursor = 0
 			m.nav.view = viewAccounts
@@ -248,11 +252,11 @@ func (m model) renderHelp() string {
 	var keys string
 	switch m.nav.view {
 	case viewInbox:
-		keys = "j/k,n/p:move  enter/o:open  c:compose  e/y:archive  /:search  A:accounts  S:sync  ?:config"
+		keys = "j/k,n/p:move  enter/o:open  c:compose  e/y:archive  !:spam  /:search  A:accounts  S:sync  ?:config"
 	case viewThread:
-		keys = "j/k,n/p:move  enter/o:read  r:reply  a:reply all  f:forward  e/y:archive  u:back"
+		keys = "j/k,n/p:move  enter/o:read  r:reply  a:reply all  f:forward  e/y:archive  !:spam  u:back"
 	case viewMessage:
-		keys = "↑/↓/pgup/pgdn:scroll  r:reply  a:reply all  f:forward  Shift+I:unread  e/y:archive  u:back"
+		keys = "↑/↓/pgup/pgdn:scroll  r:reply  a:reply all  f:forward  Shift+I:unread  e/y:archive  !:spam  u:back"
 	case viewCompose:
 		keys = "tab:next field  ctrl+s/ctrl+enter:send  esc:cancel"
 	case viewAccounts:

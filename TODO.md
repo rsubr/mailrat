@@ -48,7 +48,7 @@ Status key:
 - [x] Delete permanently
 - [x] Move to trash
 - [ ] Restore from trash
-- [ ] Mark as spam
+- [x] Mark as spam
 - [ ] Mark as not spam
 
 ## Labels
@@ -63,7 +63,7 @@ Status key:
 
 ## Search And Organization
 
-- [ ] Search mail
+- [x] Search mail
 - [ ] Filter by unread
 - [ ] Filter by starred
 - [ ] Filter by attachments
@@ -74,13 +74,13 @@ Status key:
 
 ## Thread Actions
 
-- [ ] Reply from thread view
-- [ ] Forward from thread view
-- [ ] Archive thread
+- [x] Reply from thread view
+- [x] Forward from thread view
+- [x] Archive thread
 - [ ] Delete thread
-- [ ] Trash thread
-- [ ] Apply labels to thread
-- [ ] Mark entire thread read/unread
+- [x] Trash thread
+- [x] Apply labels to thread
+- [x] Mark entire thread read/unread
 
 ## Bulk Actions
 
