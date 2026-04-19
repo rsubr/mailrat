@@ -186,6 +186,10 @@ document.addEventListener('alpine:init', () => {
       return accountId === '' || accountId === 'unified';
     },
 
+    removeThread(id, accountId) {
+      this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+    },
+
     saveCurrentToCache() {
       if (this.searchQuery) return;
       const key = `${this.activeAccountId}:${this.activeLabel}`;
@@ -285,7 +289,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('TrashThread', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
@@ -298,7 +302,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('MarkThreadSpam', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
@@ -311,7 +315,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('MarkThreadNotSpam', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
