@@ -53,3 +53,5 @@ type msgSearchLoaded struct {
 	results []storage.ThreadSummary
 	err     error
 }
+
+type msgSearchDebounce struct{ token int }

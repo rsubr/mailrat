@@ -60,12 +60,12 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadConfigCmd(m.store, acctID)
 		case "/":
 			m.nav.view = viewSearch
-			m.search.inputFocused = true
 			m.search.input.Focus()
 			m.search.input.SetValue("")
 			m.search.results = nil
 			m.search.cursor = 0
-			return m, nil
+			m.search.debounceToken++
+			return m, searchThreadsCmd(m.store, m.nav.activeAcct, "")
 		case "x":
 			return m.unsupportedShortcut("x"), nil
 		case "s":
@@ -247,11 +247,7 @@ func (m model) renderHelp() string {
 	case viewConfig:
 		keys = "j/k:move  d:cycle days  a:toggle attachments  esc:save & close"
 	case viewSearch:
-		if m.search.inputFocused {
-			keys = "enter:search  esc:back"
-		} else {
-			keys = "j/k:navigate  enter/o:open  /:new search  esc:back"
-		}
+		keys = "j/k:navigate  enter/o:open  esc:back"
 	}
 
 	right := m.status.text

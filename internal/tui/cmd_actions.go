@@ -120,10 +120,29 @@ func removeLocalLabel(store *storage.Store, acctID, msgID, labelID string) error
 	return store.SetMessageLabels(acctID, msgID, updated)
 }
 
-func searchThreadsCmd(store *storage.Store, query string) tea.Cmd {
+func searchThreadsCmd(store *storage.Store, acctID, query string) tea.Cmd {
 	return func() tea.Msg {
+		if strings.TrimSpace(query) == "" {
+			var (
+				threads []storage.ThreadSummary
+				err     error
+			)
+			if acctID == "" {
+				threads, err = store.ListAllThreadSummaries(200, 0)
+			} else {
+				threads, err = store.ListThreadSummaries(acctID, 200, 0)
+			}
+			return msgSearchLoaded{results: threads, err: err}
+		}
 		results, err := store.LocalSearchThreadSummaries(query, 200)
 		return msgSearchLoaded{results: results, err: err}
+	}
+}
+
+func searchDebounceCmd(token int) tea.Cmd {
+	return func() tea.Msg {
+		time.Sleep(300 * time.Millisecond)
+		return msgSearchDebounce{token: token}
 	}
 }
 
