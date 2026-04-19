@@ -122,67 +122,32 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		}
 	})
 
-	mux.HandleFunc("/api/accounts", func(w http.ResponseWriter, r *http.Request) {
-		accs, err := app.GetAccounts()
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, accs)
+	handleGET(mux, "/api/accounts", func(r *http.Request) (any, error) {
+		return app.GetAccounts()
 	})
 
-	mux.HandleFunc("/api/inbox", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := app.GetInbox(qp(r, "accountId"), 60, qpi(r, "offset"))
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, threads)
+	handleGET(mux, "/api/inbox", func(r *http.Request) (any, error) {
+		return app.GetInbox(qp(r, "accountId"), 60, qpi(r, "offset"))
 	})
 
-	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := app.SearchInbox(qp(r, "q"), 50)
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, threads)
+	handleGET(mux, "/api/search", func(r *http.Request) (any, error) {
+		return app.SearchInbox(qp(r, "q"), 50)
 	})
 
-	mux.HandleFunc("/api/contacts/search", func(w http.ResponseWriter, r *http.Request) {
-		contacts, err := app.SearchContacts(qp(r, "accountId"), qp(r, "q"), 8)
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, contacts)
+	handleGET(mux, "/api/contacts/search", func(r *http.Request) (any, error) {
+		return app.SearchContacts(qp(r, "accountId"), qp(r, "q"), 8)
 	})
 
-	mux.HandleFunc("/api/label-threads", func(w http.ResponseWriter, r *http.Request) {
-		threads, err := app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60, qpi(r, "offset"))
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, threads)
+	handleGET(mux, "/api/label-threads", func(r *http.Request) (any, error) {
+		return app.GetLabelThreads(qp(r, "accountId"), qp(r, "labelId"), 60, qpi(r, "offset"))
 	})
 
-	mux.HandleFunc("/api/thread", func(w http.ResponseWriter, r *http.Request) {
-		msgs, err := app.GetThread(qp(r, "accountId"), qp(r, "threadId"))
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, msgs)
+	handleGET(mux, "/api/thread", func(r *http.Request) (any, error) {
+		return app.GetThread(qp(r, "accountId"), qp(r, "threadId"))
 	})
 
-	mux.HandleFunc("/api/message", func(w http.ResponseWriter, r *http.Request) {
-		msg, err := app.GetMessage(qp(r, "accountId"), qp(r, "messageId"))
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, msg)
+	handleGET(mux, "/api/message", func(r *http.Request) (any, error) {
+		return app.GetMessage(qp(r, "accountId"), qp(r, "messageId"))
 	})
 
 	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
@@ -217,13 +182,8 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
-	mux.HandleFunc("/api/labels", func(w http.ResponseWriter, r *http.Request) {
-		labels, err := app.GetLabels(qp(r, "accountId"))
-		if err != nil {
-			errJSON(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, labels)
+	handleGET(mux, "/api/labels", func(r *http.Request) (any, error) {
+		return app.GetLabels(qp(r, "accountId"))
 	})
 
 	mux.HandleFunc("/api/mark-read", func(w http.ResponseWriter, r *http.Request) {
@@ -325,6 +285,17 @@ func (h *hub) emit(event string, data any) {
 }
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────────
+
+func handleGET(mux *http.ServeMux, path string, h func(*http.Request) (any, error)) {
+	mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+		result, err := h(r)
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+}
 
 func requirePOST(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodPost {
