@@ -26,6 +26,7 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 - SVG sprite-based icon system
 - Infinite scroll pagination: scrolling to bottom of email list fetches next 60 threads (OFFSET-based), spinner shown while loading, stops when end of cache reached
 - Alpine.js and Tailwind vendored — no CDN requests
+- Local multi-term search (`/` in TUI, `SearchInbox` in desktop/web): searches subject, body, from/to/cc/bcc, and attachment filenames; space-separated terms ranked by match count descending (`LocalSearchThreadSummaries` in `internal/storage/threads.go`)
 
 ## Key files
 
@@ -65,4 +66,4 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 
 - No mail signature management
 - No send validation (blank To is allowed)
-- Search is local SQLite only (no Gmail server-side search)
+- No server-side Gmail search (local SQLite only)

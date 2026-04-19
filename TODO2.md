@@ -6,17 +6,25 @@
  [x] Forward and reply buttons do nothing — inline compose at bottom of thread, full-pane for new mail
  [x] TailWindCSS CDN load warning in browser console — vendored alpine.js and tailwind, no external requests
  [ ] Mail signature management in account settings page
- [ ] Display all labels in left panel
+ [ ] Display all labels in left panel, but hide nonsense labels like stars variants
  [ ] Hide left panel like GMail
  [ ] The ? key should bring up shortcuts like GMail
- [ ] GMail shortcut key support, advanced shortcut keys like "g i" go to inbox.
- [ ] Inbox not loading all emails, it's limited view. Sync has everything though
+ [ ] GMail shortcut key support, advanced shortcut keys like "g i" go to inbox, "/" search, "#" delete, "!" spam
+ [x] Load label colors from the backend, now all labels are just grey
+ [x] Inbox not loading all emails, it's limited view. Sync has everything though
  [ ] How should I fetch new mail? Use websocket from WebUI, sync from GMail API to golang backend?
- [ ] Pagination or unlimited scroll for mailbox metadata view, now only 60 emails are loaded no way to paginate.
+ [x] Pagination or unlimited scroll for mails that are already synced to sqlite.
+ [ ] Pagination for mails (metadata only) for mails that are not yet synced.
  [ ] Implement right click functionality for advanced actions.
  [ ] Prevent mail send when To and CC are blank
- [ ] Add CC, BCC fields
+ [x] Add CC, BCC fields
  [ ] Trash / mark-read / mark-unread not wired in web server (HTTP mode) — only works in Wails desktop
+ [x] Star -- types to match GMail
+ [ ] Star -- clicking on stars cycles through the star types
+ [ ] Dark/Light mode must detect system settings and configure accordingly
+ [ ] View attachments, browser viewable inline, other file types offer save as (like WhatsApp)
+ [ ] Change HTML mail background to grey, now it's full white. This is for dark mode only. 
+
 
 ## General
  [ ] sync should fetch metadata for all, download body only for sync period?

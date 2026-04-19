@@ -45,7 +45,26 @@ func (s *DraftService) GetDraft(accountID, draftID string) (storage.Draft, error
 	return s.store.GetDraft(accountID, draftID)
 }
 
-// DeleteDraft deletes a draft from local storage (does not call Gmail API).
-func (s *DraftService) DeleteDraft(accountID, draftID string) error {
+// UpdateDraft updates a draft in Gmail and the local cache.
+func (s *DraftService) UpdateDraft(ctx context.Context, accountID, draftID string, msg OutboundMessage) error {
+	raw := buildRaw(msg)
+	if err := s.client.UpdateDraft(ctx, draftID, gmail.EncodeRaw(raw)); err != nil {
+		return err
+	}
+
+	draft := storage.Draft{
+		ID:        draftID,
+		AccountID: accountID,
+		Content:   raw,
+		UpdatedAt: time.Now().UnixMilli(),
+	}
+	return s.store.UpsertDraft(draft)
+}
+
+// DeleteDraft deletes a draft from Gmail and local storage.
+func (s *DraftService) DeleteDraft(ctx context.Context, accountID, draftID string) error {
+	if err := s.client.DeleteDraft(ctx, draftID); err != nil {
+		return err
+	}
 	return s.store.DeleteDraft(accountID, draftID)
 }

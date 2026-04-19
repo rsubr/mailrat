@@ -185,6 +185,31 @@ func (c *Client) CreateDraft(ctx context.Context, rawBase64 string) (string, err
 	return draft.Id, nil
 }
 
+// UpdateDraft updates an existing draft.
+func (c *Client) UpdateDraft(ctx context.Context, draftID, rawBase64 string) error {
+	_, err := withRetry(ctx, func() (*gmailv1.Draft, error) {
+		return c.svc.Users.Drafts.Update("me", draftID, &gmailv1.Draft{
+			Message: &gmailv1.Message{Raw: rawBase64},
+		}).Context(ctx).Do()
+	})
+	if err != nil {
+		return fmt.Errorf("update draft %s: %w", draftID, err)
+	}
+	return nil
+}
+
+// DeleteDraft deletes a draft from Gmail.
+func (c *Client) DeleteDraft(ctx context.Context, draftID string) error {
+	_, err := withRetry(ctx, func() (struct{}, error) {
+		err := c.svc.Users.Drafts.Delete("me", draftID).Context(ctx).Do()
+		return struct{}{}, err
+	})
+	if err != nil {
+		return fmt.Errorf("delete draft %s: %w", draftID, err)
+	}
+	return nil
+}
+
 // GetHistoryList returns history events since startHistoryID.
 func (c *Client) GetHistoryList(ctx context.Context, startHistoryID uint64) (*HistoryResponse, error) {
 	var events []HistoryEvent

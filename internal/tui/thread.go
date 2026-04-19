@@ -56,9 +56,21 @@ func (m model) updateThread(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m.beginReplyAll(m.thread.messages[m.thread.cursor]), nil
 		case "s":
-			return m.unsupportedShortcut("s"), nil
-		case "#":
-			return m.unsupportedShortcut("#"), nil
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			sel := m.thread.messages[m.thread.cursor]
+			return m, toggleStarCmd(m.store, m.accMgr, sel.AccountID, sel.ID)
+		case "#", "d":
+			if len(m.thread.messages) == 0 {
+				return m, nil
+			}
+			sel := m.thread.messages[m.thread.cursor]
+			// We only trash the single message here, but archive archives the thread.
+			// This matches Gmail where '#' in thread view trashes the entire thread usually,
+			// but we can choose. Let's trash the whole thread if it's the only one or
+			// maybe just the message. Gmail's '#' usually trashes the thread.
+			return m, trashThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "!":
 			return m.unsupportedShortcut("!"), nil
 		}

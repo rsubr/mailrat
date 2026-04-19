@@ -47,46 +47,6 @@ func syncAccount(ctx context.Context, store *storage.Store, accMgr *accounts.Man
 	return nil
 }
 
-// markReadCmd optimistically updates local storage, then tries the Gmail API.
-// If offline, the operation is queued in pending_ops for later.
-func markReadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		markMessageReadLocally(store, acctID, msgID)
-
-		if applyMarkRead(ctx, accMgr, acctID, msgID) == nil {
-			return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: false}
-		}
-
-		_ = store.AddPendingOp(storage.OpMarkRead, acctID, msgID)
-		return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: true}
-	}
-}
-
-func markMessageReadLocally(store *storage.Store, acctID, msgID string) {
-	msg, err := store.GetMessage(acctID, msgID)
-	if err != nil || !msg.IsUnread {
-		return
-	}
-
-	msg.IsUnread = false
-	_ = store.UpsertMessage(msg)
-}
-
-func applyMarkRead(ctx context.Context, accMgr *accounts.Manager, acctID, msgID string) error {
-	httpClient, err := accMgr.GetClient(ctx, acctID)
-	if err != nil {
-		return err
-	}
-
-	gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
-	if err != nil {
-		return err
-	}
-
-	return gmailClient.ModifyLabels(ctx, msgID, nil, []string{"UNREAD"})
-}
-
 // drainPendingOpsCmd runs after a successful sync and replays any queued operations.
 func drainPendingOpsCmd(store *storage.Store, accMgr *accounts.Manager) tea.Cmd {
 	return func() tea.Msg {

@@ -50,7 +50,11 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sel := m.inbox.threads[m.inbox.cursor]
 			return m, archiveThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "a":
-			return m.unsupportedShortcut("a"), nil
+			if len(m.inbox.threads) == 0 {
+				return m, nil
+			}
+			sel := m.inbox.threads[m.inbox.cursor]
+			return m, loadThreadAndThenReplyCmd(m.store, sel.AccountID, sel.ThreadID, true)
 		case "?":
 			acctID := m.resolveAcctID()
 			if acctID == "" {
@@ -70,9 +74,17 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "x":
 			return m.unsupportedShortcut("x"), nil
 		case "s":
-			return m.unsupportedShortcut("s"), nil
-		case "#":
-			return m.unsupportedShortcut("#"), nil
+			if len(m.inbox.threads) == 0 {
+				return m, nil
+			}
+			sel := m.inbox.threads[m.inbox.cursor]
+			return m, toggleThreadStarCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
+		case "#", "d":
+			if len(m.inbox.threads) == 0 {
+				return m, nil
+			}
+			sel := m.inbox.threads[m.inbox.cursor]
+			return m, trashThreadCmd(m.store, m.accMgr, sel.AccountID, sel.ThreadID)
 		case "!":
 			return m.unsupportedShortcut("!"), nil
 		case "u":

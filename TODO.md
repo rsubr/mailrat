@@ -17,23 +17,23 @@ Status key:
 - [x] Compose new mail
 - [x] Send mail
 - [x] Save draft
-- [ ] Update draft
-- [ ] Delete draft
-- [ ] Reply
-- [ ] Reply all
-- [ ] Forward
-- [ ] Send with CC
-- [ ] Send with BCC
+- [x] Update draft
+- [x] Delete draft
+- [x] Reply
+- [x] Reply all
+- [x] Forward
+- [x] Send with CC
+- [x] Send with BCC
 - [ ] Add attachments
 - [ ] Remove attachments
 - [ ] Schedule send
 
 ## Message State
 
-- [ ] Mark as read
-- [ ] Mark as unread
-- [ ] Star message
-- [ ] Unstar message
+- [x] Mark as read
+- [x] Mark as unread
+- [x] Star message
+- [x] Unstar message
 - [ ] Mark important
 - [ ] Mark not important
 - [ ] Mute thread
@@ -43,10 +43,10 @@ Status key:
 
 ## Mailbox Actions
 
-- [ ] Archive
-- [ ] Move to inbox / unarchive
-- [ ] Delete permanently
-- [ ] Move to trash
+- [x] Archive
+- [x] Move to inbox / unarchive
+- [x] Delete permanently
+- [x] Move to trash
 - [ ] Restore from trash
 - [ ] Mark as spam
 - [ ] Mark as not spam

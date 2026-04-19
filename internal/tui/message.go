@@ -36,9 +36,10 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "a":
 			return m.beginReplyAll(m.reader.current), nil
 		case "s":
-			return m.unsupportedShortcut("s"), nil
-		case "#":
-			return m.unsupportedShortcut("#"), nil
+			return m, toggleStarCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ID)
+		case "#", "d":
+			m.nav.view = viewInbox
+			return m, trashMessageCmd(m.store, m.accMgr, m.reader.current.AccountID, m.reader.current.ID)
 		case "!":
 			return m.unsupportedShortcut("!"), nil
 		}

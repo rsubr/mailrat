@@ -45,6 +45,17 @@ func loadThreadCmd(store *storage.Store, acctID, threadID string) tea.Cmd {
 	}
 }
 
+func loadThreadAndThenReplyCmd(store *storage.Store, acctID, threadID string, replyAll bool) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := store.ListMessagesByThread(acctID, threadID)
+		if err != nil || len(msgs) == 0 {
+			return nil // or some error msg
+		}
+		// Reply to the last message in the thread.
+		return msgBeginReply{msg: msgs[len(msgs)-1], replyAll: replyAll}
+	}
+}
+
 func loadMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()

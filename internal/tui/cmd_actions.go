@@ -19,6 +19,8 @@ type msgActionDone struct {
 	accountID  string
 	messageID  string
 	markUnread bool
+	isStarred  bool
+	setStarred bool // true if we are updating star status
 }
 
 func archiveThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadID string) tea.Cmd {
@@ -45,6 +47,173 @@ func archiveThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, th
 
 func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
 	return func() tea.Msg {
+		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{"UNREAD"}, nil); err != nil {
+			return msgActionDone{err: fmt.Errorf("mark unread: %w", err)}
+		}
+		if err := addLocalLabel(store, acctID, msgID, "UNREAD"); err != nil {
+			return msgActionDone{err: err}
+		}
+		return msgActionDone{
+			status:     "Marked unread",
+			accountID:  acctID,
+			messageID:  msgID,
+			markUnread: true,
+		}
+	}
+}
+
+func markReadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		markMessageReadLocally(store, acctID, msgID)
+
+		if applyMarkRead(ctx, accMgr, acctID, msgID) == nil {
+			return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: false}
+		}
+
+		_ = store.AddPendingOp(storage.OpMarkRead, acctID, msgID)
+		return msgMarkReadDone{acctID: acctID, messageID: msgID, queued: true}
+	}
+}
+
+func markMessageReadLocally(store *storage.Store, acctID, msgID string) {
+	msg, err := store.GetMessage(acctID, msgID)
+	if err != nil || !msg.IsUnread {
+		return
+	}
+
+	msg.IsUnread = false
+	_ = store.UpsertMessage(msg)
+}
+
+func applyMarkRead(ctx context.Context, accMgr *accounts.Manager, acctID, msgID string) error {
+	httpClient, err := accMgr.GetClient(ctx, acctID)
+	if err != nil {
+		return err
+	}
+
+	gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
+	if err != nil {
+		return err
+	}
+
+	return gmailClient.ModifyLabels(ctx, msgID, nil, []string{"UNREAD"})
+}
+
+func toggleStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		msg, err := store.GetMessage(acctID, msgID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("load message: %w", err)}
+		}
+
+		if msg.IsStarred {
+			return unstarCmd(store, accMgr, acctID, msgID)()
+		}
+		return starCmd(store, accMgr, acctID, msgID)()
+	}
+}
+
+func starCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, []string{"STARRED"}, nil); err != nil {
+			return msgActionDone{err: fmt.Errorf("star: %w", err)}
+		}
+		if err := addLocalLabel(store, acctID, msgID, "STARRED"); err != nil {
+			return msgActionDone{err: err}
+		}
+		return msgActionDone{
+			status:     "Starred",
+			accountID:  acctID,
+			messageID:  msgID,
+			isStarred:  true,
+			setStarred: true,
+		}
+	}
+}
+
+func unstarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		if err := modifyMessages(accMgr, acctID, []storage.Message{{ID: msgID}}, nil, []string{"STARRED"}); err != nil {
+			return msgActionDone{err: fmt.Errorf("unstar: %w", err)}
+		}
+		if err := removeLocalLabel(store, acctID, msgID, "STARRED"); err != nil {
+			return msgActionDone{err: err}
+		}
+		return msgActionDone{
+			status:     "Unstarred",
+			accountID:  acctID,
+			messageID:  msgID,
+			isStarred:  false,
+			setStarred: true,
+		}
+	}
+}
+
+func toggleThreadStarCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadID string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := store.ListMessagesByThread(acctID, threadID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("load thread: %w", err)}
+		}
+		if len(msgs) == 0 {
+			return msgActionDone{status: "Nothing to star"}
+		}
+
+		// Use the first message to determine the state of the thread star.
+		isStarred := false
+		for _, m := range msgs {
+			if m.IsStarred {
+				isStarred = true
+				break
+			}
+		}
+
+		var add, remove []string
+		if isStarred {
+			remove = []string{"STARRED"}
+		} else {
+			add = []string{"STARRED"}
+		}
+
+		if err := modifyMessages(accMgr, acctID, msgs, add, remove); err != nil {
+			return msgActionDone{err: fmt.Errorf("star: %w", err)}
+		}
+
+		for _, msg := range msgs {
+			if isStarred {
+				_ = removeLocalLabel(store, acctID, msg.ID, "STARRED")
+			} else {
+				_ = addLocalLabel(store, acctID, msg.ID, "STARRED")
+			}
+		}
+
+		status := "Conversation starred"
+		if isStarred {
+			status = "Conversation unstarred"
+		}
+
+		return msgActionDone{
+			status:     status,
+			accountID:  acctID,
+			messageID:  msgs[0].ID, // Just use the first one for the msgActionDone logic
+			isStarred:  !isStarred,
+			setStarred: true,
+			cmd:        loadInboxCmd(store, ""),
+		}
+	}
+}
+
+func trashThreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, threadID string) tea.Cmd {
+	return func() tea.Msg {
+		msgs, err := store.ListMessagesByThread(acctID, threadID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("load thread: %w", err)}
+		}
+		if len(msgs) == 0 {
+			return msgActionDone{status: "Nothing to trash"}
+		}
+
 		ctx := context.Background()
 		httpClient, err := accMgr.GetClient(ctx, acctID)
 		if err != nil {
@@ -54,22 +223,38 @@ func markUnreadCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID
 		if err != nil {
 			return msgActionDone{err: fmt.Errorf("gmail client: %w", err)}
 		}
-		if err := gmailClient.ModifyLabels(ctx, msgID, []string{"UNREAD"}, nil); err != nil {
-			return msgActionDone{err: fmt.Errorf("mark unread: %w", err)}
+
+		for _, msg := range msgs {
+			if err := gmailClient.TrashMessage(ctx, msg.ID); err != nil {
+				return msgActionDone{err: fmt.Errorf("trash: %w", err)}
+			}
 		}
-		if err := addLocalLabel(store, acctID, msgID, "UNREAD"); err != nil {
-			return msgActionDone{err: err}
-		}
-		msg, err := store.GetMessage(acctID, msgID)
-		if err == nil {
-			msg.IsUnread = true
-			_ = store.UpsertMessage(msg)
-		}
+
 		return msgActionDone{
-			status:     "Marked unread",
-			accountID:  acctID,
-			messageID:  msgID,
-			markUnread: true,
+			status: "Conversation moved to trash",
+			cmd:    loadInboxCmd(store, ""),
+		}
+	}
+}
+
+func trashMessageCmd(store *storage.Store, accMgr *accounts.Manager, acctID, msgID string) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		httpClient, err := accMgr.GetClient(ctx, acctID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("auth: %w", err)}
+		}
+		gmailClient, err := gmail.NewClient(ctx, httpClient, acctID)
+		if err != nil {
+			return msgActionDone{err: fmt.Errorf("gmail client: %w", err)}
+		}
+		if err := gmailClient.TrashMessage(ctx, msgID); err != nil {
+			return msgActionDone{err: fmt.Errorf("trash: %w", err)}
+		}
+		// In a real app, we'd remove it from the local INBOX view immediately.
+		return msgActionDone{
+			status: "Message moved to trash",
+			cmd:    loadInboxCmd(store, ""),
 		}
 	}
 }

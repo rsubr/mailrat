@@ -42,6 +42,14 @@ func New(store *storage.Store, accMgr *accounts.Manager) model {
 	to.Placeholder = "recipient@example.com"
 	to.CharLimit = 200
 
+	cc := textinput.New()
+	cc.Placeholder = "cc@example.com"
+	cc.CharLimit = 200
+
+	bcc := textinput.New()
+	bcc.Placeholder = "bcc@example.com"
+	bcc.CharLimit = 200
+
 	subj := textinput.New()
 	subj.Placeholder = "Subject"
 	subj.CharLimit = 200
@@ -60,6 +68,8 @@ func New(store *storage.Store, accMgr *accounts.Manager) model {
 		accMgr: accMgr,
 		compose: composeState{
 			to:      to,
+			cc:      cc,
+			bcc:     bcc,
 			subject: subj,
 			body:    body,
 		},
@@ -136,12 +146,17 @@ func (m model) resolveAcctID() string {
 // clearCompose resets the compose form fields.
 func clearCompose(m model) model {
 	m.compose.to.Reset()
+	m.compose.cc.Reset()
+	m.compose.bcc.Reset()
 	m.compose.subject.Reset()
 	m.compose.body.Reset()
 	m.compose.focus = composeFocusTo
 	m.compose.replyTo = nil
 	m.compose.replyAll = false
+	m.compose.draftID = ""
 	m.compose.to.Blur()
+	m.compose.cc.Blur()
+	m.compose.bcc.Blur()
 	m.compose.subject.Blur()
 	m.compose.body.Blur()
 	return m

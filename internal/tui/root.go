@@ -49,6 +49,9 @@ func (m model) handleRootMessage(msg tea.Msg) (model, tea.Cmd, bool) {
 	case msgSendDone:
 		next, cmd := m.handleSendDone(msg)
 		return next, cmd, true
+	case msgSaveDraftDone:
+		next, cmd := m.handleSaveDraftDone(msg)
+		return next, cmd, true
 	case msgConfigLoaded:
 		next, cmd := m.handleConfigLoaded(msg)
 		return next, cmd, true
@@ -65,6 +68,11 @@ func (m model) handleRootMessage(msg tea.Msg) (model, tea.Cmd, bool) {
 	case msgActionDone:
 		next, cmd := m.handleActionDone(msg)
 		return next, cmd, true
+	case msgBeginReply:
+		if msg.replyAll {
+			return m.beginReplyAll(msg.msg), nil, true
+		}
+		return m.beginReply(msg.msg), nil, true
 	default:
 		return m, nil, false
 	}
@@ -193,6 +201,23 @@ func (m model) handleActionDone(msg msgActionDone) (model, tea.Cmd) {
 					m.inbox.threads[i].UnreadCount++
 					break
 				}
+			}
+		}
+	}
+	if msg.setStarred {
+		if m.reader.current.ID == msg.messageID && m.reader.current.AccountID == msg.accountID {
+			m.reader.current.IsStarred = msg.isStarred
+		}
+		for i, item := range m.thread.messages {
+			if item.ID == msg.messageID && item.AccountID == msg.accountID {
+				m.thread.messages[i].IsStarred = msg.isStarred
+				break
+			}
+		}
+		for i, t := range m.inbox.threads {
+			if t.ThreadID == m.reader.current.ThreadID && t.AccountID == msg.accountID {
+				m.inbox.threads[i].IsStarred = msg.isStarred
+				break
 			}
 		}
 	}

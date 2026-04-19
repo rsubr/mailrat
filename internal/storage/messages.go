@@ -17,7 +17,8 @@ const (
 
 const (
 	messageSelectColumns = `id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-	       internal_date, is_unread, cache_state, has_attachments, message_id, cc_addr, bcc_addr`
+	       internal_date, is_unread, cache_state, has_attachments, message_id, cc_addr, bcc_addr,
+	       (SELECT COUNT(*) FROM message_labels ml WHERE ml.message_id = id AND ml.account_id = account_id AND ml.label_id = 'STARRED')`
 	messageOrderDesc = ` ORDER BY internal_date DESC`
 	messageOrderAsc  = ` ORDER BY internal_date ASC`
 	messageUpsertSQL = `
@@ -56,6 +57,7 @@ type Message struct {
 	Body           string
 	InternalDate   int64
 	IsUnread       bool
+	IsStarred      bool
 	CacheState     CacheState
 	HasAttachments bool
 }
@@ -67,20 +69,21 @@ func (s *Store) UpsertMessage(m Message) error {
 
 func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 	var m Message
-	var isUnread, hasAttachments int
+	var isUnread, hasAttachments, isStarred int
 	err := s.db.QueryRow(`
 		SELECT `+messageSelectColumns+`
 		FROM messages WHERE id = ? AND account_id = ?
 	`, messageID, accountID).Scan(
 		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
 		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
-		&m.CcAddr, &m.BccAddr,
+		&m.CcAddr, &m.BccAddr, &isStarred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, fmt.Errorf("message %q not found", messageID)
 	}
 	m.IsUnread = isUnread == 1
 	m.HasAttachments = hasAttachments == 1
+	m.IsStarred = isStarred > 0
 	return m, err
 }
 
@@ -222,16 +225,17 @@ func scanMessages(rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
 		var m Message
-		var isUnread, hasAttachments int
+		var isUnread, hasAttachments, isStarred int
 		if err := rows.Scan(
 			&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
 			&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
-			&m.CcAddr, &m.BccAddr,
+			&m.CcAddr, &m.BccAddr, &isStarred,
 		); err != nil {
 			return nil, err
 		}
 		m.IsUnread = isUnread == 1
 		m.HasAttachments = hasAttachments == 1
+		m.IsStarred = isStarred > 0
 		out = append(out, m)
 	}
 	return out, rows.Err()

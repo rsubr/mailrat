@@ -9,6 +9,8 @@ import (
 
 const (
 	composeFocusTo = iota
+	composeFocusCc
+	composeFocusBcc
 	composeFocusSubject
 	composeFocusBody
 )
@@ -38,11 +40,14 @@ type messageState struct {
 
 type composeState struct {
 	to       textinput.Model
+	cc       textinput.Model
+	bcc      textinput.Model
 	subject  textinput.Model
 	body     textarea.Model
 	focus    int
 	replyTo  *storage.Message
 	replyAll bool
+	draftID  string // ID of the draft being edited, if any
 }
 
 type searchState struct {

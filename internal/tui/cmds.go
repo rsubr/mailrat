@@ -27,7 +27,13 @@ type msgSyncDone struct {
 }
 
 type msgSendDone struct {
-	err error
+	draftID string
+	err     error
+}
+
+type msgSaveDraftDone struct {
+	draftID string
+	err     error
 }
 
 type msgConfigLoaded struct {
@@ -55,3 +61,8 @@ type msgSearchLoaded struct {
 }
 
 type msgSearchDebounce struct{ token int }
+
+type msgBeginReply struct {
+	msg      storage.Message
+	replyAll bool
+}
