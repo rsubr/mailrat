@@ -103,11 +103,7 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]AccountItem, len(accs))
-	for i, acc := range accs {
-		out[i] = AccountItem{ID: acc.ID, Email: acc.Email}
-	}
-	return out, nil
+	return accountsToItems(accs), nil
 }
 
 // GetInbox returns thread summaries for the inbox.
@@ -130,12 +126,7 @@ func (a *App) GetInbox(accountID string, limit, offset int) ([]ThreadItem, error
 	if err != nil {
 		return nil, err
 	}
-
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // GetLabelThreads returns thread summaries for a given Gmail label.
@@ -157,11 +148,7 @@ func (a *App) GetLabelThreads(accountID, labelID string, limit, offset int) ([]T
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // SearchInbox searches threads by subject, snippet, or sender across all accounts.
@@ -176,11 +163,7 @@ func (a *App) SearchInbox(query string, limit int) ([]ThreadItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ThreadItem, len(summaries))
-	for i, s := range summaries {
-		out[i] = threadSummaryToItem(s)
-	}
-	return out, nil
+	return threadSummariesToItems(summaries), nil
 }
 
 // GetThread returns all messages in a thread, oldest first.
@@ -192,11 +175,7 @@ func (a *App) GetThread(accountID, threadID string) ([]MessageItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]MessageItem, len(msgs))
-	for i, m := range msgs {
-		out[i] = messageToItem(m)
-	}
-	return out, nil
+	return messagesToItems(msgs), nil
 }
 
 // GetMessage returns a single message, lazily fetching the body from Gmail if not cached.
@@ -471,11 +450,7 @@ func (a *App) SearchContacts(accountID, query string, limit int) ([]ContactItem,
 	if err != nil {
 		return nil, err
 	}
-	out := make([]ContactItem, len(contacts))
-	for i, c := range contacts {
-		out[i] = ContactItem{Name: c.Name, Email: c.Email}
-	}
-	return out, nil
+	return contactsToItems(contacts), nil
 }
 
 // GetLabels returns all labels for an account.
@@ -487,11 +462,7 @@ func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]LabelItem, len(labels))
-	for i, l := range labels {
-		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
-	}
-	return out, nil
+	return labelsToItems(labels), nil
 }
 
 // gmailClient returns an authenticated gmail.Client for the given account ID.
