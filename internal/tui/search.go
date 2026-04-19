@@ -18,34 +18,70 @@ func (m model) updateSearch(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "u":
 			m.nav.view = viewInbox
 			return m, nil
-		case "enter", "o":
-			if len(m.search.results) > 0 {
+		case "enter":
+			if m.search.inputFocused && len(m.search.results) > 0 {
+				// Move focus from input to results
+				m.search.inputFocused = false
+				m.search.input.Blur()
+				return m, nil
+			}
+			if !m.search.inputFocused && len(m.search.results) > 0 {
 				sel := m.search.results[m.search.cursor]
 				return m, loadThreadCmd(m.store, sel.AccountID, sel.ThreadID)
 			}
 			return m, nil
+		case "o":
+			if !m.search.inputFocused && len(m.search.results) > 0 {
+				sel := m.search.results[m.search.cursor]
+				return m, loadThreadCmd(m.store, sel.AccountID, sel.ThreadID)
+			}
 		case "j", "down", "n":
-			if m.search.cursor < len(m.search.results)-1 {
+			if !m.search.inputFocused && m.search.cursor < len(m.search.results)-1 {
 				m.search.cursor++
+				return m, nil
 			}
-			return m, nil
 		case "k", "up", "p":
-			if m.search.cursor > 0 {
+			if !m.search.inputFocused && m.search.cursor > 0 {
 				m.search.cursor--
+				return m, nil
 			}
-			return m, nil
+		case "/":
+			if !m.search.inputFocused {
+				m.search.inputFocused = true
+				m.search.input.Focus()
+				return m, nil
+			}
 		}
 	}
 
-	prevVal := m.search.input.Value()
-	var cmd tea.Cmd
-	m.search.input, cmd = m.search.input.Update(msg)
-	if m.search.input.Value() != prevVal {
-		m.search.debounceToken++
-		m.search.cursor = 0
-		return m, tea.Batch(cmd, searchDebounceCmd(m.search.debounceToken))
+	if m.search.inputFocused {
+		prevVal := m.search.input.Value()
+		var cmd tea.Cmd
+		m.search.input, cmd = m.search.input.Update(msg)
+		if m.search.input.Value() != prevVal {
+			m.search.debounceToken++
+			m.search.cursor = 0
+			return m, tea.Batch(cmd, searchDebounceCmd(m.search.debounceToken))
+		}
+		return m, cmd
 	}
-	return m, cmd
+
+	// In results mode: any printable character refocuses the input
+	if kMsg, ok := msg.(tea.KeyMsg); ok {
+		if len(kMsg.Runes) > 0 || kMsg.String() == "backspace" {
+			m.search.inputFocused = true
+			m.search.input.Focus()
+			var cmd tea.Cmd
+			m.search.input, cmd = m.search.input.Update(msg)
+			prevLen := len(m.search.input.Value())
+			_ = prevLen
+			m.search.debounceToken++
+			m.search.cursor = 0
+			return m, tea.Batch(cmd, searchDebounceCmd(m.search.debounceToken))
+		}
+	}
+
+	return m, nil
 }
 
 func (m model) renderSearch() string {
@@ -76,7 +112,8 @@ func (m model) renderSearch() string {
 		end = len(m.search.results)
 	}
 	for i := start; i < end; i++ {
-		sb.WriteString(m.renderThreadRow(m.search.results[i], i == m.search.cursor))
+		selected := !m.search.inputFocused && i == m.search.cursor
+		sb.WriteString(m.renderThreadRow(m.search.results[i], selected))
 		sb.WriteByte('\n')
 	}
 	return sb.String()

@@ -263,7 +263,8 @@
   <!--  MIDDLE — EMAIL LIST                                                   -->
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <section class="w-80 bg-list border-r border-divider flex flex-col h-full flex-shrink-0"
-           x-data="emailList">
+           x-data="emailList"
+           @keydown.window="if($event.key==='/'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='TEXTAREA'){$event.preventDefault();$refs.searchInput.focus();}"
 
     <!-- Header -->
     <header class="h-14 flex items-center justify-between px-4 border-b border-divider flex-shrink-0">
@@ -293,7 +294,9 @@
           </svg>
         </span>
         <input type="text"
+               x-ref="searchInput"
                x-model="store.searchQuery"
+               @input="doSearchInput()"
                @keydown="doSearch($event)"
                placeholder="Search"
                class="w-full bg-input border border-divider text-primary text-xs rounded-md

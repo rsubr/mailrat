@@ -479,8 +479,16 @@ document.addEventListener('alpine:init', () => {
     selectThread(thread) { this.store.selectThread(thread); },
     sync()               { this.store.sync(); },
 
+    _searchTimer: null,
+
+    doSearchInput() {
+      clearTimeout(this._searchTimer);
+      this._searchTimer = setTimeout(() => {
+        this.store.search(this.store.searchQuery);
+      }, 300);
+    },
+
     doSearch(e) {
-      if (e.key === 'Enter') this.store.search(this.store.searchQuery);
       if (e.key === 'Escape') { this.store.searchQuery = ''; this.store.loadInbox(); }
     },
   }));

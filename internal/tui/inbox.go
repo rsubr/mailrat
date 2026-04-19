@@ -60,6 +60,7 @@ func (m model) updateInbox(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, loadConfigCmd(m.store, acctID)
 		case "/":
 			m.nav.view = viewSearch
+			m.search.inputFocused = true
 			m.search.input.Focus()
 			m.search.input.SetValue("")
 			m.search.results = nil
@@ -247,7 +248,11 @@ func (m model) renderHelp() string {
 	case viewConfig:
 		keys = "j/k:move  d:cycle days  a:toggle attachments  esc:save & close"
 	case viewSearch:
-		keys = "j/k:navigate  enter/o:open  esc:back"
+		if m.search.inputFocused {
+			keys = "enter:focus results  esc:back"
+		} else {
+			keys = "j/k:navigate  enter/o:open  /:search  esc:back"
+		}
 	}
 
 	right := m.status.text

@@ -46,10 +46,11 @@ type composeState struct {
 }
 
 type searchState struct {
-	input          textinput.Model
-	results        []storage.ThreadSummary
-	cursor         int
-	debounceToken  int
+	input         textinput.Model
+	results       []storage.ThreadSummary
+	cursor        int
+	debounceToken int
+	inputFocused  bool
 }
 
 type accountListState struct {
