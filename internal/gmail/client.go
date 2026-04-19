@@ -13,6 +13,24 @@ import (
 	"google.golang.org/api/option"
 )
 
+const (
+	mimeTextPlain = "text/plain"
+	mimeTextHTML  = "text/html"
+
+	headerSubject   = "Subject"
+	headerFrom      = "From"
+	headerTo        = "To"
+	headerCC        = "Cc"
+	headerBCC       = "Bcc"
+	headerMessageID = "Message-ID"
+
+	retryTooManyRequests = "429"
+	retryInternalError   = "500"
+	retryServiceUnavail  = "503"
+	retryRateLimited     = "rateLimitExceeded"
+	retryUserRateLimited = "userRateLimitExceeded"
+)
+
 // Client wraps the Gmail v1 API.
 type Client struct {
 	svc       *gmailv1.Service
@@ -67,7 +85,7 @@ func (c *Client) GetMessageMeta(ctx context.Context, id string) (MessageMeta, er
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Get("me", id).
 			Format("metadata").
-			MetadataHeaders("Subject", "From", "To", "Cc", "Bcc", "Message-ID").
+			MetadataHeaders(headerSubject, headerFrom, headerTo, headerCC, headerBCC, headerMessageID).
 			Context(ctx).Do()
 	})
 	if err != nil {
@@ -303,17 +321,17 @@ func parseMessageMeta(m *gmailv1.Message) MessageMeta {
 	if m.Payload != nil {
 		for _, h := range m.Payload.Headers {
 			switch h.Name {
-			case "Subject":
+			case headerSubject:
 				meta.Subject = h.Value
-			case "From":
+			case headerFrom:
 				meta.From = h.Value
-			case "To":
+			case headerTo:
 				meta.To = h.Value
-			case "Cc":
+			case headerCC:
 				meta.Cc = h.Value
-			case "Bcc":
+			case headerBCC:
 				meta.Bcc = h.Value
-			case "Message-ID":
+			case headerMessageID:
 				meta.MessageID = h.Value
 			}
 		}
@@ -327,11 +345,11 @@ func extractBody(payload *gmailv1.MessagePart) string {
 	}
 
 	// Prefer text/plain; fall back to text/html.
-	plain := extractPart(payload, "text/plain")
+	plain := extractPart(payload, mimeTextPlain)
 	if plain != "" {
 		return plain
 	}
-	return extractPart(payload, "text/html")
+	return extractPart(payload, mimeTextHTML)
 }
 
 func extractPart(part *gmailv1.MessagePart, mimeType string) string {
@@ -412,9 +430,9 @@ func isRetryable(err error) bool {
 		return false
 	}
 	s := err.Error()
-	return strings.Contains(s, "429") ||
-		strings.Contains(s, "500") ||
-		strings.Contains(s, "503") ||
-		strings.Contains(s, "rateLimitExceeded") ||
-		strings.Contains(s, "userRateLimitExceeded")
+	return strings.Contains(s, retryTooManyRequests) ||
+		strings.Contains(s, retryInternalError) ||
+		strings.Contains(s, retryServiceUnavail) ||
+		strings.Contains(s, retryRateLimited) ||
+		strings.Contains(s, retryUserRateLimited)
 }
