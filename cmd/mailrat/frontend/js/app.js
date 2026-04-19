@@ -21,6 +21,13 @@ const Wails = {
   }
 };
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+const THREADS_PER_PAGE    = 60;
+const SEARCH_LIMIT        = 50;
+const CONTACT_SUGGESTIONS = 8;
+const DEBOUNCE_MS         = 300;
+const SEVEN_DAYS_MS       = 7 * 86400000;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatDate(ms) {
   if (!ms) return '';
@@ -31,7 +38,7 @@ function formatDate(ms) {
   }
   const diff = now - d;
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  if (diff < 7 * 86400000) return days[d.getDay()];
+  if (diff < SEVEN_DAYS_MS) return days[d.getDay()];
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -165,7 +172,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     async loadLabels() {
-      const accountId = this.activeAccountId === 'unified'
+      const accountId = this.isUnifiedAccount(this.activeAccountId)
         ? (this.accounts[0]?.id || '')
         : this.activeAccountId;
       if (!accountId) return;
@@ -173,6 +180,14 @@ document.addEventListener('alpine:init', () => {
         const labels = await Wails.call('GetLabels', accountId);
         this.labels = labels || [];
       } catch (e) { /* labels are non-critical */ }
+    },
+
+    isUnifiedAccount(accountId) {
+      return accountId === '' || accountId === 'unified';
+    },
+
+    removeThread(id, accountId) {
+      this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
     },
 
     saveCurrentToCache() {
@@ -202,18 +217,18 @@ document.addEventListener('alpine:init', () => {
       return false;
     },
 
-    async loadInbox() {
-      const isActive = this.activeLabel === 'INBOX' && !this.searchQuery;
-      const key = `${this.activeAccountId}:INBOX`;
+    async _loadThreadList({ labelId, apiCall }) {
+      const isActive = this.activeLabel === labelId && !this.searchQuery;
+      const key = `${this.activeAccountId}:${labelId}`;
       const isCached = !!this.folderCache[key];
 
       if (isActive && !isCached) this.loading = true;
       this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetInbox', this.activeAccountId, 60, 0);
+        const threads = await apiCall();
         const threadsVal = threads || [];
-        const isLoaded = threadsVal.length < 60;
+        const isLoaded = threadsVal.length < THREADS_PER_PAGE;
 
         if (isActive) {
           this.threads = threadsVal;
@@ -227,6 +242,13 @@ document.addEventListener('alpine:init', () => {
         }
       } catch (e) { if (isActive && !isCached) this.error = e.toString(); }
       finally { if (isActive) this.loading = false; }
+    },
+
+    async loadInbox() {
+      return this._loadThreadList({
+        labelId: 'INBOX',
+        apiCall: () => Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, 0),
+      });
     },
 
     async selectAccount(id) {
@@ -274,7 +296,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('TrashThread', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
@@ -287,7 +309,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('MarkThreadSpam', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
@@ -300,7 +322,7 @@ document.addEventListener('alpine:init', () => {
       const { id, accountId } = this.activeThread;
       try {
         await Wails.call('MarkThreadNotSpam', accountId, id);
-        this.threads = this.threads.filter(t => !(t.id === id && t.accountId === accountId));
+        this.removeThread(id, accountId);
         this.activeThread = null;
         this.messages = [];
         this.composing = false;
@@ -365,30 +387,10 @@ document.addEventListener('alpine:init', () => {
     },
 
     async loadLabelThreads(labelId) {
-      const isActive = this.activeLabel === labelId && !this.searchQuery;
-      const key = `${this.activeAccountId}:${labelId}`;
-      const isCached = !!this.folderCache[key];
-
-      if (isActive && !isCached) this.loading = true;
-      this.allLoaded = false;
-      this.error = null;
-      try {
-        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, 60, 0);
-        const threadsVal = threads || [];
-        const isLoaded = threadsVal.length < 60;
-
-        if (isActive) {
-          this.threads = threadsVal;
-          this.allLoaded = isLoaded;
-          this.saveCurrentToCache();
-        } else {
-          if (this.folderCache[key]) {
-            this.folderCache[key].threads = threadsVal;
-            this.folderCache[key].allLoaded = isLoaded;
-          }
-        }
-      } catch (e) { if (isActive && !isCached) this.error = e.toString(); }
-      finally { if (isActive) this.loading = false; }
+      return this._loadThreadList({
+        labelId,
+        apiCall: () => Wails.call('GetLabelThreads', this.activeAccountId, labelId, THREADS_PER_PAGE, 0),
+      });
     },
 
     onListScroll(e) {
@@ -404,12 +406,12 @@ document.addEventListener('alpine:init', () => {
         const offset = this.threads.length;
         let more;
         if (this.activeLabel === 'INBOX') {
-          more = await Wails.call('GetInbox', this.activeAccountId, 60, offset);
+          more = await Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, offset);
         } else {
-          more = await Wails.call('GetLabelThreads', this.activeAccountId, this.activeLabel, 60, offset);
+          more = await Wails.call('GetLabelThreads', this.activeAccountId, this.activeLabel, THREADS_PER_PAGE, offset);
         }
         more = more || [];
-        if (more.length < 60) this.allLoaded = true;
+        if (more.length < THREADS_PER_PAGE) this.allLoaded = true;
         this.threads = [...this.threads, ...more];
         this.saveCurrentToCache();
       } catch (_) { /* silently ignore load-more errors */ }
@@ -422,12 +424,54 @@ document.addEventListener('alpine:init', () => {
       if (!q.trim()) { await this.selectLabel(this.activeLabel); return; }
       this.loading = true;
       try {
-        const threads = await Wails.call('SearchInbox', q, 50);
+        const threads = await Wails.call('SearchInbox', q, SEARCH_LIMIT);
         this.threads = threads || [];
         this.activeThread = null;
         this.messages = [];
       } catch (e) { this.error = e.toString(); }
       finally { this.loading = false; }
+    },
+
+    _replyData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        replyTo.from || '',
+        cc:        '',
+        bcc:       '',
+        subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: replyTo.id || '',
+        threadId:  replyTo.threadId,
+      };
+    },
+
+    _replyAllData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        replyTo.from || '',
+        cc:        replyTo.to || '',
+        bcc:       '',
+        subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: replyTo.id || '',
+        threadId:  replyTo.threadId,
+      };
+    },
+
+    _forwardData(replyTo, defaultAccountId) {
+      const subj = replyTo.subject || '';
+      return {
+        accountId: replyTo.accountId || defaultAccountId,
+        to:        '',
+        cc:        '',
+        bcc:       '',
+        subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
+        body:      buildQuote(replyTo),
+        inReplyTo: '',
+        threadId:  '',
+      };
     },
 
     openCompose(mode = 'new', replyTo = null) {
@@ -437,42 +481,12 @@ document.addEventListener('alpine:init', () => {
       this.showBcc = false;
       const defaultAccountId = this.accounts.length > 0 ? this.accounts[0].id : '';
       if (mode === 'reply' && replyTo) {
-        const subj = replyTo.subject || '';
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        replyTo.from || '',
-          cc:        '',
-          bcc:       '',
-          subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: replyTo.id || '',
-          threadId:  replyTo.threadId,
-        };
+        this.composeData = this._replyData(replyTo, defaultAccountId);
       } else if (mode === 'reply-all' && replyTo) {
-        const subj = replyTo.subject || '';
         this.showCc = true;
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        replyTo.from || '',
-          cc:        replyTo.to || '',
-          bcc:       '',
-          subject:   subj.startsWith('Re: ') ? subj : 'Re: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: replyTo.id || '',
-          threadId:  replyTo.threadId,
-        };
+        this.composeData = this._replyAllData(replyTo, defaultAccountId);
       } else if (mode === 'forward' && replyTo) {
-        const subj = replyTo.subject || '';
-        this.composeData = {
-          accountId: replyTo.accountId || defaultAccountId,
-          to:        '',
-          cc:        '',
-          bcc:       '',
-          subject:   subj.startsWith('Fwd: ') ? subj : 'Fwd: ' + subj,
-          body:      buildQuote(replyTo),
-          inReplyTo: '',
-          threadId:  '',
-        };
+        this.composeData = this._forwardData(replyTo, defaultAccountId);
       } else {
         this.composeData = { accountId: defaultAccountId, to: '', cc: '', bcc: '', subject: '', body: '', inReplyTo: '', threadId: '' };
       }
@@ -545,19 +559,15 @@ document.addEventListener('alpine:init', () => {
     get store() { return Alpine.store('mail'); },
 
     init() {
-      this.$watch('store.activeLabel', () => {
-        this.$nextTick(() => {
-          if (this.$refs.threadList) {
-            this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
-          }
-        });
-      });
-      this.$watch('store.activeAccountId', () => {
-        this.$nextTick(() => {
-          if (this.$refs.threadList) {
-            this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
-          }
-        });
+      this.$watch('store.activeLabel',     () => this.restoreScroll());
+      this.$watch('store.activeAccountId', () => this.restoreScroll());
+    },
+
+    restoreScroll() {
+      this.$nextTick(() => {
+        if (this.$refs.threadList) {
+          this.$refs.threadList.scrollTop = this.store.currentScrollTop || 0;
+        }
       });
     },
 
@@ -615,7 +625,7 @@ document.addEventListener('alpine:init', () => {
       clearTimeout(this._searchTimer);
       this._searchTimer = setTimeout(() => {
         this.store.search(this.store.searchQuery);
-      }, 300);
+      }, DEBOUNCE_MS);
     },
 
     doSearch(e) {
@@ -723,7 +733,7 @@ document.addEventListener('alpine:init', () => {
       if (q.length < 1) { this.suggestions = []; this.open = false; return; }
       const accountId = this.$store.mail.composeData.accountId || 'unified';
       try {
-        const r = await Wails.call('SearchContacts', accountId, q, 8);
+        const r = await Wails.call('SearchContacts', accountId, q, CONTACT_SUGGESTIONS);
         this.suggestions = r || [];
         this.activeIdx = -1;
         this.open = this.suggestions.length > 0;
