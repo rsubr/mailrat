@@ -21,6 +21,13 @@ const Wails = {
   }
 };
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+const THREADS_PER_PAGE    = 60;
+const SEARCH_LIMIT        = 50;
+const CONTACT_SUGGESTIONS = 8;
+const DEBOUNCE_MS         = 300;
+const SEVEN_DAYS_MS       = 7 * 86400000;
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 function formatDate(ms) {
   if (!ms) return '';
@@ -31,7 +38,7 @@ function formatDate(ms) {
   }
   const diff = now - d;
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  if (diff < 7 * 86400000) return days[d.getDay()];
+  if (diff < SEVEN_DAYS_MS) return days[d.getDay()];
   return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -211,9 +218,9 @@ document.addEventListener('alpine:init', () => {
       this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetInbox', this.activeAccountId, 60, 0);
+        const threads = await Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, 0);
         const threadsVal = threads || [];
-        const isLoaded = threadsVal.length < 60;
+        const isLoaded = threadsVal.length < THREADS_PER_PAGE;
 
         if (isActive) {
           this.threads = threadsVal;
@@ -373,9 +380,9 @@ document.addEventListener('alpine:init', () => {
       this.allLoaded = false;
       this.error = null;
       try {
-        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, 60, 0);
+        const threads = await Wails.call('GetLabelThreads', this.activeAccountId, labelId, THREADS_PER_PAGE, 0);
         const threadsVal = threads || [];
-        const isLoaded = threadsVal.length < 60;
+        const isLoaded = threadsVal.length < THREADS_PER_PAGE;
 
         if (isActive) {
           this.threads = threadsVal;
@@ -404,12 +411,12 @@ document.addEventListener('alpine:init', () => {
         const offset = this.threads.length;
         let more;
         if (this.activeLabel === 'INBOX') {
-          more = await Wails.call('GetInbox', this.activeAccountId, 60, offset);
+          more = await Wails.call('GetInbox', this.activeAccountId, THREADS_PER_PAGE, offset);
         } else {
-          more = await Wails.call('GetLabelThreads', this.activeAccountId, this.activeLabel, 60, offset);
+          more = await Wails.call('GetLabelThreads', this.activeAccountId, this.activeLabel, THREADS_PER_PAGE, offset);
         }
         more = more || [];
-        if (more.length < 60) this.allLoaded = true;
+        if (more.length < THREADS_PER_PAGE) this.allLoaded = true;
         this.threads = [...this.threads, ...more];
         this.saveCurrentToCache();
       } catch (_) { /* silently ignore load-more errors */ }
@@ -422,7 +429,7 @@ document.addEventListener('alpine:init', () => {
       if (!q.trim()) { await this.selectLabel(this.activeLabel); return; }
       this.loading = true;
       try {
-        const threads = await Wails.call('SearchInbox', q, 50);
+        const threads = await Wails.call('SearchInbox', q, SEARCH_LIMIT);
         this.threads = threads || [];
         this.activeThread = null;
         this.messages = [];
@@ -615,7 +622,7 @@ document.addEventListener('alpine:init', () => {
       clearTimeout(this._searchTimer);
       this._searchTimer = setTimeout(() => {
         this.store.search(this.store.searchQuery);
-      }, 300);
+      }, DEBOUNCE_MS);
     },
 
     doSearch(e) {
@@ -723,7 +730,7 @@ document.addEventListener('alpine:init', () => {
       if (q.length < 1) { this.suggestions = []; this.open = false; return; }
       const accountId = this.$store.mail.composeData.accountId || 'unified';
       try {
-        const r = await Wails.call('SearchContacts', accountId, q, 8);
+        const r = await Wails.call('SearchContacts', accountId, q, CONTACT_SUGGESTIONS);
         this.suggestions = r || [];
         this.activeIdx = -1;
         this.open = this.suggestions.length > 0;
