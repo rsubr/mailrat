@@ -20,18 +20,18 @@ func NewLabelService(store *storage.Store, client *gmail.Client) *LabelService {
 
 // Archive removes INBOX label from a message.
 func (s *LabelService) Archive(ctx context.Context, accountID, messageID string) error {
-	if err := s.client.ModifyLabels(ctx, messageID, nil, []string{"INBOX"}); err != nil {
+	if err := s.client.ModifyLabels(ctx, messageID, nil, []string{LabelInbox}); err != nil {
 		return err
 	}
-	return s.removeLocalLabel(accountID, messageID, "INBOX")
+	return s.removeLocalLabel(accountID, messageID, LabelInbox)
 }
 
 // MarkRead removes the UNREAD label.
 func (s *LabelService) MarkRead(ctx context.Context, accountID, messageID string) error {
-	if err := s.client.ModifyLabels(ctx, messageID, nil, []string{"UNREAD"}); err != nil {
+	if err := s.client.ModifyLabels(ctx, messageID, nil, []string{LabelUnread}); err != nil {
 		return err
 	}
-	if err := s.removeLocalLabel(accountID, messageID, "UNREAD"); err != nil {
+	if err := s.removeLocalLabel(accountID, messageID, LabelUnread); err != nil {
 		return err
 	}
 	// Update local is_unread flag.
@@ -45,14 +45,14 @@ func (s *LabelService) MarkRead(ctx context.Context, accountID, messageID string
 
 // MarkUnread adds the UNREAD label.
 func (s *LabelService) MarkUnread(ctx context.Context, accountID, messageID string) error {
-	if err := s.client.ModifyLabels(ctx, messageID, []string{"UNREAD"}, nil); err != nil {
+	if err := s.client.ModifyLabels(ctx, messageID, []string{LabelUnread}, nil); err != nil {
 		return err
 	}
 	ids, err := s.store.GetMessageLabelIDs(accountID, messageID)
 	if err != nil {
 		return err
 	}
-	ids = append(ids, "UNREAD")
+	ids = append(ids, LabelUnread)
 	if err := s.store.SetMessageLabels(accountID, messageID, ids); err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func (s *LabelService) Trash(ctx context.Context, accountID, messageID string) e
 	if err := s.client.TrashMessage(ctx, messageID); err != nil {
 		return err
 	}
-	return s.removeLocalLabel(accountID, messageID, "INBOX")
+	return s.removeLocalLabel(accountID, messageID, LabelInbox)
 }
 
 // ApplyLabel adds a label to a message.
@@ -87,21 +87,21 @@ func (s *LabelService) ApplyLabel(ctx context.Context, accountID, messageID, lab
 
 // MarkAsSpam adds the SPAM label and removes the INBOX label.
 func (s *LabelService) MarkAsSpam(ctx context.Context, accountID, messageID string) error {
-	if err := s.client.ModifyLabels(ctx, messageID, []string{"SPAM"}, []string{"INBOX"}); err != nil {
+	if err := s.client.ModifyLabels(ctx, messageID, []string{LabelSpam}, []string{LabelInbox}); err != nil {
 		return err
 	}
-	return s.removeLocalLabel(accountID, messageID, "INBOX")
+	return s.removeLocalLabel(accountID, messageID, LabelInbox)
 }
 
 // MarkAsNotSpam removes the SPAM label and adds the INBOX label.
 func (s *LabelService) MarkAsNotSpam(ctx context.Context, accountID, messageID string) error {
-	if err := s.client.ModifyLabels(ctx, messageID, []string{"INBOX"}, []string{"SPAM"}); err != nil {
+	if err := s.client.ModifyLabels(ctx, messageID, []string{LabelInbox}, []string{LabelSpam}); err != nil {
 		return err
 	}
-	if err := s.removeLocalLabel(accountID, messageID, "SPAM"); err != nil {
+	if err := s.removeLocalLabel(accountID, messageID, LabelSpam); err != nil {
 		return err
 	}
-	return s.ApplyLabel(ctx, accountID, messageID, "INBOX")
+	return s.ApplyLabel(ctx, accountID, messageID, LabelInbox)
 }
 
 func (s *LabelService) removeLocalLabel(accountID, messageID, labelID string) error {

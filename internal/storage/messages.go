@@ -68,22 +68,14 @@ func (s *Store) UpsertMessage(m Message) error {
 }
 
 func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
-	var m Message
-	var isUnread, hasAttachments, isStarred int
-	err := s.db.QueryRow(`
+	row := s.db.QueryRow(`
 		SELECT `+messageSelectColumns+`
 		FROM messages WHERE id = ? AND account_id = ?
-	`, messageID, accountID).Scan(
-		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
-		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
-		&m.CcAddr, &m.BccAddr, &isStarred,
-	)
+	`, messageID, accountID)
+	m, err := scanMessageRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Message{}, fmt.Errorf("message %q not found", messageID)
 	}
-	m.IsUnread = isUnread == 1
-	m.HasAttachments = hasAttachments == 1
-	m.IsStarred = isStarred > 0
 	return m, err
 }
 
@@ -221,21 +213,35 @@ func boolToInt(v bool) int {
 	return 0
 }
 
+func intToBool(v int) bool { return v == 1 }
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanMessageRow(row rowScanner) (Message, error) {
+	var m Message
+	var isUnread, hasAttachments, isStarred int
+	if err := row.Scan(
+		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
+		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
+		&m.CcAddr, &m.BccAddr, &isStarred,
+	); err != nil {
+		return Message{}, err
+	}
+	m.IsUnread = intToBool(isUnread)
+	m.HasAttachments = intToBool(hasAttachments)
+	m.IsStarred = intToBool(isStarred)
+	return m, nil
+}
+
 func scanMessages(rows *sql.Rows) ([]Message, error) {
 	var out []Message
 	for rows.Next() {
-		var m Message
-		var isUnread, hasAttachments, isStarred int
-		if err := rows.Scan(
-			&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
-			&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
-			&m.CcAddr, &m.BccAddr, &isStarred,
-		); err != nil {
+		m, err := scanMessageRow(rows)
+		if err != nil {
 			return nil, err
 		}
-		m.IsUnread = isUnread == 1
-		m.HasAttachments = hasAttachments == 1
-		m.IsStarred = isStarred > 0
 		out = append(out, m)
 	}
 	return out, rows.Err()
