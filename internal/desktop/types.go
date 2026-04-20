@@ -1,6 +1,10 @@
 package desktop
 
-import "github.com/mailrat/mailrat/internal/storage"
+import (
+	"strings"
+
+	"github.com/mailrat/mailrat/internal/storage"
+)
 
 // AccountItem is the frontend representation of a connected account.
 type AccountItem struct {
@@ -139,10 +143,29 @@ func contactsToItems(contacts []storage.Contact) []ContactItem {
 	return out
 }
 
+// formatSystemLabelName converts a system label ID like "ALL_MAIL" to "All Mail".
+// It splits on spaces and underscores, title-cases each word, and joins with spaces.
+func formatSystemLabelName(name string) string {
+	words := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '_' || r == ' '
+	})
+	for i, w := range words {
+		if len(w) == 0 {
+			continue
+		}
+		words[i] = strings.ToUpper(w[:1]) + strings.ToLower(w[1:])
+	}
+	return strings.Join(words, " ")
+}
+
 func labelsToItems(labels []storage.Label) []LabelItem {
 	out := make([]LabelItem, len(labels))
 	for i, l := range labels {
-		out[i] = LabelItem{ID: l.ID, Name: l.Name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
+		name := l.Name
+		if l.LabelType == "system" {
+			name = formatSystemLabelName(l.Name)
+		}
+		out[i] = LabelItem{ID: l.ID, Name: name, Type: l.LabelType, TextColor: l.TextColor, BackgroundColor: l.BackgroundColor}
 	}
 	return out
 }
