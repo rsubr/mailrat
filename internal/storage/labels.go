@@ -69,6 +69,30 @@ func (s *Store) SetMessageLabels(accountID, messageID string, labelIDs []string)
 	return tx.Commit()
 }
 
+func (s *Store) GetLabelUnreadCounts(accountID string) (map[string]int, error) {
+	rows, err := s.db.Query(`
+		SELECT ml.label_id, COUNT(DISTINCT m.thread_id)
+		FROM message_labels ml
+		JOIN messages m ON m.id = ml.message_id AND m.account_id = ml.account_id
+		WHERE ml.account_id = ? AND m.is_unread = 1
+		GROUP BY ml.label_id
+	`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var labelID string
+		var count int
+		if err := rows.Scan(&labelID, &count); err != nil {
+			return nil, err
+		}
+		out[labelID] = count
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetMessageLabelIDs(accountID, messageID string) ([]string, error) {
 	rows, err := s.db.Query(`
 		SELECT label_id FROM message_labels WHERE message_id = ? AND account_id = ?
