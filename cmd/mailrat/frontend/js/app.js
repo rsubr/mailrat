@@ -115,6 +115,7 @@ document.addEventListener('alpine:init', () => {
     activeLabel: 'INBOX',
     threads: [],
     labels: [],
+    labelUnreadCounts: {},
     loading: false,
     loadingMore: false,
     allLoaded: false,
@@ -180,6 +181,11 @@ document.addEventListener('alpine:init', () => {
         const labels = await Wails.call('GetLabels', accountId);
         this.labels = labels || [];
       } catch (e) { /* labels are non-critical */ }
+      // Fetch unread counts (use activeAccountId so unified works)
+      try {
+        const counts = await Wails.call('GetLabelUnreadCounts', this.activeAccountId || accountId);
+        this.labelUnreadCounts = counts || {};
+      } catch (e) { /* non-critical */ }
     },
 
     isUnifiedAccount(accountId) {
@@ -549,6 +555,7 @@ document.addEventListener('alpine:init', () => {
     iconKey(id)        { return this.ICON_IDS.has(id) ? id : '_tag'; },
     isActiveLabel(id)  { return this.store.activeLabel === id; },
     selectLabel(id)    { this.store.selectLabel(id); },
+    unreadCount(id)    { return (this.store.labelUnreadCounts || {})[id] || 0; },
 
     selectAccount(id)  { this.store.selectAccount(id); },
     openCompose()      { this.store.openCompose('new'); },
