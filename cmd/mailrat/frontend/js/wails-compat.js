@@ -50,6 +50,9 @@
         GetLabels: (accountId) =>
           api('/api/labels' + qs({ accountId })),
 
+        GetLabelUnreadCounts: (accountId) =>
+          api('/api/label-unread-counts' + qs({ accountId })),
+
         MarkMessageRead: (accountId, messageId) =>
           api('/api/mark-read' + qs({ accountId, messageId }), { method: 'POST' }),
 

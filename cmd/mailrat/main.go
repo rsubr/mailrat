@@ -186,6 +186,10 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		return app.GetLabels(qp(r, "accountId"))
 	})
 
+	handleGET(mux, "/api/label-unread-counts", func(r *http.Request) (any, error) {
+		return app.GetLabelUnreadCounts(qp(r, "accountId"))
+	})
+
 	mux.HandleFunc("/api/mark-read", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePOST(w, r) {
 			return
