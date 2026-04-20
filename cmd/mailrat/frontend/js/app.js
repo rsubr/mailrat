@@ -516,7 +516,10 @@ document.addEventListener('alpine:init', () => {
     PINNED: ['INBOX', 'STARRED', 'SENT', 'DRAFT'],
     // System label IDs never shown in sidebar (internal / category tabs)
     HIDDEN: new Set(['UNREAD', 'CATEGORY_PERSONAL', 'CATEGORY_SOCIAL',
-                     'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS']),
+                     'CATEGORY_PROMOTIONS', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS',
+                     'YELLOW_STAR', 'BLUE_STAR', 'RED_STAR', 'PURPLE_STAR', 'GREEN_STAR',
+                     'RED_BANGBANG', 'ORANGE_GUILLEMET', 'GREEN_CHECK', 'BLUE_INFO',
+                     'PURPLE_QUESTION', 'GREEN_CIRCLE', 'ORANGE_CIRCLE']),
     // Fallback names when labels haven't loaded yet
     LABEL_NAMES: { INBOX: 'Inbox', STARRED: 'Starred', SENT: 'Sent', DRAFT: 'Drafts',
                    IMPORTANT: 'Important', SPAM: 'Spam', TRASH: 'Trash' },
