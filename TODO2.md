@@ -7,7 +7,7 @@
  [x] TailWindCSS CDN load warning in browser console — vendored alpine.js and tailwind, no external requests
  [ ] Mail signature management in account settings page
  [ ] Display all labels in left panel, but hide nonsense labels like stars variants
- [ ] Hide left panel like GMail
+ [x] Hide left panel like GMail
  [ ] The ? key should bring up shortcuts like GMail
  [x] GMail shortcut key support, advanced shortcut keys like "g i" go to inbox, "/" search, "#" delete, "!" spam
  [x] Load label colors from the backend, now all labels are just grey

@@ -162,7 +162,7 @@ document.addEventListener('alpine:init', () => {
 
       Wails.onEvent('inbox:updated',  ()      => { this.loadInbox(); });
       Wails.onEvent('sync:progress',  (data)  => { this.syncStatus = 'syncing'; this.syncAccount = data?.account || ''; });
-      Wails.onEvent('sync:complete',  ()      => { this.syncStatus = 'done'; setTimeout(() => { this.syncStatus = 'idle'; }, 2000); });
+      Wails.onEvent('sync:complete',  ()      => { this.syncStatus = 'done'; setTimeout(() => { this.syncStatus = 'idle'; }, 2000); this.loadLabels(); });
     },
 
     async loadAccounts() {
@@ -295,6 +295,7 @@ document.addEventListener('alpine:init', () => {
         t.isUnread = false;
         this.saveCurrentToCache();
       }
+      await this.loadLabels();
     },
 
     async trashThread() {
@@ -517,6 +518,7 @@ document.addEventListener('alpine:init', () => {
   // ── Sidebar component ──────────────────────────────────────────────────────
   Alpine.data('sidebar', () => ({
     moreOpen: false,
+    sidebarOpen: true,
 
     // System label IDs always pinned at top
     PINNED: ['INBOX', 'STARRED', 'SENT', 'DRAFT'],
