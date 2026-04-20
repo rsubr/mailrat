@@ -469,6 +469,32 @@ func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 	return labelsToItems(labels), nil
 }
 
+// GetLabelUnreadCounts returns unread thread counts per label for an account.
+// Pass accountID "unified" or "" to aggregate across all accounts.
+func (a *App) GetLabelUnreadCounts(accountID string) (map[string]int, error) {
+	if a.store == nil {
+		return nil, nil
+	}
+	if accountID == "" || accountID == "unified" {
+		accounts, err := a.store.ListAccounts()
+		if err != nil {
+			return nil, err
+		}
+		total := map[string]int{}
+		for _, acc := range accounts {
+			counts, err := a.store.GetLabelUnreadCounts(acc.ID)
+			if err != nil {
+				continue
+			}
+			for k, v := range counts {
+				total[k] += v
+			}
+		}
+		return total, nil
+	}
+	return a.store.GetLabelUnreadCounts(accountID)
+}
+
 // gmailClient returns an authenticated gmail.Client for the given account ID.
 func (a *App) gmailClient(accountID string) (*gmail.Client, error) {
 	httpClient, err := a.accounts.GetClient(a.ctx, accountID)
