@@ -173,7 +173,9 @@
                     :class="isActiveLabel(label.id) ? 'nav-item-active' : 'hover-bg text-secondary'"
                     class="w-full flex items-center px-2 py-1.5 rounded-md text-sm transition-colors">
               <svg class="w-4 h-4 mr-2 flex-shrink-0"><use :href="'#icon-' + iconKey(label.id)"/></svg>
-              <span class="truncate" x-text="label.name"></span>
+              <span class="truncate flex-1" x-text="label.name"></span>
+              <span x-show="unreadCount(label.id) > 0" x-text="unreadCount(label.id)"
+                    class="ml-1 text-xs font-medium text-blue-500 flex-shrink-0"></span>
             </button>
           </li>
         </template>
@@ -202,7 +204,9 @@
                         :class="isActiveLabel(label.id) ? 'nav-item-active' : 'hover-bg text-secondary'"
                         class="w-full flex items-center px-2 py-1.5 rounded-md text-sm transition-colors">
                   <svg class="w-4 h-4 mr-2 flex-shrink-0"><use :href="'#icon-' + iconKey(label.id)"/></svg>
-                  <span class="truncate" x-text="label.name"></span>
+                  <span class="truncate flex-1" x-text="label.name"></span>
+                  <span x-show="unreadCount(label.id) > 0" x-text="unreadCount(label.id)"
+                        class="ml-1 text-xs font-medium text-blue-500 flex-shrink-0"></span>
                 </button>
               </li>
             </template>
@@ -227,7 +231,9 @@
                   <template x-if="!label.backgroundColor">
                     <svg class="w-4 h-4 mr-2 flex-shrink-0"><use :href="'#icon-' + iconKey(label.id)"/></svg>
                   </template>
-                  <span class="truncate" x-text="label.name"></span>
+                  <span class="truncate flex-1" x-text="label.name"></span>
+                  <span x-show="unreadCount(label.id) > 0" x-text="unreadCount(label.id)"
+                        class="ml-1 text-xs font-medium text-blue-500 flex-shrink-0"></span>
                 </button>
               </li>
             </template>
