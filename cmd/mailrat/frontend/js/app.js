@@ -522,7 +522,7 @@ document.addEventListener('alpine:init', () => {
                      'PURPLE_QUESTION', 'GREEN_CIRCLE', 'ORANGE_CIRCLE']),
     // Fallback names when labels haven't loaded yet
     LABEL_NAMES: { INBOX: 'Inbox', STARRED: 'Starred', SENT: 'Sent', DRAFT: 'Drafts',
-                   IMPORTANT: 'Important', SPAM: 'Spam', TRASH: 'Trash' },
+                   IMPORTANT: 'Important', SPAM: 'Spam', TRASH: 'Trash', ALL_MAIL: 'All Mail' },
     // Known system label IDs that have dedicated icons in the sprite
     ICON_IDS: new Set(['INBOX','STARRED','SENT','DRAFT','IMPORTANT','SPAM','TRASH','ALL_MAIL','SNOOZED']),
 
