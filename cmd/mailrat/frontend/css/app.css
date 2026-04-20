@@ -144,16 +144,6 @@ input.bg-input {
   color: #409cff;
 }
 
-/* ── Sidebar unread count badge ─────────────────────────────────────────────── */
-.label-unread-badge {
-  color: #409cff;
-  font-size: 0.7rem;
-  font-weight: 500;
-  flex-shrink: 0;
-  margin-left: 4px;
-  line-height: 1;
-}
-
 /* ── Textarea reset ─────────────────────────────────────────────────────────── */
 textarea { resize: none; outline: none; }
 textarea:focus { outline: none; }
