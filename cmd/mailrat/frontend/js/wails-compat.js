@@ -62,6 +62,9 @@
         TrashThread: (accountId, threadId) =>
           api('/api/trash' + qs({ accountId, threadId }), { method: 'POST' }),
 
+        ArchiveThread: (accountId, threadId) =>
+          api('/api/archive' + qs({ accountId, threadId }), { method: 'POST' }),
+
         MarkThreadSpam: (accountId, threadId) =>
           api('/api/spam' + qs({ accountId, threadId }), { method: 'POST' }),
 

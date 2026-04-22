@@ -351,6 +351,30 @@ document.addEventListener('alpine:init', () => {
       } catch (e) { this.error = e.toString(); }
     },
 
+    canSendAndArchive() {
+      if (!this.activeThread || this.composeMode === 'new') return false;
+      const labels = this.activeThread.labelIds || [];
+      return this.activeLabel === 'INBOX' || labels.includes('INBOX');
+    },
+
+    async archiveActiveThread() {
+      if (!this.activeThread) return;
+      const { id, accountId } = this.activeThread;
+      await Wails.call('ArchiveThread', accountId, id);
+
+      if (this.activeLabel === 'INBOX') {
+        this.removeThread(id, accountId);
+        this.activeThread = null;
+        this.messages = [];
+      } else {
+        const removeInbox = t => ({ ...t, labelIds: (t.labelIds || []).filter(l => l !== 'INBOX') });
+        this.activeThread = removeInbox(this.activeThread);
+        this.threads = this.threads.map(t => (t.id === id && t.accountId === accountId) ? removeInbox(t) : t);
+      }
+      this.saveCurrentToCache();
+      await this.loadLabels();
+    },
+
     async fetchBody(msg) {
       try {
         const full = await Wails.call('GetMessage', msg.accountId, msg.id);
@@ -502,15 +526,19 @@ document.addEventListener('alpine:init', () => {
 
     closeCompose() { this.composing = false; this.sendError = null; this.showCc = false; this.showBcc = false; },
 
-    async sendCompose() {
+    async sendCompose(archiveAfterSend = false) {
       if (this.sending) return;
       this.sendError = null;
       this.sending = true;
       try {
         await Wails.call('SendMessage', this.composeData);
         this.composing = false;
+        if (archiveAfterSend && this.canSendAndArchive()) {
+          await this.archiveActiveThread();
+        }
       } catch (e) {
-        this.sendError = e.toString();
+        if (this.composing) this.sendError = e.toString();
+        else this.error = e.toString();
       } finally { this.sending = false; }
     },
   });
@@ -709,11 +737,11 @@ document.addEventListener('alpine:init', () => {
       if (url) this.exec('createLink', url);
     },
 
-    syncAndSend() {
+    syncAndSend(archiveAfterSend = false) {
       if (this.$refs.editor) {
         this.store.composeData.body = this.$refs.editor.innerHTML;
       }
-      this.store.sendCompose();
+      this.store.sendCompose(archiveAfterSend);
     },
 
     handleKeydown(e) {

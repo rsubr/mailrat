@@ -292,6 +292,26 @@ func (a *App) TrashThread(accountID, threadID string) error {
 	return nil
 }
 
+// ArchiveThread removes the Inbox label from all messages in a thread.
+func (a *App) ArchiveThread(accountID, threadID string) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return err
+	}
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
+	if err != nil {
+		return err
+	}
+	svc := mail.NewLabelService(a.store, client)
+	for _, msg := range msgs {
+		if err := svc.Archive(a.ctx, accountID, msg.ID); err != nil {
+			return err
+		}
+	}
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
 // MarkThreadSpam moves all messages in a thread to Spam and removes from Inbox.
 // If offline, queues the operation for replay on the next sync.
 func (a *App) MarkThreadSpam(accountID, threadID string) error {

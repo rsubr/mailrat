@@ -543,10 +543,17 @@
             <span class="text-tertiary text-xs">⌘↩ to send</span>
             <p x-show="store.sendError" x-text="store.sendError" class="text-red-400 text-xs" style="display:none"></p>
           </div>
-          <button @click="syncAndSend()" :disabled="store.sending || !data.to || !data.subject"
-                  class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
-            <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
-          </button>
+          <div class="flex items-center space-x-2">
+            <button x-show="store.canSendAndArchive()" @click="syncAndSend(true)" :disabled="store.sending || !data.to || !data.subject"
+                    class="px-4 py-1.5 bg-subtle hover-bg disabled:opacity-40 text-secondary text-sm font-medium rounded-lg transition-colors"
+                    style="display:none">
+              <span x-text="store.sending ? 'Sending…' : 'Send and archive'"></span>
+            </button>
+            <button @click="syncAndSend()" :disabled="store.sending || !data.to || !data.subject"
+                    class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
+              <span x-text="store.sending ? 'Sending…' : 'Send'"></span>
+            </button>
+          </div>
         </div>
 
       </div>
@@ -882,6 +889,11 @@
                 <span class="text-tertiary text-xs">⌘↩ to send</span>
                 <div class="flex items-center space-x-3">
                   <p x-show="store.sendError" x-text="store.sendError" class="text-red-400 text-xs" style="display:none"></p>
+                  <button x-show="store.canSendAndArchive()" @click="syncAndSend(true)" :disabled="store.sending || !data.to"
+                          class="px-4 py-1.5 bg-subtle hover-bg disabled:opacity-40 text-secondary text-sm font-medium rounded-lg transition-colors"
+                          style="display:none">
+                    <span x-text="store.sending ? 'Sending…' : 'Send and archive'"></span>
+                  </button>
                   <button @click="syncAndSend()" :disabled="store.sending || !data.to"
                           class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm font-medium rounded-lg transition-colors">
                     <span x-text="store.sending ? 'Sending…' : 'Send'"></span>

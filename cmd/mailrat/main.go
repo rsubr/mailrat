@@ -224,6 +224,18 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
+	mux.HandleFunc("/api/archive", func(w http.ResponseWriter, r *http.Request) {
+		if !requirePOST(w, r) {
+			return
+		}
+		if err := app.ArchiveThread(qp(r, "accountId"), qp(r, "threadId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		events.emit("inbox:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
 	mux.HandleFunc("/api/spam", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePOST(w, r) {
 			return
