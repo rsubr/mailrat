@@ -370,7 +370,8 @@
                       <use :href="'#' + starInfo(thread).icon"/>
                     </svg>
                   </template>
-                  <h3 class="truncate text-sm font-medium text-primary"
+                  <h3 class="truncate text-sm font-medium"
+                      :class="thread.isUnread ? 'text-primary' : 'text-secondary'"
                       x-text="thread.participants || thread.accountId"></h3>
                   <!-- Message count badge -->
                   <template x-if="thread.messageCount > 1">
