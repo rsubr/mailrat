@@ -42,22 +42,31 @@ type ThreadItem struct {
 	LabelIDs       []string `json:"labelIds"`
 }
 
+// AttachmentItem is the frontend representation of a single message attachment.
+type AttachmentItem struct {
+	Name         string `json:"name"`
+	MimeType     string `json:"mimeType"`
+	Size         int64  `json:"size"`
+	AttachmentID string `json:"attachmentId"`
+}
+
 // MessageItem is the frontend representation of a single message.
 type MessageItem struct {
-	ID             string `json:"id"`
-	ThreadID       string `json:"threadId"`
-	MessageID      string `json:"messageId"` // RFC 2822 Message-ID header value
-	AccountID      string `json:"accountId"`
-	Subject        string `json:"subject"`
-	FromAddr       string `json:"from"`
-	ToAddr         string `json:"to"`
-	CcAddr         string `json:"cc"`
-	BccAddr        string `json:"bcc"`
-	Body           string `json:"body"`
-	Snippet        string `json:"snippet"`
-	Date           int64  `json:"date"`
-	IsUnread       bool   `json:"isUnread"`
-	HasAttachments bool   `json:"hasAttachments"`
+	ID             string           `json:"id"`
+	ThreadID       string           `json:"threadId"`
+	MessageID      string           `json:"messageId"` // RFC 2822 Message-ID header value
+	AccountID      string           `json:"accountId"`
+	Subject        string           `json:"subject"`
+	FromAddr       string           `json:"from"`
+	ToAddr         string           `json:"to"`
+	CcAddr         string           `json:"cc"`
+	BccAddr        string           `json:"bcc"`
+	Body           string           `json:"body"`
+	Snippet        string           `json:"snippet"`
+	Date           int64            `json:"date"`
+	IsUnread       bool             `json:"isUnread"`
+	HasAttachments bool             `json:"hasAttachments"`
+	Attachments    []AttachmentItem `json:"attachments"`
 }
 
 // LabelItem is the frontend representation of a Gmail label.
@@ -73,6 +82,12 @@ type LabelItem struct {
 type ContactItem struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
+}
+
+// AttachmentDataItem carries raw attachment bytes for the frontend.
+type AttachmentDataItem struct {
+	Data     []byte `json:"data"`
+	MimeType string `json:"mimeType"`
 }
 
 // OutboundMsg is the frontend payload for sending an email.
@@ -123,7 +138,21 @@ func messageToItem(m storage.Message) MessageItem {
 		Date:           m.InternalDate,
 		IsUnread:       m.IsUnread,
 		HasAttachments: m.HasAttachments,
+		Attachments:    []AttachmentItem{},
 	}
+}
+
+func attachmentsToItems(atts []storage.Attachment) []AttachmentItem {
+	out := make([]AttachmentItem, len(atts))
+	for i, a := range atts {
+		out[i] = AttachmentItem{
+			Name:         a.Name,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			AttachmentID: a.AttachmentID,
+		}
+	}
+	return out
 }
 
 func threadSummariesToItems(summaries []storage.ThreadSummary) []ThreadItem {

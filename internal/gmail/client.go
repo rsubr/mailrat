@@ -387,18 +387,46 @@ func collectAttachments(part *gmailv1.MessagePart, out *[]Attachment) {
 	// A part is an attachment if it has a filename.
 	if part.Filename != "" {
 		size := int64(0)
+		attachmentID := ""
 		if part.Body != nil {
 			size = part.Body.Size
+			if part.Body.AttachmentId != "" {
+				attachmentID = part.Body.AttachmentId
+			} else if part.Body.Data != "" {
+				// Small attachment: data is inline as base64url in the message payload.
+				attachmentID = "inline:" + part.Body.Data
+			}
 		}
 		*out = append(*out, Attachment{
-			Name:     part.Filename,
-			MimeType: part.MimeType,
-			Size:     size,
+			Name:         part.Filename,
+			MimeType:     part.MimeType,
+			Size:         size,
+			AttachmentID: attachmentID,
 		})
 	}
 	for _, p := range part.Parts {
 		collectAttachments(p, out)
 	}
+}
+
+// GetAttachmentData fetches the binary content of an attachment from Gmail.
+// Returns the raw decoded bytes.
+func (c *Client) GetAttachmentData(ctx context.Context, messageID, attachmentID string) ([]byte, error) {
+	att, err := withRetry(ctx, func() (*gmailv1.MessagePartBody, error) {
+		return c.svc.Users.Messages.Attachments.Get("me", messageID, attachmentID).Context(ctx).Do()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("get attachment %s: %w", attachmentID, err)
+	}
+	data, err := base64.URLEncoding.DecodeString(att.Data)
+	if err != nil {
+		// Gmail may use standard or URL encoding
+		data, err = base64.StdEncoding.DecodeString(att.Data)
+		if err != nil {
+			return nil, fmt.Errorf("decode attachment data: %w", err)
+		}
+	}
+	return data, nil
 }
 
 // withRetry calls fn with exponential backoff on 429/500 errors.

@@ -126,9 +126,10 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 	atts := make([]storage.Attachment, len(full.Attachments))
 	for i, attachment := range full.Attachments {
 		atts[i] = storage.Attachment{
-			Name:     attachment.Name,
-			MimeType: attachment.MimeType,
-			Size:     attachment.Size,
+			Name:         attachment.Name,
+			MimeType:     attachment.MimeType,
+			Size:         attachment.Size,
+			AttachmentID: attachment.AttachmentID,
 		}
 	}
 	return m.store.UpsertAttachments(accountID, msg.ID, atts)

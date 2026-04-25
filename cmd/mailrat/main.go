@@ -153,6 +153,26 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		return app.GetMessage(qp(r, "accountId"), qp(r, "messageId"))
 	})
 
+	mux.HandleFunc("/api/attachment", func(w http.ResponseWriter, r *http.Request) {
+		att, err := app.GetAttachmentData(qp(r, "accountId"), qp(r, "messageId"), qp(r, "attachmentId"))
+		if err != nil {
+			errJSON(w, err)
+			return
+		}
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			name = "attachment"
+		}
+		mimeType := att.MimeType
+		if mimeType == "" {
+			mimeType = "application/octet-stream"
+		}
+		w.Header().Set("Content-Type", mimeType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename=%q`, name))
+		w.WriteHeader(http.StatusOK)
+		w.Write(att.Data) //nolint:errcheck
+	})
+
 	mux.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		if !requirePOST(w, r) {
 			return

@@ -2,9 +2,10 @@ package storage
 
 // Attachment holds metadata for one MIME attachment belonging to a message.
 type Attachment struct {
-	Name     string
-	MimeType string
-	Size     int64 // bytes
+	Name         string
+	MimeType     string
+	Size         int64 // bytes
+	AttachmentID string // Gmail part attachment ID, needed to fetch binary data
 }
 
 // UpsertAttachments replaces all attachment records for (accountID, messageID).
@@ -24,9 +25,9 @@ func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Att
 
 	for _, a := range attachments {
 		if _, err := tx.Exec(
-			`INSERT INTO attachments (message_id, account_id, name, mime_type, size)
-			 VALUES (?, ?, ?, ?, ?)`,
-			messageID, accountID, a.Name, a.MimeType, a.Size,
+			`INSERT INTO attachments (message_id, account_id, name, mime_type, size, attachment_id)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			messageID, accountID, a.Name, a.MimeType, a.Size, a.AttachmentID,
 		); err != nil {
 			return err
 		}
@@ -38,7 +39,7 @@ func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Att
 // GetAttachments returns all attachments for a message.
 func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error) {
 	rows, err := s.db.Query(
-		`SELECT name, mime_type, size FROM attachments
+		`SELECT name, mime_type, size, attachment_id FROM attachments
 		 WHERE message_id = ? AND account_id = ?
 		 ORDER BY rowid`,
 		messageID, accountID,
@@ -51,7 +52,7 @@ func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error
 	var out []Attachment
 	for rows.Next() {
 		var a Attachment
-		if err := rows.Scan(&a.Name, &a.MimeType, &a.Size); err != nil {
+		if err := rows.Scan(&a.Name, &a.MimeType, &a.Size, &a.AttachmentID); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

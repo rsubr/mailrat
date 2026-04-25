@@ -2,9 +2,11 @@ package desktop
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/mailrat/mailrat/internal/accounts"
@@ -286,7 +288,17 @@ func (a *App) GetThread(accountID, threadID string) ([]MessageItem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return messagesToItems(msgs), nil
+	items := make([]MessageItem, len(msgs))
+	for i, m := range msgs {
+		item := messageToItem(m)
+		if m.HasAttachments {
+			if atts, err := a.store.GetAttachments(accountID, m.ID); err == nil {
+				item.Attachments = attachmentsToItems(atts)
+			}
+		}
+		items[i] = item
+	}
+	return items, nil
 }
 
 // GetMessage returns a single message, lazily fetching the body from Gmail if not cached.
@@ -301,7 +313,13 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 			svc := mail.NewInboxService(a.store, client)
 			msg, err := svc.GetMessage(a.ctx, accountID, messageID)
 			if err == nil {
-				return messageToItem(msg), nil
+				item := messageToItem(msg)
+				if msg.HasAttachments {
+					if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+						item.Attachments = attachmentsToItems(atts)
+					}
+				}
+				return item, nil
 			}
 		}
 	}
@@ -310,7 +328,57 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 	if err != nil {
 		return MessageItem{}, err
 	}
-	return messageToItem(msg), nil
+	item := messageToItem(msg)
+	if msg.HasAttachments {
+		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+			item.Attachments = attachmentsToItems(atts)
+		}
+	}
+	return item, nil
+}
+
+// GetAttachmentData fetches and returns the binary content of an attachment.
+// attachmentID is either a Gmail API part ID or "inline:<base64url>" for small embedded attachments.
+func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (AttachmentDataItem, error) {
+	// Look up the mimeType from stored metadata.
+	mimeType := "application/octet-stream"
+	if a.store != nil {
+		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+			for _, att := range atts {
+				if att.AttachmentID == attachmentID {
+					mimeType = att.MimeType
+					break
+				}
+			}
+		}
+	}
+
+	// Inline attachment: data is embedded as base64url after the "inline:" prefix.
+	if strings.HasPrefix(attachmentID, "inline:") {
+		raw := strings.TrimPrefix(attachmentID, "inline:")
+		data, err := base64.URLEncoding.DecodeString(raw)
+		if err != nil {
+			// Try standard encoding as fallback.
+			data, err = base64.StdEncoding.DecodeString(raw)
+			if err != nil {
+				return AttachmentDataItem{}, fmt.Errorf("decode inline attachment: %w", err)
+			}
+		}
+		return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
+	}
+
+	if a.accounts == nil {
+		return AttachmentDataItem{}, fmt.Errorf("no accounts configured")
+	}
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return AttachmentDataItem{}, err
+	}
+	data, err := client.GetAttachmentData(a.ctx, messageID, attachmentID)
+	if err != nil {
+		return AttachmentDataItem{}, err
+	}
+	return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
 }
 
 // SendMessage sends an outbound email.

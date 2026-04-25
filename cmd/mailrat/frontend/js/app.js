@@ -147,6 +147,16 @@ document.addEventListener('alpine:init', () => {
     sending: false,
     sendError: null,
 
+    // Attachment viewer overlay
+    attachmentViewer: { open: false, url: '', name: '', mimeType: '' },
+
+    closeAttachmentViewer() {
+      if (this.attachmentViewer.url && this.attachmentViewer.url.startsWith('blob:')) {
+        URL.revokeObjectURL(this.attachmentViewer.url);
+      }
+      this.attachmentViewer = { open: false, url: '', name: '', mimeType: '' };
+    },
+
     // Theme
     theme: localStorage.getItem('mailrat-theme') || 'dark',
     toggleTheme() {
@@ -806,6 +816,64 @@ document.addEventListener('alpine:init', () => {
     reply(msg)      { this.store.openCompose('reply', msg); },
     replyAll(msg)   { this.store.openCompose('reply-all', msg); },
     forward(msg)    { this.store.openCompose('forward', msg); },
+
+    formatAttSize(bytes) {
+      if (!bytes) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    _isViewable(mimeType) {
+      return /^image\/|^video\/|^audio\/|^text\//.test(mimeType) || mimeType === 'application/pdf';
+    },
+
+    async openAttachment(msg, att) {
+      if (!att.attachmentId) return;
+      const mimeType = att.mimeType || 'application/octet-stream';
+
+      if (Wails._available()) {
+        // Wails desktop: fetch binary via Go, create blob URL.
+        try {
+          const result = await Wails.call('GetAttachmentData', msg.accountId, msg.id, att.attachmentId);
+          const mt = result.mimeType || mimeType;
+          // Go encodes []byte as standard base64 in JSON.
+          const binary = atob(result.data);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: mt });
+          const url = URL.createObjectURL(blob);
+          if (this._isViewable(mt)) {
+            this.store.attachmentViewer = { open: true, url, name: att.name, mimeType: mt };
+          } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = att.name;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+          }
+        } catch (e) {
+          this.store.error = 'Could not open attachment: ' + e.toString();
+        }
+      } else {
+        // Web mode: use API URL directly (browser handles rendering or download).
+        const params = new URLSearchParams({
+          accountId: msg.accountId,
+          messageId: msg.id,
+          attachmentId: att.attachmentId,
+          name: att.name,
+        });
+        const url = '/api/attachment?' + params.toString();
+        if (this._isViewable(mimeType)) {
+          this.store.attachmentViewer = { open: true, url, name: att.name, mimeType };
+        } else {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = att.name;
+          a.click();
+        }
+      }
+    },
 
     // Called by x-init on compose container when it's inserted into DOM
     initEditor() {
