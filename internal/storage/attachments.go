@@ -60,3 +60,13 @@ func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error
 	}
 	return out, rows.Err()
 }
+
+// UpdateAttachmentData writes binary data into an existing attachment row.
+func (s *Store) UpdateAttachmentData(accountID, messageID, attachmentID string, data []byte) error {
+	_, err := s.db.Exec(
+		`UPDATE attachments SET data = ?
+		 WHERE message_id = ? AND account_id = ? AND attachment_id = ?`,
+		data, messageID, accountID, attachmentID,
+	)
+	return err
+}

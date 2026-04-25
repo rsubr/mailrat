@@ -337,19 +337,26 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 }
 
 // GetAttachmentData returns the binary content of an attachment.
-// Serves from SQLite cache when available; falls back to the Gmail API.
+// Serves from SQLite cache when available; falls back to the Gmail API and
+// writes the result back to cache so subsequent requests are served locally.
 func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (AttachmentDataItem, error) {
+	// Single store query: find the attachment row, return cached data if present.
+	var cached *storage.Attachment
 	if a.store != nil {
 		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
-			for _, att := range atts {
-				if att.AttachmentID == attachmentID && att.Data != nil {
-					return AttachmentDataItem{Data: att.Data, MimeType: att.MimeType}, nil
+			for i := range atts {
+				if atts[i].AttachmentID == attachmentID {
+					if atts[i].Data != nil {
+						return AttachmentDataItem{Data: atts[i].Data, MimeType: atts[i].MimeType}, nil
+					}
+					cached = &atts[i]
+					break
 				}
 			}
 		}
 	}
 
-	// Inline attachments are identified by "name:<filename>" — no API fetch possible.
+	// Inline attachments (synthetic "name:" ID) have no Gmail API path.
 	if strings.HasPrefix(attachmentID, "name:") {
 		return AttachmentDataItem{}, fmt.Errorf("attachment %q not yet downloaded; sync to cache it", strings.TrimPrefix(attachmentID, "name:"))
 	}
@@ -367,15 +374,11 @@ func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (Atta
 	}
 
 	mimeType := "application/octet-stream"
-	if a.store != nil {
-		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
-			for _, att := range atts {
-				if att.AttachmentID == attachmentID {
-					mimeType = att.MimeType
-					break
-				}
-			}
-		}
+	if cached != nil {
+		mimeType = cached.MimeType
+		// Write back to cache so future requests are served from SQLite.
+		cached.Data = data
+		_ = a.store.UpdateAttachmentData(accountID, messageID, attachmentID, data)
 	}
 	return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
 }
