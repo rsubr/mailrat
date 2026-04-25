@@ -21,6 +21,12 @@ type AccountSettingsItem struct {
 	FetchAttachments bool   `json:"fetchAttachments"`
 }
 
+// GlobalSettingsItem is the frontend representation of app-wide settings.
+type GlobalSettingsItem struct {
+	SyncFrequency    string `json:"syncFrequency"`    // "15m", "1h", "manual"
+	DefaultAccountID string `json:"defaultAccountId"`
+}
+
 // ThreadItem is the frontend representation of an inbox thread.
 type ThreadItem struct {
 	ID             string   `json:"id"`

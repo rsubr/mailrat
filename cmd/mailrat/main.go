@@ -354,6 +354,26 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
+	handleGET(mux, "/api/global-settings", func(r *http.Request) (any, error) {
+		return app.GetGlobalSettings()
+	})
+
+	mux.HandleFunc("/api/global-settings/set", func(w http.ResponseWriter, r *http.Request) {
+		if !requirePOST(w, r) {
+			return
+		}
+		var settings desktop.GlobalSettingsItem
+		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+			errJSON(w, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		if err := app.SetGlobalSettings(settings); err != nil {
+			errJSON(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
 	log.Printf("mailrat web → http://%s", addr)
 	return http.ListenAndServe(addr, mux)
 }

@@ -947,155 +947,237 @@
   <!-- ═══════════════════════════════════════════════════════════════════════ -->
   <div x-show="$store.mail.settingsOpen"
        @keydown.escape.window="$store.mail.settingsOpen = false"
-       class="fixed inset-0 z-50 bg-app flex flex-col"
-       style="display:none">
+       class="fixed inset-0 z-50 flex overflow-hidden"
+       style="display:none; background-color: var(--bg-app);">
 
-    <!-- Top bar -->
-    <div class="h-14 flex items-center justify-between px-6 border-b border-divider flex-shrink-0 bg-sidebar">
-      <div class="flex items-center space-x-3">
-        <svg class="w-5 h-5 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-        </svg>
-        <h1 class="text-primary font-semibold text-sm">Settings</h1>
-      </div>
-      <button @click="$store.mail.settingsOpen = false"
-              class="flex items-center space-x-1.5 text-secondary hover-primary transition-colors text-xs">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-        </svg>
-        <span>Close</span>
-      </button>
-    </div>
-
-    <!-- Content: two-column layout (nav left, content right) -->
-    <div class="flex flex-1 overflow-hidden">
-
-      <!-- Left nav -->
-      <nav class="w-48 bg-sidebar border-r border-divider flex-shrink-0 py-4 px-3">
-        <button @click="$store.mail.settingsTab = 'accounts'"
-                :class="$store.mail.settingsTab === 'accounts' ? 'bg-active-item text-primary' : 'hover-bg text-secondary'"
-                class="w-full text-left px-3 py-2 rounded-md text-xs font-medium transition-colors mb-0.5">
-          Accounts
+    <!-- ── Sidebar ── -->
+    <aside class="w-64 bg-sidebar border-r border-divider flex flex-col flex-shrink-0 pt-8 pb-4">
+      <div class="px-6 mb-8 flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-primary tracking-tight">Settings</h1>
+        <button @click="$store.mail.settingsOpen = false"
+                class="text-secondary hover-primary transition-colors"
+                title="Close settings (Esc)">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
         </button>
+      </div>
+      <nav class="flex-1 px-3 space-y-0.5">
+        <!-- Accounts (active) -->
+        <a @click.prevent="$store.mail.settingsNav = 'accounts'"
+           :class="$store.mail.settingsNav === 'accounts'
+             ? 'bg-white text-gray-900'
+             : 'text-secondary hover-bg hover-primary'"
+           class="group flex items-center px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors">
+          <svg class="w-5 h-5 mr-3 flex-shrink-0" :class="$store.mail.settingsNav === 'accounts' ? 'text-blue-600' : 'text-secondary'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          Accounts
+        </a>
+        <!-- General (placeholder) -->
+        <a class="text-secondary hover-bg hover-primary group flex items-center px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors opacity-50 pointer-events-none">
+          <svg class="w-5 h-5 mr-3 flex-shrink-0 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+          General
+        </a>
+        <!-- Appearance (placeholder) -->
+        <a class="text-secondary hover-bg hover-primary group flex items-center px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors opacity-50 pointer-events-none">
+          <svg class="w-5 h-5 mr-3 flex-shrink-0 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/>
+          </svg>
+          Appearance
+        </a>
+        <!-- Notifications (placeholder) -->
+        <a class="text-secondary hover-bg hover-primary group flex items-center px-3 py-2 text-sm font-medium rounded-md cursor-pointer transition-colors opacity-50 pointer-events-none">
+          <svg class="w-5 h-5 mr-3 flex-shrink-0 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+          </svg>
+          Notifications
+        </a>
       </nav>
+    </aside>
 
-      <!-- Right content -->
-      <div class="flex-1 overflow-y-auto">
-        <div class="max-w-2xl mx-auto px-8 py-8">
+    <!-- ── Main content ── -->
+    <main class="flex-1 overflow-y-auto" style="background-color: var(--bg-app);">
+      <div class="max-w-4xl w-full mx-auto px-8 py-10">
 
-          <!-- Error banner -->
-          <div x-show="$store.mail.settingsError"
-               class="mb-6 bg-red-900/60 border border-red-700 text-red-200 text-xs px-4 py-3 rounded-lg flex items-center justify-between"
-               style="display:none">
-            <span x-text="$store.mail.settingsError"></span>
-            <button @click="$store.mail.settingsError = null" class="ml-4 underline flex-shrink-0">Dismiss</button>
-          </div>
+        <!-- Error banner -->
+        <div x-show="$store.mail.settingsError"
+             class="mb-8 bg-red-900/60 border border-red-700 text-red-200 text-sm px-4 py-3 rounded-lg flex items-center justify-between"
+             style="display:none">
+          <span x-text="$store.mail.settingsError"></span>
+          <button @click="$store.mail.settingsError = null" class="ml-4 underline flex-shrink-0">Dismiss</button>
+        </div>
 
-          <!-- ── Accounts tab ── -->
-          <div x-show="$store.mail.settingsTab === 'accounts'">
+        <!-- ── Accounts section ── -->
+        <div x-show="$store.mail.settingsNav === 'accounts'">
 
+          <header class="mb-10">
+            <h2 class="text-3xl font-bold text-primary tracking-tight">Email Account Management Settings</h2>
+          </header>
+
+          <!-- Accounts -->
+          <section class="mb-12">
             <div class="flex items-center justify-between mb-6">
-              <div>
-                <h2 class="text-primary font-semibold text-base">Accounts</h2>
-                <p class="text-secondary text-xs mt-0.5">Google accounts connected to mailrat</p>
-              </div>
+              <h3 class="text-xl font-semibold text-primary">Accounts</h3>
+            </div>
+
+            <!-- Add Account button -->
+            <div class="mb-6">
               <button @click="$store.mail.addAccount()"
                       :disabled="$store.mail.addingAccount"
-                      class="flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      class="inline-flex items-center px-4 py-2 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-40 transition-colors shadow-sm">
+                <svg class="w-3.5 h-3.5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                 </svg>
-                <span x-text="$store.mail.addingAccount ? 'Opening browser…' : 'Add account'"></span>
+                <span x-text="$store.mail.addingAccount ? 'Opening browser…' : 'Add Account'"></span>
               </button>
             </div>
 
             <!-- No accounts -->
             <template x-if="$store.mail.accounts.length === 0">
-              <div class="text-center py-16 text-secondary text-sm">
-                <svg class="w-10 h-10 mx-auto mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
-                </svg>
-                No accounts connected. Add a Google account to get started.
-              </div>
+              <p class="text-secondary text-sm py-4">No accounts connected. Click "Add Account" to get started.</p>
             </template>
 
-            <!-- Account cards -->
-            <template x-for="acc in $store.mail.accounts" :key="acc.id">
-              <div class="mb-5 border border-divider rounded-xl overflow-hidden">
+            <!-- Account list -->
+            <div class="space-y-3">
+              <template x-for="acc in $store.mail.accounts" :key="acc.id">
+                <div class="border border-divider rounded-lg overflow-hidden" style="background-color: var(--bg-list);">
 
-                <!-- Account identity row -->
-                <div class="flex items-center px-5 py-4 bg-sidebar">
-                  <div class="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 mr-4 bg-blue-600 flex items-center justify-center">
-                    <template x-if="acc.photoUrl">
-                      <img :src="acc.photoUrl" class="w-full h-full object-cover"/>
-                    </template>
-                    <template x-if="!acc.photoUrl">
-                      <span class="text-white text-sm font-semibold" x-text="acc.email.charAt(0).toUpperCase()"></span>
-                    </template>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-primary text-sm font-medium truncate" x-text="acc.displayName || acc.email"></p>
-                    <p class="text-secondary text-xs truncate" x-text="acc.email"></p>
-                  </div>
-                  <button @click="
-                            if (confirm('Remove ' + acc.email + '?\n\nAll local mail and data for this account will be permanently deleted.')) {
-                              $store.mail.removeAccount(acc.id);
-                            }"
-                          class="ml-4 px-3 py-1.5 text-xs text-red-400 hover:text-red-300 border border-red-700/50 hover:border-red-500 rounded-lg transition-colors flex-shrink-0">
-                    Remove
-                  </button>
-                </div>
-
-                <!-- Sync settings (shown once accountSettingsMap has loaded) -->
-                <template x-if="$store.mail.accountSettingsMap[acc.id]">
-                  <div class="px-5 py-4 border-t border-divider bg-app space-y-4">
-
-                    <h3 class="text-xs font-semibold text-secondary uppercase tracking-wider">Sync settings</h3>
-
-                    <!-- Sync period -->
-                    <div class="flex items-center justify-between">
-                      <div>
-                        <p class="text-primary text-xs font-medium">Sync period</p>
-                        <p class="text-secondary text-xs mt-0.5">How far back to download mail</p>
+                  <!-- Account row -->
+                  <div class="p-4 flex items-center justify-between hover-bg transition-colors">
+                    <div class="flex items-center space-x-4">
+                      <!-- Avatar -->
+                      <div class="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-blue-600 flex items-center justify-center border border-divider">
+                        <template x-if="acc.photoUrl">
+                          <img :src="acc.photoUrl" class="w-full h-full object-cover" :alt="acc.displayName || acc.email"/>
+                        </template>
+                        <template x-if="!acc.photoUrl">
+                          <span class="text-white text-lg font-semibold" x-text="acc.email.charAt(0).toUpperCase()"></span>
+                        </template>
                       </div>
-                      <select :value="$store.mail.accountSettingsMap[acc.id].syncPeriod"
-                              @change="$store.mail.accountSettingsMap[acc.id].syncPeriod = $event.target.value; $store.mail.saveAccountSettings(acc.id)"
-                              class="text-xs bg-sidebar border border-divider text-primary rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500">
-                        <option value="30d">Last 30 days</option>
-                        <option value="90d">Last 90 days</option>
-                        <option value="1y">Last year</option>
-                        <option value="all">All mail</option>
-                      </select>
+                      <div>
+                        <p class="text-sm font-medium text-primary" x-text="acc.email"></p>
+                        <p class="text-xs text-secondary" x-text="acc.displayName ? acc.displayName : (acc.id === $store.mail.activeAccountId ? 'Active' : 'Connected')"></p>
+                      </div>
                     </div>
-
-                    <!-- Fetch attachments toggle -->
-                    <div class="flex items-center justify-between">
-                      <div>
-                        <p class="text-primary text-xs font-medium">Download attachments</p>
-                        <p class="text-secondary text-xs mt-0.5">Save attachment content locally for offline access</p>
-                      </div>
-                      <button @click="$store.mail.accountSettingsMap[acc.id].fetchAttachments = !$store.mail.accountSettingsMap[acc.id].fetchAttachments; $store.mail.saveAccountSettings(acc.id)"
-                              :class="$store.mail.accountSettingsMap[acc.id].fetchAttachments ? 'bg-blue-600' : 'bg-subtle'"
-                              class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none flex-shrink-0">
-                        <span :class="$store.mail.accountSettingsMap[acc.id].fetchAttachments ? 'translate-x-6' : 'translate-x-1'"
-                              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm"></span>
+                    <div class="flex items-center space-x-3">
+                      <!-- Edit toggle -->
+                      <button @click="$store.mail.settingsEditingAccountId = ($store.mail.settingsEditingAccountId === acc.id ? null : acc.id)"
+                              class="px-4 py-1.5 border border-divider text-sm font-medium rounded-md text-primary bg-subtle hover-bg transition-colors shadow-sm">
+                        <span x-text="$store.mail.settingsEditingAccountId === acc.id ? 'Done' : 'Edit'"></span>
+                      </button>
+                      <!-- Remove -->
+                      <button @click="
+                                if (confirm('Remove ' + acc.email + '?\n\nAll local mail and data for this account will be permanently deleted.')) {
+                                  $store.mail.removeAccount(acc.id);
+                                }"
+                              class="inline-flex items-center text-sm font-medium text-secondary hover:text-red-400 transition-colors">
+                        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                        </svg>
+                        Remove
                       </button>
                     </div>
+                  </div>
+
+                  <!-- Edit expansion: per-account sync settings -->
+                  <div x-show="$store.mail.settingsEditingAccountId === acc.id && $store.mail.accountSettingsMap[acc.id]"
+                       class="border-t border-divider px-6 py-5 space-y-5 bg-sidebar"
+                       style="display:none">
+
+                    <h4 class="text-sm font-medium text-primary">Sync Settings</h4>
+
+                    <!-- Sync period -->
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                      <label class="block text-sm font-medium text-primary mb-2 sm:mb-0 sm:w-1/3">Sync period</label>
+                      <div class="relative sm:w-2/3">
+                        <select :value="($store.mail.accountSettingsMap[acc.id] || {}).syncPeriod"
+                                @change="$store.mail.accountSettingsMap[acc.id].syncPeriod = $event.target.value; $store.mail.saveAccountSettings(acc.id)"
+                                class="block w-full pl-3 pr-10 py-2 text-sm border border-divider bg-sidebar text-primary focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md appearance-none">
+                          <option value="30d">Last 30 days</option>
+                          <option value="90d">Last 90 days</option>
+                          <option value="1y">Last year</option>
+                          <option value="all">All mail</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-secondary">
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Fetch attachments -->
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                      <label class="block text-sm font-medium text-primary mb-2 sm:mb-0 sm:w-1/3">Download attachments</label>
+                      <div class="sm:w-2/3">
+                        <button @click="$store.mail.accountSettingsMap[acc.id].fetchAttachments = !$store.mail.accountSettingsMap[acc.id].fetchAttachments; $store.mail.saveAccountSettings(acc.id)"
+                                :class="($store.mail.accountSettingsMap[acc.id] || {}).fetchAttachments ? 'bg-blue-600' : 'bg-subtle'"
+                                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none">
+                          <span :class="($store.mail.accountSettingsMap[acc.id] || {}).fetchAttachments ? 'translate-x-6' : 'translate-x-1'"
+                                class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm"></span>
+                        </button>
+                      </div>
+                    </div>
 
                   </div>
-                </template>
 
+                </div>
+              </template>
+            </div>
+          </section>
+
+          <hr class="border-divider mb-10"/>
+
+          <!-- ── Global Sync Settings ── -->
+          <section>
+            <div class="space-y-6 max-w-2xl">
+
+              <!-- Sync Frequency -->
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                <label class="block text-sm font-medium text-primary mb-2 sm:mb-0 sm:w-1/3" for="sync-frequency">Sync Frequency</label>
+                <div class="relative w-full sm:w-2/3">
+                  <select id="sync-frequency"
+                          :value="$store.mail.globalSettings.syncFrequency"
+                          @change="$store.mail.globalSettings.syncFrequency = $event.target.value; $store.mail.saveGlobalSettings()"
+                          class="block w-full pl-3 pr-10 py-2 text-sm border border-divider bg-sidebar text-primary focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md appearance-none">
+                    <option value="15m">Every 15 minutes</option>
+                    <option value="1h">Hourly</option>
+                    <option value="manual">Manually</option>
+                  </select>
+                  <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-secondary">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  </div>
+                </div>
               </div>
-            </template>
 
-          </div>
-          <!-- end accounts tab -->
+              <!-- Default Account -->
+              <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+                <label class="block text-sm font-medium text-primary mb-2 sm:mb-0 sm:w-1/3" for="default-account">Default Account</label>
+                <div class="relative w-full sm:w-2/3">
+                  <select id="default-account"
+                          :value="$store.mail.globalSettings.defaultAccountId"
+                          @change="$store.mail.globalSettings.defaultAccountId = $event.target.value; $store.mail.saveGlobalSettings()"
+                          class="block w-full pl-3 pr-10 py-2 text-sm border border-divider bg-sidebar text-primary focus:outline-none focus:ring-1 focus:ring-blue-500 rounded-md appearance-none">
+                    <template x-for="acc in $store.mail.accounts" :key="acc.id">
+                      <option :value="acc.id" x-text="acc.email"></option>
+                    </template>
+                  </select>
+                  <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-secondary">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </section>
 
         </div>
+        <!-- end accounts section -->
+
       </div>
-    </div>
+    </main>
+
   </div>
 
 </body>

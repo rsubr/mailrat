@@ -116,4 +116,9 @@ CREATE TABLE IF NOT EXISTS account_settings (
     fetch_attachments INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL DEFAULT ''
+);
 `

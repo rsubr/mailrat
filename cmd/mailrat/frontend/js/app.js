@@ -155,10 +155,12 @@ document.addEventListener('alpine:init', () => {
       document.documentElement.setAttribute('data-theme', this.theme);
     },
 
-    // Settings modal
+    // Settings overlay
     settingsOpen: false,
-    settingsTab: 'accounts',
-    accountSettingsMap: {},   // accountId -> AccountSettingsItem
+    settingsNav: 'accounts',           // active nav item
+    settingsEditingAccountId: null,    // account with expanded edit section
+    accountSettingsMap: {},            // accountId -> AccountSettingsItem
+    globalSettings: { syncFrequency: '15m', defaultAccountId: '' },
     settingsSaving: false,
     settingsError: null,
     addingAccount: false,
@@ -182,8 +184,11 @@ document.addEventListener('alpine:init', () => {
 
     openSettings() {
       this.settingsOpen = true;
+      this.settingsNav = 'accounts';
+      this.settingsEditingAccountId = null;
       this.settingsError = null;
       this.loadAllAccountSettings();
+      this.loadGlobalSettings();
     },
 
     async loadAllAccountSettings() {
@@ -192,6 +197,24 @@ document.addEventListener('alpine:init', () => {
           const st = await Wails.call('GetAccountSettings', acc.id);
           this.accountSettingsMap = { ...this.accountSettingsMap, [acc.id]: st };
         } catch (e) { /* non-critical */ }
+      }
+    },
+
+    async loadGlobalSettings() {
+      try {
+        const gs = await Wails.call('GetGlobalSettings');
+        this.globalSettings = gs;
+        if (!this.globalSettings.defaultAccountId && this.accounts.length > 0) {
+          this.globalSettings.defaultAccountId = this.accounts[0].id;
+        }
+      } catch (e) { /* non-critical */ }
+    },
+
+    async saveGlobalSettings() {
+      try {
+        await Wails.call('SetGlobalSettings', this.globalSettings);
+      } catch (e) {
+        this.settingsError = e.toString();
       }
     },
 
@@ -216,6 +239,13 @@ document.addEventListener('alpine:init', () => {
         const m = { ...this.accountSettingsMap };
         delete m[accountId];
         this.accountSettingsMap = m;
+        if (this.settingsEditingAccountId === accountId) {
+          this.settingsEditingAccountId = null;
+        }
+        if (this.globalSettings.defaultAccountId === accountId) {
+          this.globalSettings.defaultAccountId = this.accounts[0]?.id || '';
+          this.saveGlobalSettings();
+        }
       } catch (e) {
         this.settingsError = e.toString();
       }

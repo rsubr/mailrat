@@ -159,6 +159,32 @@ func (a *App) SetAccountSettings(settings AccountSettingsItem) error {
 	})
 }
 
+// GetGlobalSettings returns app-wide settings.
+func (a *App) GetGlobalSettings() (GlobalSettingsItem, error) {
+	if a.store == nil {
+		return GlobalSettingsItem{SyncFrequency: "15m"}, nil
+	}
+	gs, err := a.store.GetGlobalSettings()
+	if err != nil {
+		return GlobalSettingsItem{SyncFrequency: "15m"}, nil
+	}
+	return GlobalSettingsItem{
+		SyncFrequency:    gs.SyncFrequency,
+		DefaultAccountID: gs.DefaultAccountID,
+	}, nil
+}
+
+// SetGlobalSettings persists app-wide settings.
+func (a *App) SetGlobalSettings(settings GlobalSettingsItem) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	return a.store.SetGlobalSettings(storage.GlobalSettings{
+		SyncFrequency:    settings.SyncFrequency,
+		DefaultAccountID: settings.DefaultAccountID,
+	})
+}
+
 // GetOAuthURL returns the Google OAuth URL for the web redirect flow (web server use only).
 func (a *App) GetOAuthURL(callbackURL, state string) (string, error) {
 	if a.accounts == nil {

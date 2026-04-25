@@ -94,6 +94,16 @@
           window.location.href = '/api/oauth/start';
           return Promise.resolve();
         },
+
+        GetGlobalSettings: () =>
+          api('/api/global-settings'),
+
+        SetGlobalSettings: (settings) =>
+          api('/api/global-settings/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings),
+          }),
       },
     },
   };
