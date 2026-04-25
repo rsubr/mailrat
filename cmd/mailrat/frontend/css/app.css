@@ -2,8 +2,9 @@
 :root {
   color-scheme: light; /* app owns theming — prevent browser UA dark-mode on form elements */
   --bg-app:         #1e1e1e;
-  --bg-sidebar:     #2b2b2d;
+  --bg-sidebar:     #000000;
   --bg-list:        #222223;
+  --bg-unread:      #2b2b2d;
   --bg-reading:     #1e1e1f;
   --c-primary:      #e0e0e0;
   --c-secondary:    #8e8e93;
@@ -28,6 +29,7 @@
   --bg-app:         #f4f4f5;
   --bg-sidebar:     #e8e8ea;
   --bg-list:        #efefef;
+  --bg-unread:      #e4e4e6;
   --bg-reading:     #ffffff;
   --c-primary:      #1c1c1e;
   --c-secondary:    #6c6c70;
@@ -72,6 +74,7 @@ body {
 
 /* ── Interactive states ─────────────────────────────────────────────────────── */
 .bg-active-item  { background-color: var(--c-active); }
+.bg-unread-item  { background-color: var(--bg-unread); }
 .hover-bg:hover  { background-color: var(--c-hover); }
 .hover-primary:hover { color: var(--c-primary); }
 

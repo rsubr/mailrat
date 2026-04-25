@@ -76,6 +76,24 @@
 
         SearchContacts: (accountId, q, limit) =>
           api('/api/contacts/search' + qs({ accountId: accountId || '', q, limit: limit || 8 })),
+
+        RemoveAccount: (accountId) =>
+          api('/api/accounts/remove' + qs({ accountId }), { method: 'POST' }),
+
+        GetAccountSettings: (accountId) =>
+          api('/api/account-settings' + qs({ accountId })),
+
+        SetAccountSettings: (settings) =>
+          api('/api/account-settings/set', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings),
+          }),
+
+        StartAccountAdd: () => {
+          window.location.href = '/api/oauth/start';
+          return Promise.resolve();
+        },
       },
     },
   };

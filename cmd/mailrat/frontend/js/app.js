@@ -155,14 +155,83 @@ document.addEventListener('alpine:init', () => {
       document.documentElement.setAttribute('data-theme', this.theme);
     },
 
+    // Settings modal
+    settingsOpen: false,
+    settingsTab: 'accounts',
+    accountSettingsMap: {},   // accountId -> AccountSettingsItem
+    settingsSaving: false,
+    settingsError: null,
+    addingAccount: false,
+
     async init() {
       document.documentElement.setAttribute('data-theme', this.theme);
       await this.loadAccounts();
       await Promise.all([this.loadInbox(), this.loadLabels()]);
 
-      Wails.onEvent('inbox:updated',  ()      => { this.loadInbox(); });
-      Wails.onEvent('sync:progress',  (data)  => { this.syncStatus = 'syncing'; this.syncAccount = data?.account || ''; });
-      Wails.onEvent('sync:complete',  ()      => { this.syncStatus = 'done'; setTimeout(() => { this.syncStatus = 'idle'; }, 2000); this.loadLabels(); });
+      Wails.onEvent('inbox:updated',    ()     => { this.loadInbox(); });
+      Wails.onEvent('sync:progress',    (data) => { this.syncStatus = 'syncing'; this.syncAccount = data?.account || ''; });
+      Wails.onEvent('sync:complete',    ()     => { this.syncStatus = 'done'; setTimeout(() => { this.syncStatus = 'idle'; }, 2000); this.loadLabels(); });
+      Wails.onEvent('accounts:updated', ()     => { this.loadAccounts(); this.settingsOpen = true; });
+
+      // Open settings if redirect from OAuth callback
+      if (window.location.search.includes('settings=1')) {
+        history.replaceState(null, '', '/');
+        this.settingsOpen = true;
+      }
+    },
+
+    openSettings() {
+      this.settingsOpen = true;
+      this.settingsError = null;
+      this.loadAllAccountSettings();
+    },
+
+    async loadAllAccountSettings() {
+      for (const acc of this.accounts) {
+        try {
+          const st = await Wails.call('GetAccountSettings', acc.id);
+          this.accountSettingsMap = { ...this.accountSettingsMap, [acc.id]: st };
+        } catch (e) { /* non-critical */ }
+      }
+    },
+
+    async addAccount() {
+      this.addingAccount = true;
+      try {
+        await Wails.call('StartAccountAdd');
+      } catch (e) {
+        this.settingsError = e.toString();
+      } finally {
+        this.addingAccount = false;
+      }
+    },
+
+    async removeAccount(accountId) {
+      try {
+        await Wails.call('RemoveAccount', accountId);
+        await this.loadAccounts();
+        if (this.activeAccountId === accountId) {
+          this.selectAccount(this.accounts[0]?.id || 'unified');
+        }
+        const m = { ...this.accountSettingsMap };
+        delete m[accountId];
+        this.accountSettingsMap = m;
+      } catch (e) {
+        this.settingsError = e.toString();
+      }
+    },
+
+    async saveAccountSettings(accountId) {
+      const st = this.accountSettingsMap[accountId];
+      if (!st) return;
+      this.settingsSaving = true;
+      try {
+        await Wails.call('SetAccountSettings', st);
+      } catch (e) {
+        this.settingsError = e.toString();
+      } finally {
+        this.settingsSaving = false;
+      }
     },
 
     async loadAccounts() {
