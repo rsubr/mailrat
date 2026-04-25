@@ -642,6 +642,11 @@ func (a *App) Sync(accountID string) error {
 			if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
 				a.logWarning(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
 			}
+			// Download missing attachment binaries for already-cached messages (per label policy).
+			configs, _ := a.store.ListSyncConfigs(acc.ID)
+			if err := mgr.FetchMissingAttachments(a.ctx, acc.ID, configs); err != nil {
+				a.logWarning(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
+			}
 		}
 	}
 	a.emitEvent("sync:complete", nil)

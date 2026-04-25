@@ -1,5 +1,10 @@
 package storage
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Attachment holds metadata and optionally the binary content of a message attachment.
 type Attachment struct {
 	Name         string
@@ -57,6 +62,61 @@ func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error
 			return nil, err
 		}
 		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// MissingAttachment identifies an attachment row whose binary data has not yet been cached.
+type MissingAttachment struct {
+	MessageID    string
+	AttachmentID string
+	MimeType     string
+	Name         string
+}
+
+// ListMissingAttachmentRows returns attachment rows (data IS NULL) for body-cached messages
+// that carry at least one of the given label IDs. Results are capped at limit.
+func (s *Store) ListMissingAttachmentRows(accountID string, labelIDs []string, limit int) ([]MissingAttachment, error) {
+	if len(labelIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(labelIDs))
+	args := make([]any, len(labelIDs))
+	for i, id := range labelIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	inClause := strings.Join(placeholders, ",")
+
+	query := fmt.Sprintf(`
+		SELECT DISTINCT a.message_id, a.attachment_id, a.mime_type, a.name
+		FROM attachments a
+		JOIN messages m ON m.id = a.message_id AND m.account_id = a.account_id
+		JOIN message_labels ml ON ml.message_id = a.message_id AND ml.account_id = a.account_id
+		WHERE a.account_id = ?
+		  AND a.data IS NULL
+		  AND a.attachment_id != ''
+		  AND NOT SUBSTR(a.attachment_id, 1, 5) = 'name:'
+		  AND m.cache_state != 'metadata_only'
+		  AND ml.label_id IN (%s)
+		LIMIT ?`, inClause)
+
+	args = append([]any{accountID}, append(args, limit)...)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []MissingAttachment
+	for rows.Next() {
+		var ma MissingAttachment
+		if err := rows.Scan(&ma.MessageID, &ma.AttachmentID, &ma.MimeType, &ma.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, ma)
 	}
 	return out, rows.Err()
 }
