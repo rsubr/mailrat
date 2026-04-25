@@ -3,7 +3,6 @@ package accounts
 import (
 	"context"
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -29,8 +28,7 @@ func NewManager(store *storage.Store, credentialsPath string) (*Manager, error) 
 	return &Manager{store: store, credentials: b}, nil
 }
 
-// AddAccount runs the OAuth flow, fetches the user's email, and persists
-// the account to storage.
+// AddAccount runs the CLI OAuth flow, fetches the user's profile, and persists the account.
 func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 	cfg, err := oauthConfig(m.credentials)
 	if err != nil {
@@ -43,9 +41,9 @@ func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 	}
 
 	client := cfg.Client(ctx, token)
-	email, err := fetchEmail(ctx, client)
+	email, photoURL, displayName, err := fetchProfile(ctx, client)
 	if err != nil {
-		return storage.Account{}, fmt.Errorf("fetch email: %w", err)
+		return storage.Account{}, fmt.Errorf("fetch profile: %w", err)
 	}
 
 	tokenJSON, err := tokenToJSON(token)
@@ -53,14 +51,65 @@ func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 		return storage.Account{}, err
 	}
 
-	// Use md5 of email as stable ID.
 	id := fmt.Sprintf("%x", md5.Sum([]byte(email)))
-
 	acc := storage.Account{
-		ID:        id,
-		Email:     email,
-		TokenJSON: tokenJSON,
-		HistoryID: "",
+		ID:          id,
+		Email:       email,
+		TokenJSON:   tokenJSON,
+		HistoryID:   "",
+		PhotoURL:    photoURL,
+		DisplayName: displayName,
+	}
+	if err := m.store.UpsertAccount(acc); err != nil {
+		return storage.Account{}, fmt.Errorf("save account: %w", err)
+	}
+	return acc, nil
+}
+
+// StartWebOAuth returns the Google OAuth URL for the web redirect flow.
+// callbackURL must be the full URL of the /api/oauth/callback endpoint.
+func (m *Manager) StartWebOAuth(callbackURL, state string) (string, error) {
+	cfg, err := oauthConfig(m.credentials)
+	if err != nil {
+		return "", err
+	}
+	cfg.RedirectURL = callbackURL
+	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce), nil
+}
+
+// CompleteWebOAuth exchanges the OAuth code received by the callback, fetches the
+// user profile, and persists the account. Returns the saved account.
+func (m *Manager) CompleteWebOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
+	cfg, err := oauthConfig(m.credentials)
+	if err != nil {
+		return storage.Account{}, err
+	}
+	cfg.RedirectURL = callbackURL
+
+	token, err := cfg.Exchange(ctx, code)
+	if err != nil {
+		return storage.Account{}, fmt.Errorf("token exchange: %w", err)
+	}
+
+	client := cfg.Client(ctx, token)
+	email, photoURL, displayName, err := fetchProfile(ctx, client)
+	if err != nil {
+		return storage.Account{}, fmt.Errorf("fetch profile: %w", err)
+	}
+
+	tokenJSON, err := tokenToJSON(token)
+	if err != nil {
+		return storage.Account{}, err
+	}
+
+	id := fmt.Sprintf("%x", md5.Sum([]byte(email)))
+	acc := storage.Account{
+		ID:          id,
+		Email:       email,
+		TokenJSON:   tokenJSON,
+		HistoryID:   "",
+		PhotoURL:    photoURL,
+		DisplayName: displayName,
 	}
 	if err := m.store.UpsertAccount(acc); err != nil {
 		return storage.Account{}, fmt.Errorf("save account: %w", err)
@@ -74,7 +123,6 @@ func (m *Manager) ListAccounts() ([]storage.Account, error) {
 }
 
 // GetClient returns an authenticated HTTP client for the given account ID.
-// The token is refreshed automatically by the oauth2 transport.
 func (m *Manager) GetClient(ctx context.Context, accountID string) (*http.Client, error) {
 	acc, err := m.store.GetAccount(accountID)
 	if err != nil {
@@ -121,31 +169,4 @@ func (s *savingTokenSource) Token() (*oauth2.Token, error) {
 		}
 	}
 	return token, nil
-}
-
-// fetchEmail calls the Gmail API profile endpoint to get the authenticated
-// email. This works with the gmail.readonly scope we already request —
-// no additional userinfo/email scope needed.
-func fetchEmail(ctx context.Context, client *http.Client) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		"https://gmail.googleapis.com/gmail/v1/users/me/profile", nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var profile struct {
-		EmailAddress string `json:"emailAddress"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&profile); err != nil {
-		return "", err
-	}
-	if profile.EmailAddress == "" {
-		return "", fmt.Errorf("empty emailAddress in Gmail profile response")
-	}
-	return profile.EmailAddress, nil
 }

@@ -8,8 +8,17 @@ import (
 
 // AccountItem is the frontend representation of a connected account.
 type AccountItem struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	PhotoURL    string `json:"photoUrl"`
+	DisplayName string `json:"displayName"`
+}
+
+// AccountSettingsItem is the frontend representation of per-account sync settings.
+type AccountSettingsItem struct {
+	AccountID        string `json:"accountId"`
+	SyncPeriod       string `json:"syncPeriod"`       // "all", "1y", "90d", "30d"
+	FetchAttachments bool   `json:"fetchAttachments"`
 }
 
 // ThreadItem is the frontend representation of an inbox thread.
@@ -130,7 +139,12 @@ func messagesToItems(msgs []storage.Message) []MessageItem {
 func accountsToItems(accs []storage.Account) []AccountItem {
 	out := make([]AccountItem, len(accs))
 	for i, acc := range accs {
-		out[i] = AccountItem{ID: acc.ID, Email: acc.Email}
+		out[i] = AccountItem{
+			ID:          acc.ID,
+			Email:       acc.Email,
+			PhotoURL:    acc.PhotoURL,
+			DisplayName: acc.DisplayName,
+		}
 	}
 	return out
 }

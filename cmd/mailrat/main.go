@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/mailrat/mailrat/internal/cli"
@@ -257,6 +260,97 @@ func runWebServer(addr string, frontendFS fs.FS) error {
 			return
 		}
 		events.emit("inbox:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	// OAuth web flow state
+	var (
+		oauthMu     sync.Mutex
+		pendingOAuth = map[string]bool{}
+	)
+
+	host := addr
+	if strings.HasPrefix(host, "0.0.0.0") || strings.HasPrefix(host, ":") {
+		// replace 0.0.0.0 or bare :PORT with localhost
+		host = "localhost" + host[strings.Index(host, ":"):]
+	}
+	callbackURL := "http://" + host + "/api/oauth/callback"
+
+	mux.HandleFunc("/api/oauth/start", func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, 16)
+		if _, err := rand.Read(b); err != nil {
+			http.Error(w, "failed to generate state", http.StatusInternalServerError)
+			return
+		}
+		state := hex.EncodeToString(b)
+
+		authURL, err := app.GetOAuthURL(callbackURL, state)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		oauthMu.Lock()
+		pendingOAuth[state] = true
+		oauthMu.Unlock()
+
+		http.Redirect(w, r, authURL, http.StatusFound)
+	})
+
+	mux.HandleFunc("/api/oauth/callback", func(w http.ResponseWriter, r *http.Request) {
+		code := r.URL.Query().Get("code")
+		state := r.URL.Query().Get("state")
+
+		oauthMu.Lock()
+		valid := pendingOAuth[state]
+		delete(pendingOAuth, state)
+		oauthMu.Unlock()
+
+		if !valid || code == "" {
+			http.Error(w, "invalid OAuth callback", http.StatusBadRequest)
+			return
+		}
+
+		if _, err := app.CompleteOAuth(r.Context(), callbackURL, code); err != nil {
+			fmt.Fprintf(w, `<!DOCTYPE html><html><body style="font-family:sans-serif;padding:2em">
+				<h2>Authentication failed</h2><p>%s</p>
+				<p><a href="/">Back to mailrat</a></p></body></html>`, err.Error())
+			return
+		}
+
+		events.emit("accounts:updated", nil)
+		http.Redirect(w, r, "/?settings=1", http.StatusFound)
+	})
+
+	mux.HandleFunc("/api/accounts/remove", func(w http.ResponseWriter, r *http.Request) {
+		if !requirePOST(w, r) {
+			return
+		}
+		if err := app.RemoveAccount(qp(r, "accountId")); err != nil {
+			errJSON(w, err)
+			return
+		}
+		events.emit("accounts:updated", nil)
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	})
+
+	handleGET(mux, "/api/account-settings", func(r *http.Request) (any, error) {
+		return app.GetAccountSettings(qp(r, "accountId"))
+	})
+
+	mux.HandleFunc("/api/account-settings/set", func(w http.ResponseWriter, r *http.Request) {
+		if !requirePOST(w, r) {
+			return
+		}
+		var settings desktop.AccountSettingsItem
+		if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+			errJSON(w, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		if err := app.SetAccountSettings(settings); err != nil {
+			errJSON(w, err)
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 

@@ -106,6 +106,75 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 	return accountsToItems(accs), nil
 }
 
+// StartAccountAdd launches the OAuth flow in a background goroutine (Wails desktop only).
+// Emits "accounts:updated" on success or "account:add:error" on failure.
+func (a *App) StartAccountAdd() error {
+	if a.accounts == nil {
+		return fmt.Errorf("accounts manager not initialized — credentials.json missing")
+	}
+	go func() {
+		_, err := a.accounts.AddAccount(a.ctx)
+		if err != nil {
+			a.emitEvent("account:add:error", err.Error())
+			return
+		}
+		a.emitEvent("accounts:updated", nil)
+	}()
+	return nil
+}
+
+// RemoveAccount deletes an account and all its local data via FK cascade.
+func (a *App) RemoveAccount(accountID string) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	return a.store.DeleteAccount(accountID)
+}
+
+// GetAccountSettings returns sync settings for an account.
+func (a *App) GetAccountSettings(accountID string) (AccountSettingsItem, error) {
+	if a.store == nil {
+		return AccountSettingsItem{}, fmt.Errorf("store not initialized")
+	}
+	st, err := a.store.GetAccountSettings(accountID)
+	if err != nil {
+		return AccountSettingsItem{}, err
+	}
+	return AccountSettingsItem{
+		AccountID:        st.AccountID,
+		SyncPeriod:       st.SyncPeriod,
+		FetchAttachments: st.FetchAttachments,
+	}, nil
+}
+
+// SetAccountSettings persists sync settings for an account.
+func (a *App) SetAccountSettings(settings AccountSettingsItem) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	return a.store.UpsertAccountSettings(storage.AccountSettings{
+		AccountID:        settings.AccountID,
+		SyncPeriod:       settings.SyncPeriod,
+		FetchAttachments: settings.FetchAttachments,
+	})
+}
+
+// GetOAuthURL returns the Google OAuth URL for the web redirect flow (web server use only).
+func (a *App) GetOAuthURL(callbackURL, state string) (string, error) {
+	if a.accounts == nil {
+		return "", fmt.Errorf("accounts manager not initialized — credentials.json missing")
+	}
+	return a.accounts.StartWebOAuth(callbackURL, state)
+}
+
+// CompleteOAuth exchanges an OAuth code received at the callback URL and saves the account.
+func (a *App) CompleteOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
+	if a.accounts == nil {
+		return storage.Account{}, fmt.Errorf("accounts manager not initialized")
+	}
+	return a.accounts.CompleteWebOAuth(ctx, callbackURL, code)
+}
+
 // GetInbox returns thread summaries for the inbox.
 // Pass accountID="unified" or "" to get the unified inbox across all accounts.
 func (a *App) GetInbox(accountID string, limit, offset int) ([]ThreadItem, error) {

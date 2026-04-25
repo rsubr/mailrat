@@ -54,6 +54,9 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE messages ADD COLUMN bcc_addr TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE labels ADD COLUMN text_color TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE labels ADD COLUMN background_color TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE accounts ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE accounts ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS account_settings (account_id TEXT PRIMARY KEY, sync_period TEXT NOT NULL DEFAULT '30d', fetch_attachments INTEGER NOT NULL DEFAULT 1, FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine

@@ -1,8 +1,10 @@
 package accounts
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -21,7 +23,36 @@ var scopes = []string{
 	googleapi.GmailReadonlyScope,
 	googleapi.GmailModifyScope,
 	googleapi.GmailSendScope,
-	peopleapi.ContactsScope, // read + write (create/update/delete)
+	peopleapi.ContactsScope,
+	"https://www.googleapis.com/auth/userinfo.profile",
+	"https://www.googleapis.com/auth/userinfo.email",
+}
+
+// fetchProfile fetches email, photo URL and display name from the Google userinfo endpoint.
+func fetchProfile(ctx context.Context, client *http.Client) (email, photoURL, displayName string, err error) {
+	req, err := http.NewRequestWithContext(ctx, "GET",
+		"https://www.googleapis.com/oauth2/v3/userinfo", nil)
+	if err != nil {
+		return "", "", "", err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", "", "", err
+	}
+	defer resp.Body.Close()
+
+	var info struct {
+		Email   string `json:"email"`
+		Name    string `json:"name"`
+		Picture string `json:"picture"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "", "", "", err
+	}
+	if info.Email == "" {
+		return "", "", "", fmt.Errorf("empty email in userinfo response")
+	}
+	return info.Email, info.Picture, info.Name, nil
 }
 
 // oauthConfig builds an OAuth2 config from credentials JSON.
