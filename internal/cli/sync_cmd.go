@@ -11,9 +11,14 @@ func newSyncCmd() *cobra.Command {
 	var days int
 	var accountID string
 
+	var daysExplicit bool
+
 	syncCmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Sync mail from Gmail",
+		PreRun: func(cmd *cobra.Command, _ []string) {
+			daysExplicit = cmd.Flags().Changed("days")
+		},
 		RunE: withAppContext(func(ctx context.Context, a *app) error {
 
 			// Determine which accounts to sync.
@@ -49,6 +54,13 @@ func newSyncCmd() *cobra.Command {
 				// Use incremental sync if history ID is stored, otherwise initial.
 				stored, _ := a.store.GetAccount(acc.ID)
 				if stored.HistoryID == "" {
+					// Prefer the per-account sync_period from DB; --days overrides only
+					// if the flag was explicitly passed.
+					if !daysExplicit {
+						if st, err := a.store.GetAccountSettings(acc.ID); err == nil {
+							days = syncPeriodToDays(st.SyncPeriod)
+						}
+					}
 					configs, _ := a.store.ListSyncConfigs(acc.ID)
 					if err := mgr.InitialSync(ctx, acc.ID, days, configs); err != nil {
 						return fmt.Errorf("initial sync for %s: %w", acc.Email, err)
@@ -69,8 +81,21 @@ func newSyncCmd() *cobra.Command {
 		}),
 	}
 
-	syncCmd.Flags().IntVar(&days, "days", 30, "Number of days to sync on initial sync")
+	syncCmd.Flags().IntVar(&days, "days", 30, "Number of days to sync on initial sync (overrides account setting)")
 	syncCmd.Flags().StringVar(&accountID, "account", "", "Account ID to sync (default: all)")
 
 	return syncCmd
+}
+
+func syncPeriodToDays(period string) int {
+	switch period {
+	case "1y":
+		return 365
+	case "90d":
+		return 90
+	case "all":
+		return 0
+	default:
+		return 30
+	}
 }

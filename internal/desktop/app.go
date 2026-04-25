@@ -515,7 +515,15 @@ func (a *App) Sync(accountID string) error {
 		}
 		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
 		mgr := mailsync.NewManager(a.store, client)
-		if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
+		stored, _ := a.store.GetAccount(acc.ID)
+		if stored.HistoryID == "" {
+			st, _ := a.store.GetAccountSettings(acc.ID)
+			days := syncPeriodToDays(st.SyncPeriod)
+			configs, _ := a.store.ListSyncConfigs(acc.ID)
+			if err := mgr.InitialSync(a.ctx, acc.ID, days, configs); err != nil {
+				a.logWarning(fmt.Sprintf("initial sync %s: %v", acc.Email, err))
+			}
+		} else if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
 			a.logWarning(fmt.Sprintf("sync %s: %v", acc.Email, err))
 		}
 	}
@@ -591,6 +599,19 @@ func (a *App) gmailClient(accountID string) (*gmail.Client, error) {
 		return nil, err
 	}
 	return gmail.NewClient(a.ctx, httpClient, accountID)
+}
+
+func syncPeriodToDays(period string) int {
+	switch period {
+	case "1y":
+		return 365
+	case "90d":
+		return 90
+	case "all":
+		return 0
+	default:
+		return 30
+	}
 }
 
 // dataDir returns (and creates if needed) ~/.mailrat
