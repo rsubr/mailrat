@@ -124,12 +124,22 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 	}
 
 	atts := make([]storage.Attachment, len(full.Attachments))
-	for i, attachment := range full.Attachments {
+	for i, a := range full.Attachments {
+		data := a.InlineData
+		if data == nil && a.AttachmentID != "" {
+			fetched, err := m.client.GetAttachmentData(ctx, msg.ID, a.AttachmentID)
+			if err != nil {
+				m.reporter.Warnf("fetch attachment %q for %s: %v\n", a.Name, msg.ID, err)
+			} else {
+				data = fetched
+			}
+		}
 		atts[i] = storage.Attachment{
-			Name:         attachment.Name,
-			MimeType:     attachment.MimeType,
-			Size:         attachment.Size,
-			AttachmentID: attachment.AttachmentID,
+			Name:         a.Name,
+			MimeType:     a.MimeType,
+			Size:         a.Size,
+			AttachmentID: a.AttachmentID,
+			Data:         data,
 		}
 	}
 	return m.store.UpsertAttachments(accountID, msg.ID, atts)

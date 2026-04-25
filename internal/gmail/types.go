@@ -24,12 +24,12 @@ type Message struct {
 }
 
 // Attachment holds metadata for a MIME attachment part.
-// The binary content is not stored locally; Size is in bytes.
 type Attachment struct {
 	Name         string
 	MimeType     string
 	Size         int64
-	AttachmentID string // Gmail part attachment ID, needed to fetch binary data
+	AttachmentID string // Gmail part attachment ID; empty for small inline attachments
+	InlineData   []byte // decoded bytes for small attachments embedded in the message payload
 }
 
 // Thread is a Gmail thread.

@@ -59,6 +59,7 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS account_settings (account_id TEXT PRIMARY KEY, sync_period TEXT NOT NULL DEFAULT '30d', fetch_attachments INTEGER NOT NULL DEFAULT 1, FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE)`,
 		`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE attachments ADD COLUMN attachment_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE attachments ADD COLUMN data BLOB`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine

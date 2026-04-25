@@ -388,13 +388,19 @@ func collectAttachments(part *gmailv1.MessagePart, out *[]Attachment) {
 	if part.Filename != "" {
 		size := int64(0)
 		attachmentID := ""
+		var inlineData []byte
 		if part.Body != nil {
 			size = part.Body.Size
-			if part.Body.AttachmentId != "" {
-				attachmentID = part.Body.AttachmentId
-			} else if part.Body.Data != "" {
-				// Small attachment: data is inline as base64url in the message payload.
-				attachmentID = "inline:" + part.Body.Data
+			attachmentID = part.Body.AttachmentId
+			if attachmentID == "" && part.Body.Data != "" {
+				// Small attachment: binary is embedded inline as base64url.
+				decoded, err := base64.URLEncoding.DecodeString(part.Body.Data)
+				if err != nil {
+					decoded, _ = base64.StdEncoding.DecodeString(part.Body.Data)
+				}
+				inlineData = decoded
+				// Use a stable synthetic ID so callers can reference this attachment.
+				attachmentID = "name:" + part.Filename
 			}
 		}
 		*out = append(*out, Attachment{
@@ -402,6 +408,7 @@ func collectAttachments(part *gmailv1.MessagePart, out *[]Attachment) {
 			MimeType:     part.MimeType,
 			Size:         size,
 			AttachmentID: attachmentID,
+			InlineData:   inlineData,
 		})
 	}
 	for _, p := range part.Parts {

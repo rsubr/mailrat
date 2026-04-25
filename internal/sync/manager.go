@@ -9,7 +9,8 @@ import (
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
-const bodyFetchLimit = 200
+// BodyFetchLimit is the max number of uncached messages to fetch bodies for per sync.
+const BodyFetchLimit = 200
 
 // Manager orchestrates sync operations for an account.
 type Manager struct {

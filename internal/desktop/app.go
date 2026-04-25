@@ -2,7 +2,6 @@ package desktop
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -337,10 +336,36 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 	return item, nil
 }
 
-// GetAttachmentData fetches and returns the binary content of an attachment.
-// attachmentID is either a Gmail API part ID or "inline:<base64url>" for small embedded attachments.
+// GetAttachmentData returns the binary content of an attachment.
+// Serves from SQLite cache when available; falls back to the Gmail API.
 func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (AttachmentDataItem, error) {
-	// Look up the mimeType from stored metadata.
+	if a.store != nil {
+		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+			for _, att := range atts {
+				if att.AttachmentID == attachmentID && att.Data != nil {
+					return AttachmentDataItem{Data: att.Data, MimeType: att.MimeType}, nil
+				}
+			}
+		}
+	}
+
+	// Inline attachments are identified by "name:<filename>" — no API fetch possible.
+	if strings.HasPrefix(attachmentID, "name:") {
+		return AttachmentDataItem{}, fmt.Errorf("attachment %q not yet downloaded; sync to cache it", strings.TrimPrefix(attachmentID, "name:"))
+	}
+
+	if a.accounts == nil {
+		return AttachmentDataItem{}, fmt.Errorf("attachment not cached and no account credentials available")
+	}
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return AttachmentDataItem{}, err
+	}
+	data, err := client.GetAttachmentData(a.ctx, messageID, attachmentID)
+	if err != nil {
+		return AttachmentDataItem{}, err
+	}
+
 	mimeType := "application/octet-stream"
 	if a.store != nil {
 		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
@@ -351,32 +376,6 @@ func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (Atta
 				}
 			}
 		}
-	}
-
-	// Inline attachment: data is embedded as base64url after the "inline:" prefix.
-	if strings.HasPrefix(attachmentID, "inline:") {
-		raw := strings.TrimPrefix(attachmentID, "inline:")
-		data, err := base64.URLEncoding.DecodeString(raw)
-		if err != nil {
-			// Try standard encoding as fallback.
-			data, err = base64.StdEncoding.DecodeString(raw)
-			if err != nil {
-				return AttachmentDataItem{}, fmt.Errorf("decode inline attachment: %w", err)
-			}
-		}
-		return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
-	}
-
-	if a.accounts == nil {
-		return AttachmentDataItem{}, fmt.Errorf("no accounts configured")
-	}
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		return AttachmentDataItem{}, err
-	}
-	data, err := client.GetAttachmentData(a.ctx, messageID, attachmentID)
-	if err != nil {
-		return AttachmentDataItem{}, err
 	}
 	return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
 }
@@ -635,6 +634,11 @@ func (a *App) Sync(accountID string) error {
 			}
 		} else if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
 			a.logWarning(fmt.Sprintf("sync %s: %v", acc.Email, err))
+		} else {
+			// Fetch bodies + attachment binaries for messages added by the incremental sync.
+			if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
+				a.logWarning(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
+			}
 		}
 	}
 	a.emitEvent("sync:complete", nil)

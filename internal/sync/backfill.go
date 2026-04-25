@@ -57,5 +57,5 @@ func (m *Manager) fetchConfiguredBodies(ctx context.Context, accountID string, c
 		return nil
 	}
 	m.reporter.Printf("Fetching bodies/attachments for configured labels...\n")
-	return m.FetchBodiesForLabels(ctx, accountID, labelIDs, bodyFetchLimit)
+	return m.FetchBodiesForLabels(ctx, accountID, labelIDs, BodyFetchLimit)
 }
