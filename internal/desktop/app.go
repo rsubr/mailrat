@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/mailrat/mailrat/internal/accounts"
 	"github.com/mailrat/mailrat/internal/gmail"
@@ -62,6 +63,21 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.accounts = mgr
+
+	go a.syncLoop(ctx)
+}
+
+func (a *App) syncLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			_ = a.Sync("unified")
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // emitEvent sends a Wails runtime event only when running inside the desktop app.
