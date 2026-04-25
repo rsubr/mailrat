@@ -322,8 +322,19 @@
     </header>
 
     <!-- Search box -->
-    <div class="px-3 py-2 border-b border-divider flex-shrink-0">
-      <div class="relative">
+    <div class="px-3 py-2 border-b border-divider flex-shrink-0 flex items-center gap-2">
+      <!-- API error indicator -->
+      <template x-if="store.apiErrors.length > 0">
+        <button @click="store.errorLogOpen = true"
+                class="text-red-400 hover:text-red-300 flex-shrink-0 transition-colors"
+                title="API errors — click to view">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+        </button>
+      </template>
+      <div class="relative flex-1">
         <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-tertiary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -1187,6 +1198,50 @@
       </div>
     </main>
 
+  </div>
+
+  <!-- API error log modal -->
+  <div x-data x-show="$store.mail.errorLogOpen"
+       x-on:keydown.escape.window="$store.mail.errorLogOpen = false"
+       class="fixed inset-0 z-50 flex items-center justify-center compose-backdrop"
+       style="display:none">
+    <div class="bg-sidebar border border-divider rounded-lg shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[70vh]">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-divider flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          </svg>
+          <span class="text-sm font-semibold text-primary">API Error Log</span>
+          <span class="text-xs text-tertiary" x-text="'(' + $store.mail.apiErrors.length + ' error' + ($store.mail.apiErrors.length === 1 ? '' : 's') + ')'"></span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button @click="$store.mail.clearAPIErrors()"
+                  class="text-xs text-secondary hover:text-primary transition-colors px-2 py-1 rounded hover-bg">
+            Clear all
+          </button>
+          <button @click="$store.mail.errorLogOpen = false"
+                  class="p-1 rounded hover-bg text-secondary transition-colors" title="Close (Esc)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+      <!-- Error entries -->
+      <div class="overflow-y-auto flex-1 p-3 space-y-2">
+        <template x-if="$store.mail.apiErrors.length === 0">
+          <p class="text-xs text-tertiary text-center py-4">No errors</p>
+        </template>
+        <template x-for="(err, idx) in [...$store.mail.apiErrors].reverse()" :key="idx">
+          <div class="rounded-md bg-subtle border border-divider px-3 py-2">
+            <div class="text-xs text-tertiary mb-1" x-text="$store.mail.formatErrorTime(err.timestamp)"></div>
+            <div class="text-xs text-primary font-mono break-all" x-text="err.message"></div>
+          </div>
+        </template>
+      </div>
+    </div>
   </div>
 
   <!-- Attachment viewer overlay -->

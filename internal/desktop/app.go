@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mailrat/mailrat/internal/accounts"
@@ -22,6 +23,9 @@ type App struct {
 	isWails  bool
 	store    *storage.Store
 	accounts *accounts.Manager
+
+	errMu  sync.Mutex
+	errLog []APIError
 }
 
 // NewApp creates a new App instance.
@@ -102,6 +106,31 @@ func (a *App) logWarning(msg string) {
 	} else {
 		fmt.Fprintln(os.Stderr, "WARN:", msg)
 	}
+}
+
+func (a *App) addAPIError(msg string) {
+	a.logWarning(msg)
+	entry := APIError{Timestamp: time.Now().UnixMilli(), Message: msg}
+	a.errMu.Lock()
+	a.errLog = append(a.errLog, entry)
+	a.errMu.Unlock()
+	a.emitEvent("api:error", entry)
+}
+
+// GetAPIErrors returns the accumulated API error log.
+func (a *App) GetAPIErrors() []APIError {
+	a.errMu.Lock()
+	defer a.errMu.Unlock()
+	out := make([]APIError, len(a.errLog))
+	copy(out, a.errLog)
+	return out
+}
+
+// ClearAPIErrors empties the error log.
+func (a *App) ClearAPIErrors() {
+	a.errMu.Lock()
+	a.errLog = nil
+	a.errMu.Unlock()
 }
 
 // OnShutdown closes the database when the app exits.
@@ -622,7 +651,7 @@ func (a *App) Sync(accountID string) error {
 		}
 		client, err := a.gmailClient(acc.ID)
 		if err != nil {
-			a.logWarning(fmt.Sprintf("sync client %s: %v", acc.Email, err))
+			a.addAPIError(fmt.Sprintf("sync client %s: %v", acc.Email, err))
 			continue
 		}
 		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
@@ -633,19 +662,19 @@ func (a *App) Sync(accountID string) error {
 			days := syncPeriodToDays(st.SyncPeriod)
 			configs, _ := a.store.ListSyncConfigs(acc.ID)
 			if err := mgr.InitialSync(a.ctx, acc.ID, days, configs); err != nil {
-				a.logWarning(fmt.Sprintf("initial sync %s: %v", acc.Email, err))
+				a.addAPIError(fmt.Sprintf("initial sync %s: %v", acc.Email, err))
 			}
 		} else if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
-			a.logWarning(fmt.Sprintf("sync %s: %v", acc.Email, err))
+			a.addAPIError(fmt.Sprintf("sync %s: %v", acc.Email, err))
 		} else {
 			// Fetch bodies + attachment binaries for messages added by the incremental sync.
 			if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
-				a.logWarning(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
+				a.addAPIError(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
 			}
 			// Download missing attachment binaries for already-cached messages (per label policy).
 			configs, _ := a.store.ListSyncConfigs(acc.ID)
 			if err := mgr.FetchMissingAttachments(a.ctx, acc.ID, configs); err != nil {
-				a.logWarning(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
+				a.addAPIError(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
 			}
 		}
 	}

@@ -90,6 +90,12 @@ type AttachmentDataItem struct {
 	MimeType string `json:"mimeType"`
 }
 
+// APIError is a timestamped error entry shown in the error log modal.
+type APIError struct {
+	Timestamp int64  `json:"timestamp"`
+	Message   string `json:"message"`
+}
+
 // OutboundMsg is the frontend payload for sending an email.
 type OutboundMsg struct {
 	AccountID string `json:"accountId"`

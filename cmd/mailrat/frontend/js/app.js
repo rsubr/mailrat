@@ -138,6 +138,10 @@ document.addEventListener('alpine:init', () => {
     // Error banner
     error: null,
 
+    // API error log
+    apiErrors: [],
+    errorLogOpen: false,
+
     // Compose
     composing: false,
     composeMode: 'new',
@@ -184,6 +188,7 @@ document.addEventListener('alpine:init', () => {
       Wails.onEvent('sync:progress',    (data) => { this.syncStatus = 'syncing'; this.syncAccount = data?.account || ''; });
       Wails.onEvent('sync:complete',    ()     => { this.syncStatus = 'done'; setTimeout(() => { this.syncStatus = 'idle'; }, 2000); this.loadLabels(); });
       Wails.onEvent('accounts:updated', ()     => { this.loadAccounts(); this.settingsOpen = true; });
+      Wails.onEvent('api:error',        (e)    => { if (e) this.apiErrors.push(e); });
 
       // Open settings if redirect from OAuth callback
       if (window.location.search.includes('settings=1')) {
@@ -634,6 +639,19 @@ document.addEventListener('alpine:init', () => {
     },
 
     closeCompose() { this.composing = false; this.sendError = null; this.showCc = false; this.showBcc = false; },
+
+    clearAPIErrors() {
+      this.apiErrors = [];
+      this.errorLogOpen = false;
+      Wails.call('ClearAPIErrors');
+    },
+
+    formatErrorTime(ms) {
+      if (!ms) return '';
+      const d = new Date(ms);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+             ' ' + d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    },
 
     async sendCompose(archiveAfterSend = false) {
       if (this.sending) return;
