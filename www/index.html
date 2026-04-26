@@ -51,6 +51,14 @@
     footer a { color: #555; }
     a { color: #1a73e8; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    nav {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 0.6rem 1.5rem;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+    nav a { margin: 0 0.75rem; color: #1a73e8; }
   </style>
 </head>
 <body>
@@ -61,16 +69,27 @@
   <p>Native Gmail desktop client for power users</p>
 </header>
 
+<nav>
+  <a href="index.html">Home</a>
+  <a href="privacy-policy.html">Privacy Policy</a>
+  <a href="terms-of-service.html">Terms of Service</a>
+</nav>
+
 <main>
 
   <section>
     <span class="badge">Private Use Only</span>
-    <h2>About</h2>
+    <h2>About This Application</h2>
     <p>
-      <strong>mailrat</strong> is a self-hosted, offline-first Gmail client built as a single
-      Go binary. It provides a native desktop application (via Wails WebView), a terminal UI,
-      an HTTP web interface, and a command-line interface &mdash; all driven by a local SQLite
-      cache and the Gmail API.
+      <strong>mailrat</strong> is a self-hosted, offline-first Gmail client. Its purpose is to
+      allow an authorised user to read, compose, send, and manage their Gmail messages and
+      Google Contacts through a native desktop application, terminal UI, HTTP web interface,
+      and command-line interface &mdash; all from a single Go binary backed by a local SQLite cache.
+    </p>
+    <p>
+      mailrat accesses your Gmail account and Google Contacts via the Google API solely to
+      provide these personal email management features on your behalf. No data is shared with
+      third parties or used for any other purpose.
     </p>
     <p>
       This application is privately operated and is not available to the general public.
@@ -124,7 +143,8 @@
       The application communicates exclusively with Google API endpoints on your behalf.
     </p>
     <p>
-      Please review our <a href="/privacy-policy.html">Privacy Policy</a> for full details.
+      Please review our <a href="privacy-policy.html"><strong>Privacy Policy</strong></a> for full details
+      on what data is accessed, how it is stored, and your rights.
     </p>
   </section>
 
@@ -132,7 +152,7 @@
     <h2>Contact</h2>
     <p>
       For enquiries about this application, please refer to the contact details in the
-      <a href="/privacy-policy.html">Privacy Policy</a>.
+      <a href="privacy-policy.html">Privacy Policy</a>.
     </p>
   </section>
 
@@ -141,8 +161,8 @@
 <footer>
   <p>
     &copy; 2025 rsubr.in &mdash;
-    <a href="/privacy-policy.html">Privacy Policy</a> &mdash;
-    <a href="/terms-of-service.html">Terms of Service</a>
+    <a href="privacy-policy.html">Privacy Policy</a> &mdash;
+    <a href="terms-of-service.html">Terms of Service</a>
   </p>
   <p style="margin-top:0.4rem;">
     This application is not affiliated with or endorsed by Google LLC.
