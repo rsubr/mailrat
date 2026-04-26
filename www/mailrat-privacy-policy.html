@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy &mdash; mailrat</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #f9f9f9;
+      color: #222;
+      line-height: 1.7;
+    }
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 2rem 1.5rem;
+      text-align: center;
+    }
+    header h1 { font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
+    header p  { margin-top: 0.4rem; color: #555; font-size: 0.95rem; }
+    main {
+      max-width: 720px;
+      margin: 3rem auto;
+      padding: 0 1.5rem;
+    }
+    section { margin-bottom: 2.5rem; }
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid #e8e8e8;
+      color: #111;
+    }
+    p, li { color: #444; margin-bottom: 0.6rem; }
+    ul { padding-left: 1.4rem; margin-bottom: 0.6rem; }
+    code { font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 0.88em; background: #f0f0f0; padding: 0.1em 0.35em; border-radius: 3px; }
+    .effective-date {
+      background: #fff8e1;
+      border-left: 4px solid #f9a825;
+      padding: 0.75rem 1rem;
+      margin-bottom: 2rem;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    footer {
+      text-align: center;
+      padding: 2rem 1.5rem;
+      border-top: 1px solid #e0e0e0;
+      font-size: 0.85rem;
+      color: #888;
+    }
+    a { color: #1a73e8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    strong { color: #222; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Privacy Policy</h1>
+  <p>mailrat &mdash; Native Gmail Desktop Client</p>
+</header>
+
+<main>
+
+  <div class="effective-date">
+    <strong>Effective date:</strong> 26 April 2025 &nbsp;&bull;&nbsp;
+    <strong>Last updated:</strong> 26 April 2025
+  </div>
+
+  <section>
+    <h2>1. Overview</h2>
+    <p>
+      This Privacy Policy describes how <strong>mailrat</strong> ("the Application",
+      "we", "our") collects, uses, and protects information when you authorise it to
+      access your Google account data. The Application is privately operated and is
+      not available to the general public.
+    </p>
+    <p>
+      By using this Application, you agree to the practices described in this policy.
+    </p>
+  </section>
+
+  <section>
+    <h2>2. Information We Access</h2>
+    <p>
+      The Application requests access to the following Google user data via Google APIs:
+    </p>
+    <ul>
+      <li>
+        <strong>Gmail messages and threads</strong> &mdash; including subject lines, message
+        bodies, sender and recipient addresses, timestamps, labels, and attachment metadata.
+        Accessed using the OAuth 2.0 scopes
+        <code>https://www.googleapis.com/auth/gmail.readonly</code> and
+        <code>https://www.googleapis.com/auth/gmail.modify</code>.
+      </li>
+      <li>
+        <strong>Sent mail</strong> &mdash; the ability to compose and send email on your
+        behalf. Accessed using the scope
+        <code>https://www.googleapis.com/auth/gmail.send</code>.
+      </li>
+      <li>
+        <strong>Google Contacts</strong> &mdash; contact names and email addresses from your
+        Google address book, used for address autocomplete when composing email. Accessed
+        using the scope <code>https://www.googleapis.com/auth/contacts</code>.
+      </li>
+    </ul>
+    <p>
+      No other Google account data (such as Calendar, Drive, or Photos) is accessed or requested.
+    </p>
+  </section>
+
+  <section>
+    <h2>3. How We Use Your Data</h2>
+    <p>
+      Data accessed through Google APIs is used exclusively to:
+    </p>
+    <ul>
+      <li>Display your inbox, threads, and messages in the mailrat interface</li>
+      <li>Cache messages locally in SQLite so the application works offline</li>
+      <li>Apply Gmail labels, mark messages read or unread, and move messages to Trash</li>
+      <li>Compose and send email, including replies and forwards, on your behalf</li>
+      <li>Provide address autocomplete from your Google Contacts when composing</li>
+      <li>Sync new messages and history changes from Gmail on demand</li>
+    </ul>
+    <p>
+      Your data is <strong>not</strong> used for advertising, analytics, profiling,
+      training machine learning models, or any purpose other than the email management
+      functions described above.
+    </p>
+  </section>
+
+  <section>
+    <h2>4. Data Storage and Retention</h2>
+    <p>
+      The Application stores the following data locally on the machine where it is run:
+    </p>
+    <ul>
+      <li>
+        <strong>OAuth tokens</strong> &mdash; an access token and refresh token issued by
+        Google are stored in a local credentials file on the host machine. These tokens are
+        used solely to authenticate requests to Google APIs on your behalf.
+      </li>
+      <li>
+        <strong>Email cache</strong> &mdash; message metadata, bodies, and attachment
+        binaries are cached in a local SQLite database (<code>~/.mailrat/</code>) to enable
+        fast, offline-capable access. This data is a local mirror of data already held by
+        Google and remains under your control.
+      </li>
+      <li>
+        <strong>Contacts cache</strong> &mdash; contact names and email addresses are cached
+        locally in the same SQLite database for address autocomplete.
+      </li>
+    </ul>
+    <p>
+      No data is transmitted to any server operated by the Application's developer.
+      All network communication occurs directly between the host machine and Google API
+      endpoints.
+    </p>
+    <p>
+      OAuth tokens are retained until you revoke access via your
+      <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">
+        Google Account permissions page
+      </a>
+      or until the local credentials file is manually deleted. The SQLite cache can be
+      removed by deleting the <code>~/.mailrat/</code> directory.
+    </p>
+  </section>
+
+  <section>
+    <h2>5. Data Sharing and Disclosure</h2>
+    <p>
+      We do <strong>not</strong> sell, rent, trade, or share your Google user data
+      with any third party, including:
+    </p>
+    <ul>
+      <li>Advertisers or analytics providers</li>
+      <li>Data brokers</li>
+      <li>Other users or organisations</li>
+      <li>AI model training pipelines</li>
+    </ul>
+    <p>
+      Your data is never transmitted to any server other than Google's own API endpoints
+      (<code>gmail.googleapis.com</code>, <code>people.googleapis.com</code>).
+      The Application acts solely as a local client that reads and writes data directly
+      between your machine and Google.
+    </p>
+  </section>
+
+  <section>
+    <h2>6. Google API Services User Data Policy</h2>
+    <p>
+      The Application's use and transfer of information received from Google APIs adheres
+      to the
+      <a href="https://developers.google.com/terms/api-services-user-data-policy"
+         target="_blank" rel="noopener">
+        Google API Services User Data Policy
+      </a>,
+      including the Limited Use requirements. Specifically:
+    </p>
+    <ul>
+      <li>
+        Access to Google user data is limited to providing the email and contacts
+        management features described in this policy.
+      </li>
+      <li>
+        Google user data is not used to develop, improve, or train generalised AI or
+        machine learning models.
+      </li>
+      <li>
+        Google user data is not transferred to third parties except as necessary to
+        provide the Application's functionality (i.e. communicating directly with
+        Google's own API endpoints), and only with your explicit authorisation.
+      </li>
+      <li>
+        Humans do not read your Google user data unless you explicitly share it or
+        we are required to do so by law.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>7. Security</h2>
+    <p>
+      OAuth credentials and the local email cache are stored on the host machine under
+      <code>~/.mailrat/</code>. These files are never transmitted to any remote server
+      operated by the Application's developer. Access to the host machine and the
+      security of these files is the responsibility of the operator. We recommend
+      ensuring appropriate file system permissions are set on the <code>~/.mailrat/</code>
+      directory so that only your user account can read its contents.
+    </p>
+  </section>
+
+  <section>
+    <h2>8. Your Rights and Choices</h2>
+    <p>You may at any time:</p>
+    <ul>
+      <li>
+        <strong>Revoke access</strong> &mdash; remove the Application's access to your
+        Google account at
+        <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">
+          myaccount.google.com/permissions
+        </a>.
+        Revoking access immediately invalidates all stored OAuth tokens.
+      </li>
+      <li>
+        <strong>Delete local data</strong> &mdash; remove the <code>~/.mailrat/</code>
+        directory from the host machine to delete all locally stored credentials and
+        cached email data.
+      </li>
+      <li>
+        <strong>Request information</strong> &mdash; contact us at the address below to
+        request details about what data the Application has accessed on your behalf.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>9. Changes to This Policy</h2>
+    <p>
+      We may update this Privacy Policy from time to time. Material changes will be
+      reflected by an updated "Last updated" date at the top of this page.
+      Continued use of the Application after changes are posted constitutes your
+      acceptance of the revised policy.
+    </p>
+  </section>
+
+  <section>
+    <h2>10. Contact</h2>
+    <p>
+      If you have any questions or concerns about this Privacy Policy or the
+      Application's data practices, please contact the operator at
+      <strong>rajasuperman@gmail.com</strong> or via the domain
+      <strong>rsubr.in</strong>.
+    </p>
+  </section>
+
+</main>
+
+<footer>
+  <p>
+    &copy; 2025 rsubr.in &mdash;
+    <a href="/mailrat-index.html">Home</a> &mdash;
+    <a href="/mailrat-terms-of-service.html">Terms of Service</a>
+  </p>
+  <p style="margin-top:0.4rem;">
+    This application is not affiliated with or endorsed by Google LLC.
+  </p>
+</footer>
+
+</body>
+</html>
