@@ -16,8 +16,6 @@ type labelQueryPlan struct {
 	limit  int64 // 0 = unlimited
 }
 
-type backfillPlan = labelQueryPlan
-
 // scopeQuery turns a label's sync scope into a Gmail query and a result cap:
 // everything, last N days (newer_than), or the newest N emails (limit).
 func scopeQuery(c storage.SyncConfig) (query string, limit int64) {
@@ -55,20 +53,10 @@ func initialSyncQuery(maxDays int) string {
 	return fmt.Sprintf("newer_than:%dd", maxDays)
 }
 
-func attachmentLabelIDs(configs []storage.SyncConfig) []string {
-	labelIDs := make([]string, 0, len(configs))
-	for _, cfg := range configs {
-		if cfg.FetchAttachments {
-			labelIDs = append(labelIDs, cfg.LabelID)
-		}
-	}
-	return labelIDs
-}
-
 func defaultBackfillConfigs(accountID string) []storage.SyncConfig {
 	return []storage.SyncConfig{
-		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
-		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
+		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0},
+		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0},
 		{LabelID: storage.AllMailLabelID, LabelName: "All Mail", AccountID: accountID, DaysToSync: AllMailDefaultDays},
 	}
 }

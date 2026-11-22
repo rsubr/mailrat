@@ -182,16 +182,6 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.DeleteContact(s.accountID, id)
 }
 
-// Search returns contacts matching the query string (name or email).
-func (s *Service) Search(query string, limit int) ([]storage.Contact, error) {
-	return s.store.SearchContacts(s.accountID, query, limit)
-}
-
-// List returns all contacts for the account.
-func (s *Service) List() ([]storage.Contact, error) {
-	return s.store.ListContacts(s.accountID)
-}
-
 // phoneNumbers is the People API phone list for a single number; empty clears it.
 func phoneNumbers(p string) []*peoplev1.PhoneNumber {
 	if p == "" {

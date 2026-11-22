@@ -121,11 +121,6 @@ func chip(text string, bg, fgc color.Color) fyne.CanvasObject {
 	return container.NewStack(r, container.New(layout.NewCustomPaddedLayout(1, 1, 7, 7), t))
 }
 
-// dot is the blue unread marker.
-func dot(d float32, c color.Color) fyne.CanvasObject {
-	return container.NewGridWrap(fyne.NewSize(d, d), canvas.NewCircle(c))
-}
-
 // fixedWidth pins its single child to w wide, keeping the child's own height.
 type fixedWidth struct{ w float32 }
 

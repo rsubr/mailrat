@@ -2,42 +2,36 @@ package storage
 
 // SyncConfig holds per-label sync preferences for one account.
 type SyncConfig struct {
-	LabelID          string
-	AccountID        string
-	LabelName        string // display name, denormalised for query building
-	DaysToSync       int    // 0 = all mail; >0 = last N days (ignored when MaxEmails > 0)
-	MaxEmails        int    // >0 = only the newest N emails
-	FetchAttachments bool
-	Backfilled       bool // true once the historical backfill for this label completed
+	LabelID    string
+	AccountID  string
+	LabelName  string // display name, denormalised for query building
+	DaysToSync int    // 0 = all mail; >0 = last N days (ignored when MaxEmails > 0)
+	MaxEmails  int    // >0 = only the newest N emails
+	Backfilled bool   // true once the historical backfill for this label completed
 }
 
 func (s *Store) UpsertSyncConfig(c SyncConfig) error {
-	fetchAtt := 0
-	if c.FetchAttachments {
-		fetchAtt = 1
-	}
 	// Preserve existing backfilled value — UpsertSyncConfig is called from the
 	// TUI config save and must not reset a completed backfill.
 	_, err := s.db.Exec(`
-		INSERT INTO sync_config (label_id, account_id, label_name, days_to_sync, fetch_attachments, backfilled, max_emails)
-		VALUES (?, ?, ?, ?, ?, 0, ?)
+		INSERT INTO sync_config (label_id, account_id, label_name, days_to_sync, backfilled, max_emails)
+		VALUES (?, ?, ?, ?, 0, ?)
 		ON CONFLICT(label_id, account_id) DO UPDATE SET
 			label_name        = excluded.label_name,
 			days_to_sync      = excluded.days_to_sync,
-			fetch_attachments = excluded.fetch_attachments,
 			max_emails        = excluded.max_emails,
 			backfilled        = CASE
 				WHEN excluded.days_to_sync != sync_config.days_to_sync
 				  OR excluded.max_emails != sync_config.max_emails THEN 0
 				ELSE sync_config.backfilled
 			END
-	`, c.LabelID, c.AccountID, c.LabelName, c.DaysToSync, fetchAtt, c.MaxEmails)
+	`, c.LabelID, c.AccountID, c.LabelName, c.DaysToSync, c.MaxEmails)
 	return err
 }
 
 func (s *Store) ListSyncConfigs(accountID string) ([]SyncConfig, error) {
 	rows, err := s.db.Query(`
-		SELECT label_id, account_id, label_name, days_to_sync, fetch_attachments, backfilled, max_emails
+		SELECT label_id, account_id, label_name, days_to_sync, backfilled, max_emails
 		FROM sync_config WHERE account_id = ?
 		ORDER BY label_id ASC
 	`, accountID)
@@ -49,11 +43,10 @@ func (s *Store) ListSyncConfigs(accountID string) ([]SyncConfig, error) {
 	var out []SyncConfig
 	for rows.Next() {
 		var c SyncConfig
-		var fetchAtt, backfilled int
-		if err := rows.Scan(&c.LabelID, &c.AccountID, &c.LabelName, &c.DaysToSync, &fetchAtt, &backfilled, &c.MaxEmails); err != nil {
+		var backfilled int
+		if err := rows.Scan(&c.LabelID, &c.AccountID, &c.LabelName, &c.DaysToSync, &backfilled, &c.MaxEmails); err != nil {
 			return nil, err
 		}
-		c.FetchAttachments = fetchAtt == 1
 		c.Backfilled = backfilled == 1
 		out = append(out, c)
 	}

@@ -154,21 +154,14 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 
 	atts := make([]storage.Attachment, len(full.Attachments))
 	for i, a := range full.Attachments {
-		data := a.InlineData
-		if data == nil && a.AttachmentID != "" {
-			fetched, err := m.client.GetAttachmentData(ctx, msg.ID, a.AttachmentID)
-			if err != nil {
-				m.reporter.Warnf("fetch attachment %q for %s: %v\n", a.Name, msg.ID, err)
-			} else {
-				data = fetched
-			}
-		}
+		// Bytes of non-inline attachments are cached after sync by the
+		// background attachment prefetch, so they never block sync.
 		atts[i] = storage.Attachment{
 			Name:         a.Name,
 			MimeType:     a.MimeType,
 			Size:         a.Size,
 			AttachmentID: a.AttachmentID,
-			Data:         data,
+			Data:         a.InlineData,
 		}
 	}
 	m.writeMu.Lock()
