@@ -127,6 +127,16 @@ CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon (`arm64`) `.app
 
 The `.app` also contains the command-line binary at `mailrat.app/Contents/MacOS/mailrat`, so one zip serves the desktop app, `mailrat tui` and the CLI. This is the artifact for a Homebrew **cask** (`binary "mailrat.app/Contents/MacOS/mailrat"` puts `mailrat` on the `PATH`).
 
+#### Install with Homebrew
+
+```bash
+export HOMEBREW_GITHUB_API_TOKEN=<GitHub token with repo scope>   # this repo is private
+brew tap rsubr/mailrat
+brew install --cask mailrat
+```
+
+Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); after tagging a release, update its version, sha256 and asset id.
+
 #### Signing in
 
 Mail access goes through your own Google Cloud OAuth client. On first run choose **Add Account…**; if no client is installed the app walks you through creating one and lets you pick the downloaded `credentials.json` (it is copied to `~/.mailrat/`). Sign-in opens your browser; the local callback is state-checked, and if the browser can't reach the app (remote machine) you can paste the redirect address instead. `mailrat accounts add` offers the same flow in the terminal. Tokens refresh automatically and are stored in the local database.
