@@ -85,6 +85,7 @@ func (u *UI) typedKey(name fyne.KeyName) bool {
 	case fyne.KeyEscape:
 		u.pendingKey = 0
 		u.win.Canvas().Unfocus()
+		u.backToList()
 		return true
 	case fyne.KeyReturn, fyne.KeyEnter:
 		u.openOrToggle()
@@ -127,7 +128,7 @@ func (u *UI) singleKeys() map[rune]func() {
 		'j': func() { u.moveCursor(+1) },
 		'k': func() { u.moveCursor(-1) },
 		'o': u.openOrToggle,
-		'u': u.backToList,
+		'u': u.syncNow,
 		'n': func() { u.moveMessage(+1) },
 		'p': func() { u.moveMessage(-1) },
 		'e': u.archive,
@@ -262,7 +263,7 @@ func (u *UI) moveMessage(dir int) {
 	u.scrollToMessage(i)
 }
 
-// backToList is u: leave the conversation and refresh the list.
+// backToList is Esc: leave the conversation and refresh the list.
 func (u *UI) backToList() {
 	if u.selected == nil {
 		return
@@ -346,7 +347,7 @@ var shortcutHelp = []helpSection{
 	{"Jumping", [][2]string{
 		{"g then i", "Go to Inbox"}, {"g then s", "Go to Starred"}, {"g then t", "Go to Sent Mail"},
 		{"g then d", "Go to Drafts"}, {"g then a", "Go to All Mail"}, {"g then l", "Go to label…"},
-		{"u", "Back to conversation list"}, {"j", "Next (older) conversation"}, {"k", "Previous (newer) conversation"},
+		{"Esc", "Back to conversation list"}, {"j", "Next (older) conversation"}, {"k", "Previous (newer) conversation"},
 		{"o  or  Enter", "Open conversation / expand message"},
 		{"n", "Next message"}, {"p", "Previous message"},
 	}},
@@ -356,7 +357,7 @@ var shortcutHelp = []helpSection{
 		{"+  or  =", "Mark important"}, {"-", "Mark not important"},
 		{"r  or  Shift+r", "Reply"}, {"a  or  Shift+a", "Reply all"}, {"f  or  Shift+f", "Forward"},
 		{"Shift+i", "Mark as read"}, {"Shift+u  or  _", "Mark as unread"},
-		{"Shift+n", "Check for new mail"}, {"Esc", "Leave a text field"},
+		{"u", "Check for new mail"}, {"Shift+n", "Check for new mail"},
 		{"⌘Enter", "Send (in a message window)"}, {"?", "Show this list"},
 	}},
 }

@@ -91,7 +91,7 @@ Keyboard shortcuts follow Gmail on the web. Press `?` in the app for the list.
 | `j` / `k` | Open next (older) / previous (newer) conversation |
 | `n` / `p` | Next / previous message in the conversation |
 | `o` or `Enter` | Open conversation; expand or collapse the current message |
-| `u` | Back to the conversation list |
+| `Esc` | Back to the conversation list |
 | `c` or `d` | Compose |
 | `/` | Search (`Esc` leaves the field) |
 | `e` or `y` | Archive / remove from view |
@@ -100,7 +100,7 @@ Keyboard shortcuts follow Gmail on the web. Press `?` in the app for the list.
 | `+` `=` / `-` | Mark important / not important |
 | `r` `a` `f` (or capitals) | Reply, reply all, forward |
 | `⇧I` / `⇧U` or `_` | Mark read / unread |
-| `⇧N` | Check for new mail |
+| `u` / `⇧N` | Check for new mail |
 | `⌘Enter` | Send (in a message window) |
 | `⌘N` `⌘R` `⇧⌘R` `⇧⌘F` `⌘⌫` `⌘,` `⌘G` | New, reply, reply all, forward, trash, settings, check mail |
 
