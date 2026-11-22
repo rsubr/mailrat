@@ -71,6 +71,16 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 		}
 		period.OnChanged = func(string) { save() }
 		attach.OnChanged = func(bool) { save() }
+		nameEntry := widget.NewEntry()
+		nameEntry.SetPlaceHolder("Display name")
+		nameEntry.SetText(a.DisplayName)
+		rename := widget.NewButton("Rename", func() {
+			if err := u.be.RenameAccount(a.ID, nameEntry.Text); err != nil {
+				u.showError(err)
+				return
+			}
+			u.reloadAccounts()
+		})
 		remove := widget.NewButton("Remove", func() {
 			dialog.ShowConfirm("Remove account", "Delete "+a.Email+" and all its local mail?", func(ok bool) {
 				if !ok {
@@ -84,7 +94,6 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 					u.activeAccount = unified
 				}
 				u.reloadAll()
-				u.settingsWin.SetContent(u.buildSettings())
 			}, u.settingsWin)
 		})
 		remove.Importance = widget.DangerImportance
@@ -93,7 +102,10 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 			name = a.DisplayName + "  ·  " + a.Email
 		}
 		card := widget.NewCard(name, "", container.NewVBox(
-			widget.NewForm(widget.NewFormItem("Sync mail from", period)),
+			widget.NewForm(
+				widget.NewFormItem("Name", container.NewBorder(nil, nil, nil, rename, nameEntry)),
+				widget.NewFormItem("Sync mail from", period),
+			),
 			container.NewBorder(nil, nil, attach, remove),
 		))
 		rows.Add(card)

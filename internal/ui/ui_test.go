@@ -32,6 +32,7 @@ type fakeBackend struct {
 	frequent          []desktop.ContactItem
 	savedContacts     []desktop.ContactItem
 	deletedContacts   []string
+	renamed           []string
 }
 
 func ms(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour).UnixMilli() }
@@ -59,6 +60,10 @@ func (f *fakeBackend) OpenLoginBrowser() bool           { return true }
 func (f *fakeBackend) SubmitLoginCode(raw string) error { f.submitted = raw; return nil }
 func (f *fakeBackend) CancelLogin()                     { f.cancelled++ }
 func (f *fakeBackend) RemoveAccount(string) error       { return nil }
+func (f *fakeBackend) RenameAccount(id, n string) error {
+	f.renamed = append(f.renamed, id+"="+n)
+	return nil
+}
 func (f *fakeBackend) GetAccountSettings(id string) (desktop.AccountSettingsItem, error) {
 	return desktop.AccountSettingsItem{AccountID: id, SyncPeriod: "90d"}, nil
 }
@@ -206,6 +211,16 @@ func TestAddAccountFlow(t *testing.T) {
 	u.handleEvent("accounts:updated", nil)
 	if u.loginDlg != nil || fb.cancelled != 0 {
 		t.Fatalf("dialog should close cleanly: dlg=%v cancelled=%d", u.loginDlg, fb.cancelled)
+	}
+}
+
+func TestSettingsRefreshesAfterAccountsUpdated(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.accounts = nil
+	u.openSettings()
+	u.handleEvent("accounts:updated", nil)
+	if len(u.accounts) != 2 {
+		t.Fatalf("accounts not reloaded: %d", len(u.accounts))
 	}
 }
 

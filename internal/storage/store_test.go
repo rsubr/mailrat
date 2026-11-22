@@ -41,6 +41,13 @@ func TestAccountCRUD(t *testing.T) {
 		t.Fatalf("want 1 account, got %d", len(accounts))
 	}
 
+	if err := s.UpdateAccountDisplayName("acc1", "Work"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.GetAccount("acc1"); got.DisplayName != "Work" {
+		t.Fatalf("want display name Work, got %q", got.DisplayName)
+	}
+
 	if err := s.DeleteAccount("acc1"); err != nil {
 		t.Fatal(err)
 	}

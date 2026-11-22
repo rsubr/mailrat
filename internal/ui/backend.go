@@ -17,6 +17,7 @@ type Backend interface {
 	SubmitLoginCode(raw string) error
 	CancelLogin()
 	RemoveAccount(accountID string) error
+	RenameAccount(accountID, name string) error
 	GetAccountSettings(accountID string) (desktop.AccountSettingsItem, error)
 	SetAccountSettings(s desktop.AccountSettingsItem) error
 	GetGlobalSettings() (desktop.GlobalSettingsItem, error)

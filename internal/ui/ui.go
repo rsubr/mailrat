@@ -243,6 +243,9 @@ func (u *UI) reloadAccounts() {
 	u.bg(func() { accs, _ = u.be.GetAccounts() }, func() {
 		u.accounts = accs
 		u.refreshSidebar()
+		if u.settingsWin != nil { // reload is async; rebuild so Settings shows the new list
+			u.settingsWin.SetContent(u.buildSettings())
+		}
 	})
 }
 

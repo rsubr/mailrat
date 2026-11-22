@@ -61,8 +61,12 @@ func (m *Manager) saveAccount(ctx context.Context, cfg *oauth2.Config, token *oa
 		return storage.Account{}, err
 	}
 
+	id := fmt.Sprintf("%x", md5.Sum([]byte(email)))
+	if old, err := m.store.GetAccount(id); err == nil && old.DisplayName != "" {
+		displayName = old.DisplayName // keep a name the user chose
+	}
 	acc := storage.Account{
-		ID:          fmt.Sprintf("%x", md5.Sum([]byte(email))),
+		ID:          id,
 		Email:       email,
 		TokenJSON:   tokenJSON,
 		HistoryID:   "",

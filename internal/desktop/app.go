@@ -283,6 +283,14 @@ func (a *App) RemoveAccount(accountID string) error {
 	return a.store.DeleteAccount(accountID)
 }
 
+// RenameAccount sets the display name shown for an account.
+func (a *App) RenameAccount(accountID, name string) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	return a.store.UpdateAccountDisplayName(accountID, strings.TrimSpace(name))
+}
+
 // GetAccountSettings returns sync settings for an account.
 func (a *App) GetAccountSettings(accountID string) (AccountSettingsItem, error) {
 	if a.store == nil {

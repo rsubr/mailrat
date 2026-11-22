@@ -74,6 +74,11 @@ func (s *Store) DeleteAccount(id string) error {
 	return err
 }
 
+func (s *Store) UpdateAccountDisplayName(id, name string) error {
+	_, err := s.db.Exec(`UPDATE accounts SET display_name = ? WHERE id = ?`, name, id)
+	return err
+}
+
 func (s *Store) UpdateHistoryID(accountID, historyID string) error {
 	_, err := s.db.Exec(`UPDATE accounts SET history_id = ? WHERE id = ?`, historyID, accountID)
 	return err
