@@ -9,7 +9,7 @@ import (
 type Attachment struct {
 	Name         string
 	MimeType     string
-	Size         int64 // bytes
+	Size         int64  // bytes
 	AttachmentID string // Gmail part attachment ID; empty for small inline attachments
 	Data         []byte // binary content; nil if not yet downloaded
 }

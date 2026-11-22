@@ -35,10 +35,10 @@ const minContrast = 3.5
 
 type textStyle struct {
 	bold, italic, underline, mono, pre bool
-	col                     color.Color
-	size                    fyne.ThemeSizeName
-	link                    *url.URL
-	quote                   int
+	col                                color.Color
+	size                               fyne.ThemeSizeName
+	link                               *url.URL
+	quote                              int
 }
 
 type htmlRenderer struct {
