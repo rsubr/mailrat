@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // ThreadSummary is a thread as shown in the inbox: aggregated from its messages.
@@ -20,6 +21,23 @@ type ThreadSummary struct {
 	HasAttachments bool
 	IsStarred      bool
 	LabelIDs       []string // distinct label IDs across all messages in thread
+}
+
+// pageSQL selects one page of thread keys from the candidate query cand
+// (columns thread_id, account_id), newest thread first. Only the page's
+// threads are aggregated by threadSummarySQL. The thread date is a cheap
+// index seek on idx_messages_thread.
+func pageSQL(cand string) string {
+	return `WITH cand AS (` + cand + `),
+	page AS (
+		SELECT c.thread_id, c.account_id,
+			(SELECT MAX(x.internal_date) FROM messages x
+			 WHERE x.account_id = c.account_id AND x.thread_id = c.thread_id) AS last_date
+		FROM cand c
+		ORDER BY last_date DESC, c.thread_id, c.account_id
+		LIMIT ? OFFSET ?
+	)
+	`
 }
 
 const threadSummarySQL = `
@@ -45,8 +63,39 @@ const threadSummarySQL = `
 		 JOIN messages m2 ON m2.id = ml.message_id AND m2.account_id = ml.account_id
 		 WHERE m2.thread_id = m.thread_id AND m2.account_id = m.account_id
 		   AND ml.label_id = 'STARRED')                            AS is_starred
-	FROM messages m
+	FROM page p
+	JOIN messages m ON m.account_id = p.account_id AND m.thread_id = p.thread_id
+	GROUP BY m.thread_id, m.account_id
+	ORDER BY last_date DESC, m.thread_id, m.account_id
 `
+
+// queryThreadPage runs one page of thread summaries for the candidate query.
+func (s *Store) queryThreadPage(cand string, args []any, limit, offset int) ([]ThreadSummary, error) {
+	rows, err := s.db.Query(pageSQL(cand)+threadSummarySQL, append(args, limit, offset)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanThreadSummaries(rows)
+}
+
+// labelCandidates returns the candidate query for threads with a message
+// carrying labelID, optionally scoped to one account (accountID != "").
+func labelCandidates(accountID, labelID string, hideTrashed bool) (string, []any) {
+	q := `SELECT DISTINCT m2.thread_id, m2.account_id
+		FROM message_labels ml
+		JOIN messages m2 ON m2.id = ml.message_id AND m2.account_id = ml.account_id
+		WHERE ml.label_id = ?`
+	args := []any{labelID}
+	if accountID != "" {
+		q += ` AND ml.account_id = ?`
+		args = append(args, accountID)
+	}
+	if hideTrashed {
+		q += notTrashed(labelID)
+	}
+	return q, args
+}
 
 func scanThreadSummaries(rows *sql.Rows) ([]ThreadSummary, error) {
 	var out []ThreadSummary
@@ -72,131 +121,47 @@ func scanThreadSummaries(rows *sql.Rows) ([]ThreadSummary, error) {
 	return out, rows.Err()
 }
 
-// inboxFilter is a subquery that returns the thread_ids that have at least one
-// message carrying the INBOX label. Used to restrict both list functions to the
-// actual inbox rather than all synced mail.
-const inboxFilter = `
-	m.thread_id IN (
-		SELECT DISTINCT m2.thread_id
-		FROM messages m2
-		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE ml.label_id = 'INBOX'
-	)
-`
-
-const inboxFilterForAccount = `
-	m.account_id = ? AND m.thread_id IN (
-		SELECT DISTINCT m2.thread_id
-		FROM messages m2
-		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE m2.account_id = ? AND ml.label_id = 'INBOX'
-	)
-`
-
 // ListAllThreadSummaries returns inbox threads across all accounts, newest first.
 func (s *Store) ListAllThreadSummaries(limit, offset int) ([]ThreadSummary, error) {
-	rows, err := s.db.Query(
-		threadSummarySQL+
-			`WHERE `+inboxFilter+
-			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
-		limit, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanThreadSummaries(rows)
+	cand, args := labelCandidates("", "INBOX", false)
+	return s.queryThreadPage(cand, args, limit, offset)
 }
 
 // LocalSearchThreadSummaries searches threads locally across all accounts.
-// It splits rawQuery into whitespace-delimited terms and searches subject,
-// body, from/to/cc/bcc addresses, and attachment filenames. Results are
-// ordered by the number of terms matched (descending), then by date.
+// Every whitespace-delimited term must match (as a word prefix) in some
+// message of the thread: subject, body, from/to/cc/bcc, or an attachment
+// filename. Results are newest first.
 func (s *Store) LocalSearchThreadSummaries(rawQuery string, limit int) ([]ThreadSummary, error) {
 	terms := splitSearchTerms(rawQuery)
 	if len(terms) == 0 {
 		return nil, nil
 	}
-
-	// Build one CASE WHEN column per term in the msg_scores CTE.
-	var cteArgs []any
-	var termCols []string
-	var termExprs []string
-	var maxExprs []string
-
-	for i, term := range terms {
-		like := "%" + strings.ToLower(term) + "%"
-		col := fmt.Sprintf("t%d", i)
-		termCols = append(termCols, col)
-		maxExprs = append(maxExprs, "MAX("+col+")")
-		termExprs = append(termExprs, fmt.Sprintf(
-			`CASE WHEN (LOWER(m2.subject) LIKE ? OR LOWER(m2.body) LIKE ?
-			       OR LOWER(m2.from_addr) LIKE ? OR LOWER(m2.to_addr) LIKE ?
-			       OR LOWER(m2.cc_addr) LIKE ? OR LOWER(m2.bcc_addr) LIKE ?
-			       OR EXISTS (SELECT 1 FROM attachments ax
-			                  WHERE ax.message_id = m2.id AND ax.account_id = m2.account_id
-			                  AND LOWER(ax.name) LIKE ?))
-			      THEN 1 ELSE 0 END AS %s`, col,
-		))
-		cteArgs = append(cteArgs, like, like, like, like, like, like, like)
+	var parts []string
+	var args []any
+	for _, term := range terms {
+		parts = append(parts, `SELECT thread_id, account_id FROM (
+			SELECT m.thread_id, m.account_id FROM messages_fts
+			JOIN messages m ON m.rowid = messages_fts.rowid
+			WHERE messages_fts MATCH ?
+			UNION
+			SELECT m.thread_id, m.account_id FROM attachments a
+			JOIN messages m ON m.id = a.message_id AND m.account_id = a.account_id
+			WHERE instr(lower(a.name), ?) > 0)`)
+		args = append(args, ftsPhrase(term), strings.ToLower(term))
 	}
+	return s.queryThreadPage(strings.Join(parts, " INTERSECT "), args, limit, 0)
+}
 
-	cte := fmt.Sprintf(`
-WITH msg_scores AS (
-    SELECT m2.thread_id, m2.account_id,
-        %s
-    FROM messages m2
-),
-ranked AS (
-    SELECT thread_id, account_id, %s AS score
-    FROM msg_scores
-    GROUP BY thread_id, account_id
-    HAVING score > 0
-)
-`, strings.Join(termExprs, ",\n        "), strings.Join(maxExprs, " + "))
-
-	mainSQL := `
-SELECT
-    m.thread_id,
-    m.account_id,
-    COUNT(*) AS message_count,
-    SUM(m.is_unread) AS unread_count,
-    MAX(m.internal_date) AS last_date,
-    MAX(m.has_attachments) AS has_attachments,
-    GROUP_CONCAT(DISTINCT m.from_addr) AS participants,
-    (SELECT subject FROM messages m3
-     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
-     ORDER BY m3.internal_date DESC LIMIT 1) AS subject,
-    (SELECT snippet FROM messages m3
-     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
-     ORDER BY m3.internal_date DESC LIMIT 1) AS snippet,
-    (SELECT GROUP_CONCAT(DISTINCT ml.label_id)
-     FROM message_labels ml
-     JOIN messages m3 ON m3.id = ml.message_id AND m3.account_id = ml.account_id
-     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id) AS label_ids,
-    (SELECT COUNT(*) FROM message_labels ml
-     JOIN messages m3 ON m3.id = ml.message_id AND m3.account_id = ml.account_id
-     WHERE m3.thread_id = m.thread_id AND m3.account_id = m.account_id
-       AND ml.label_id = 'STARRED') AS is_starred
-FROM messages m
-JOIN ranked ON ranked.thread_id = m.thread_id AND ranked.account_id = m.account_id
-GROUP BY m.thread_id, m.account_id
-ORDER BY MAX(ranked.score) DESC, last_date DESC
-LIMIT ?`
-
-	args := append(cteArgs, limit)
-	rows, err := s.db.Query(cte+mainSQL, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanThreadSummaries(rows)
+// ftsPhrase turns a user term into a quoted FTS5 prefix phrase so punctuation
+// and operators (AND, -, ", :) are matched literally instead of parsed.
+func ftsPhrase(term string) string {
+	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
 
 func splitSearchTerms(query string) []string {
 	var terms []string
 	for _, t := range strings.Fields(query) {
-		if t != "" {
+		if strings.IndexFunc(t, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0 {
 			terms = append(terms, t)
 		}
 	}
@@ -205,37 +170,14 @@ func splitSearchTerms(query string) []string {
 
 // ListThreadSummaries returns inbox threads for a single account, newest first.
 func (s *Store) ListThreadSummaries(accountID string, limit, offset int) ([]ThreadSummary, error) {
-	rows, err := s.db.Query(
-		threadSummarySQL+
-			`WHERE `+inboxFilterForAccount+
-			`GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
-		accountID, accountID, limit, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanThreadSummaries(rows)
+	cand, args := labelCandidates(accountID, "INBOX", false)
+	return s.queryThreadPage(cand, args, limit, offset)
 }
 
 // ListAllThreadSummariesByLabel returns threads carrying a given label across all accounts.
 func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit, offset int) ([]ThreadSummary, error) {
-	filter := `m.thread_id IN (
-		SELECT DISTINCT m2.thread_id
-		FROM messages m2
-		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE ml.label_id = ?` + notTrashed(labelID) + `
-	)`
-	rows, err := s.db.Query(
-		threadSummarySQL+`WHERE `+filter+
-			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
-		labelID, limit, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanThreadSummaries(rows)
+	cand, args := labelCandidates("", labelID, true)
+	return s.queryThreadPage(cand, args, limit, offset)
 }
 
 // notTrashed hides trashed messages from every label view except Trash itself
@@ -249,22 +191,8 @@ func notTrashed(labelID string) string {
 
 // ListThreadSummariesByLabel returns threads carrying a given label for one account.
 func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit, offset int) ([]ThreadSummary, error) {
-	filter := `m.account_id = ? AND m.thread_id IN (
-		SELECT DISTINCT m2.thread_id
-		FROM messages m2
-		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE m2.account_id = ? AND ml.label_id = ?` + notTrashed(labelID) + `
-	)`
-	rows, err := s.db.Query(
-		threadSummarySQL+`WHERE `+filter+
-			` GROUP BY m.thread_id, m.account_id ORDER BY last_date DESC LIMIT ? OFFSET ?`,
-		accountID, accountID, labelID, limit, offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanThreadSummaries(rows)
+	cand, args := labelCandidates(accountID, labelID, true)
+	return s.queryThreadPage(cand, args, limit, offset)
 }
 
 type Thread struct {
@@ -273,17 +201,19 @@ type Thread struct {
 	LastMessageDate int64
 }
 
+const threadUpsertSQL = `
+	INSERT INTO threads (id, account_id, last_message_date)
+	VALUES (?, ?, ?)
+	ON CONFLICT(id, account_id) DO UPDATE SET
+		last_message_date = CASE
+			WHEN excluded.last_message_date > threads.last_message_date
+			THEN excluded.last_message_date
+			ELSE threads.last_message_date
+		END
+`
+
 func (s *Store) UpsertThread(t Thread) error {
-	_, err := s.db.Exec(`
-		INSERT INTO threads (id, account_id, last_message_date)
-		VALUES (?, ?, ?)
-		ON CONFLICT(id, account_id) DO UPDATE SET
-			last_message_date = CASE
-				WHEN excluded.last_message_date > threads.last_message_date
-				THEN excluded.last_message_date
-				ELSE threads.last_message_date
-			END
-	`, t.ID, t.AccountID, t.LastMessageDate)
+	_, err := s.db.Exec(threadUpsertSQL, t.ID, t.AccountID, t.LastMessageDate)
 	return err
 }
 

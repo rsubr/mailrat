@@ -57,6 +57,13 @@ func (s *Store) SetMessageLabels(accountID, messageID string, labelIDs []string)
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	if err := setMessageLabelsTx(tx, accountID, messageID, labelIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setMessageLabelsTx(tx *sql.Tx, accountID, messageID string, labelIDs []string) error {
 	if _, err := tx.Exec(`
 		DELETE FROM message_labels WHERE message_id = ? AND account_id = ?
 	`, messageID, accountID); err != nil {
@@ -87,8 +94,7 @@ func (s *Store) SetMessageLabels(accountID, messageID string, labelIDs []string)
 			return err
 		}
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 func (s *Store) GetLabelUnreadCounts(accountID string) (map[string]int, error) {

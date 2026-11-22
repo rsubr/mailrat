@@ -43,23 +43,14 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 		IsUnread:     meta.IsUnread,
 		CacheState:   storage.CacheMetadataOnly,
 	}
-	if err := m.store.UpsertMessage(msg); err != nil {
-		return fmt.Errorf("upsert message %s: %w", meta.ID, err)
-	}
-	if err := m.store.UpsertThread(storage.Thread{
-		ID:              meta.ThreadID,
-		AccountID:       accountID,
-		LastMessageDate: meta.InternalDate,
-	}); err != nil {
-		return fmt.Errorf("upsert thread %s: %w", meta.ThreadID, err)
-	}
+	keepLabels := false
 	if m.isHeld(accountID, meta.ThreadID) {
 		if existing, _ := m.store.GetMessageLabelIDs(accountID, meta.ID); len(existing) > 0 {
-			return nil // local trash still undoable; keep its labels
+			keepLabels = true // local trash still undoable; keep its labels
 		}
 	}
-	if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
-		return fmt.Errorf("set labels on %s: %w", meta.ID, err)
+	if err := m.store.UpsertMessageMeta(msg, meta.LabelIDs, !keepLabels); err != nil {
+		return fmt.Errorf("store message %s: %w", meta.ID, err)
 	}
 	return nil
 }
