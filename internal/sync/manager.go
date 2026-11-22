@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	stdsync "sync"
 
 	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/storage"
@@ -17,6 +18,7 @@ type Manager struct {
 	store    *storage.Store
 	client   *gmail.Client
 	reporter progressReporter
+	writeMu  stdsync.Mutex // serialises store writes made from concurrent fetches
 }
 
 // NewManager creates a SyncManager.
@@ -36,18 +38,30 @@ func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays
 		return fmt.Errorf("sync labels: %w", err)
 	}
 
-	plan := buildInitialSyncPlan(defaultDays, configs)
-	m.reporter.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, plan.maxDays)
+	configs, err := m.ensureDefaultBackfillConfigs(accountID, configs)
+	if err != nil {
+		return err
+	}
+	m.reporter.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, defaultDays)
 
 	seen := make(seenMessages)
-	if err := m.fetchAndStore(ctx, accountID, initialSyncQuery(plan.maxDays), 500, seen); err != nil {
-		return fmt.Errorf("base sync: %w", err)
+	// Labels without their own scope get the account-wide default window.
+	if q := initialSyncQuery(defaultDays); q != "" {
+		if _, err := m.fetchAndStore(ctx, accountID, q, 0, seen); err != nil {
+			return fmt.Errorf("base sync: %w", err)
+		}
 	}
 
-	for _, labelPlan := range plan.allMailLabels {
-		m.reporter.Printf("Fetching all mail for label %q (%s)...\n", labelPlan.config.LabelName, labelPlan.query)
-		if err := m.fetchAndStore(ctx, accountID, labelPlan.query, 2000, seen); err != nil {
-			m.reporter.Warnf("failed to fetch label %q: %v\n", labelPlan.config.LabelName, err)
+	for _, plan := range buildLabelPlans(configs, false) {
+		if plan.query != "" {
+			m.reporter.Printf("Fetching label %q (%s)...\n", plan.config.LabelName, plan.query)
+			if _, err := m.fetchAndStore(ctx, accountID, plan.query, plan.limit, seen); err != nil {
+				m.reporter.Warnf("failed to fetch label %q: %v\n", plan.config.LabelName, err)
+				continue
+			}
+		}
+		if err := m.markBackfilled(plan.config); err != nil {
+			return err
 		}
 	}
 
@@ -77,10 +91,27 @@ func (m *Manager) IncrementalSync(ctx context.Context, accountID string) error {
 		return fmt.Errorf("get history: %w", err)
 	}
 
-	stats, err := m.applyHistoryEvents(accountID, resp.Events)
+	// New messages: skip ones already stored, fetch the rest concurrently.
+	var fresh []string
+	for _, id := range resp.AddedIDs {
+		if !m.store.HasMessage(accountID, id) {
+			fresh = append(fresh, id)
+		}
+	}
+	fetched, err := m.fetchAndStoreMetas(ctx, accountID, fresh)
+	if err != nil {
+		return fmt.Errorf("fetch new messages: %w", err)
+	}
+	skip := make(map[string]struct{}, len(fresh))
+	for _, id := range fresh {
+		skip[id] = struct{}{}
+	}
+
+	stats, err := m.applyHistoryEvents(accountID, resp.Events, skip)
 	if err != nil {
 		return err
 	}
+	stats.added = fetched
 
 	if resp.HistoryID > 0 {
 		if err := m.updateHistoryID(accountID, resp.HistoryID); err != nil {
@@ -118,7 +149,7 @@ func (m *Manager) BackfillFromConfigs(ctx context.Context, accountID string, con
 	}
 
 	seen := make(seenMessages)
-	for _, plan := range buildBackfillPlans(configs) {
+	for _, plan := range buildLabelPlans(configs, true) {
 		if err := m.runBackfillPlan(ctx, accountID, plan, seen); err != nil {
 			return err
 		}
@@ -148,16 +179,20 @@ func (m *Manager) FetchMissingAttachments(ctx context.Context, accountID string,
 	}
 
 	m.reporter.Printf("Fetching %d missing attachments...\n", len(missing))
-	for _, att := range missing {
+	_ = forEachParallel(len(missing), func(i int) error {
+		att := missing[i]
 		data, err := m.client.GetAttachmentData(ctx, att.MessageID, att.AttachmentID)
 		if err != nil {
 			m.reporter.Warnf("fetch attachment %q (%s): %v\n", att.Name, att.MessageID, err)
-			continue
+			return nil
 		}
+		m.writeMu.Lock()
+		defer m.writeMu.Unlock()
 		if err := m.store.UpdateAttachmentData(accountID, att.MessageID, att.AttachmentID, data); err != nil {
 			m.reporter.Warnf("store attachment %q (%s): %v\n", att.Name, att.MessageID, err)
 		}
-	}
+		return nil
+	})
 	m.reporter.Printf("Missing attachment fetch complete\n")
 	return nil
 }
@@ -174,20 +209,80 @@ func (m *Manager) FetchBodiesForLabels(ctx context.Context, accountID string, la
 	return m.fetchBodiesIntoStore(ctx, accountID, msgs)
 }
 
-func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, maxResults int64, seen seenMessages) error {
-	messages, err := m.client.ListMessages(ctx, query, maxResults)
+// fetchAndStore lists message IDs for query (limit 0 = all), skips messages
+// already stored or seen, and fetches metadata for the rest concurrently.
+// It returns how many messages were stored.
+func (m *Manager) fetchAndStore(ctx context.Context, accountID, query string, limit int64, seen seenMessages) (int, error) {
+	ids, err := m.client.ListMessageIDs(ctx, query, limit)
 	if err != nil {
-		return fmt.Errorf("list messages (%s): %w", query, err)
+		return 0, fmt.Errorf("list messages (%s): %w", query, err)
 	}
-	for _, meta := range messages {
-		if seen.Skip(meta.ID) {
+	var fresh []string
+	for _, id := range ids {
+		if seen.Skip(id) || m.store.HasMessage(accountID, id) {
 			continue
 		}
+		fresh = append(fresh, id)
+	}
+	return m.fetchAndStoreMetas(ctx, accountID, fresh)
+}
+
+func (m *Manager) fetchAndStoreMetas(ctx context.Context, accountID string, ids []string) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	metas, fetchErr := m.client.GetMessageMetas(ctx, ids)
+	for _, meta := range metas {
+		if err := m.storeMessageMetadata(accountID, meta); err != nil {
+			return 0, err
+		}
+	}
+	return len(metas), fetchErr
+}
+
+// LoadOlder fetches up to n messages for a label that are older than anything
+// stored locally and returns how many were added. It backs scroll-to-load-more.
+func (m *Manager) LoadOlder(ctx context.Context, accountID, labelID string, n int) (int, error) {
+	name := ""
+	if labels, err := m.store.ListLabels(accountID); err == nil {
+		for _, l := range labels {
+			if l.ID == labelID {
+				name = l.Name
+			}
+		}
+	}
+	query := labelIDToGmailQuery(labelID, name)
+	if query == "" {
+		return 0, nil
+	}
+	if oldest, err := m.store.OldestMessageDate(accountID, labelID); err == nil && oldest > 0 {
+		query += fmt.Sprintf(" before:%d", oldest/1000)
+	}
+	return m.fetchAndStore(ctx, accountID, query, int64(n), make(seenMessages))
+}
+
+// RefreshThread re-reads a thread's messages and labels from Gmail, replacing
+// local state. It is how a failed optimistic change is rolled back.
+func (m *Manager) RefreshThread(ctx context.Context, accountID, threadID string) error {
+	t, err := m.client.GetThread(ctx, threadID)
+	if err != nil {
+		return err
+	}
+	for _, meta := range t.Messages {
 		if err := m.storeMessageMetadata(accountID, meta); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// RefreshMessage is RefreshThread for a single message.
+func (m *Manager) RefreshMessage(ctx context.Context, accountID, messageID string) error {
+	meta, err := m.client.GetMessageMeta(ctx, messageID)
+	if err != nil {
+		return err
+	}
+	return m.storeMessageMetadata(accountID, meta)
 }
 
 // SyncLabels fetches all labels from the Gmail API and upserts them into the store.

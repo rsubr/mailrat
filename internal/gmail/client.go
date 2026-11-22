@@ -3,13 +3,16 @@ package gmail
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	gmailv1 "google.golang.org/api/gmail/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -45,38 +48,83 @@ func NewClient(ctx context.Context, httpClient *http.Client, accountID string) (
 	return &Client{svc: svc}, nil
 }
 
-// ListMessages returns message metadata matching the given query.
-func (c *Client) ListMessages(ctx context.Context, query string, maxResults int64) ([]MessageMeta, error) {
-	var out []MessageMeta
-	pageToken := ""
+// metaWorkers bounds concurrent per-message requests (Gmail allows ~50 get/s per user).
+const metaWorkers = 10
 
+// ListMessageIDs returns the IDs of messages matching query, newest first.
+// limit caps the total returned; 0 means no cap.
+func (c *Client) ListMessageIDs(ctx context.Context, query string, limit int64) ([]string, error) {
+	var out []string
+	pageToken := ""
 	for {
-		call := c.svc.Users.Messages.List("me").Q(query).MaxResults(maxResults)
+		page := int64(500)
+		if limit > 0 && limit-int64(len(out)) < page {
+			page = limit - int64(len(out))
+		}
+		call := c.svc.Users.Messages.List("me").Q(query).MaxResults(page)
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
 		}
-
 		resp, err := withRetry(ctx, func() (*gmailv1.ListMessagesResponse, error) {
 			return call.Context(ctx).Do()
 		})
 		if err != nil {
 			return nil, fmt.Errorf("list messages: %w", err)
 		}
-
 		for _, m := range resp.Messages {
-			meta, err := c.GetMessageMeta(ctx, m.Id)
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, meta)
+			out = append(out, m.Id)
 		}
-
-		if resp.NextPageToken == "" {
-			break
+		if resp.NextPageToken == "" || (limit > 0 && int64(len(out)) >= limit) {
+			return out, nil
 		}
 		pageToken = resp.NextPageToken
 	}
-	return out, nil
+}
+
+// GetMessageMetas fetches metadata for many messages concurrently. It returns
+// every message it could fetch plus the first error, so callers can keep
+// partial progress.
+func (c *Client) GetMessageMetas(ctx context.Context, ids []string) ([]MessageMeta, error) {
+	metas := make([]MessageMeta, len(ids))
+	ok := make([]bool, len(ids))
+	var firstErr error
+	var mu sync.Mutex
+	sem := make(chan struct{}, metaWorkers)
+	var wg sync.WaitGroup
+	for i, id := range ids {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			meta, err := c.GetMessageMeta(ctx, id)
+			if err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+				return
+			}
+			metas[i], ok[i] = meta, true
+		}()
+	}
+	wg.Wait()
+	out := metas[:0]
+	for i := range metas {
+		if ok[i] {
+			out = append(out, metas[i])
+		}
+	}
+	return out, firstErr
+}
+
+// ListMessages returns message metadata matching the given query.
+func (c *Client) ListMessages(ctx context.Context, query string, limit int64) ([]MessageMeta, error) {
+	ids, err := c.ListMessageIDs(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	return c.GetMessageMetas(ctx, ids)
 }
 
 // GetMessageMeta fetches headers + metadata for a single message.
@@ -163,6 +211,31 @@ func (c *Client) ModifyLabels(ctx context.Context, msgID string, add, remove []s
 	return nil
 }
 
+// ModifyThreadLabels adds and removes labels on every message of a thread in one call.
+func (c *Client) ModifyThreadLabels(ctx context.Context, threadID string, add, remove []string) error {
+	_, err := withRetry(ctx, func() (*gmailv1.Thread, error) {
+		return c.svc.Users.Threads.Modify("me", threadID, &gmailv1.ModifyThreadRequest{
+			AddLabelIds:    add,
+			RemoveLabelIds: remove,
+		}).Context(ctx).Do()
+	})
+	if err != nil {
+		return fmt.Errorf("modify labels on thread %s: %w", threadID, err)
+	}
+	return nil
+}
+
+// TrashThread moves a whole thread to the Trash in one call.
+func (c *Client) TrashThread(ctx context.Context, threadID string) error {
+	_, err := withRetry(ctx, func() (*gmailv1.Thread, error) {
+		return c.svc.Users.Threads.Trash("me", threadID).Context(ctx).Do()
+	})
+	if err != nil {
+		return fmt.Errorf("trash thread %s: %w", threadID, err)
+	}
+	return nil
+}
+
 // TrashMessage moves a message to the Trash.
 func (c *Client) TrashMessage(ctx context.Context, msgID string) error {
 	_, err := withRetry(ctx, func() (*gmailv1.Message, error) {
@@ -227,10 +300,16 @@ func (c *Client) DeleteDraft(ctx context.Context, draftID string) error {
 	return nil
 }
 
-// GetHistoryList returns history events since startHistoryID.
+// ErrHistoryExpired means startHistoryId is too old; a full sync is required.
+var ErrHistoryExpired = errors.New("history id expired")
+
+// GetHistoryList returns the changes since startHistoryID. New messages are
+// reported as IDs only (see HistoryResponse.AddedIDs) so the caller can fetch
+// them concurrently and skip ones it already has.
 func (c *Client) GetHistoryList(ctx context.Context, startHistoryID uint64) (*HistoryResponse, error) {
-	var events []HistoryEvent
-	var latestHistoryID uint64
+	resp := &HistoryResponse{}
+	added := map[string]struct{}{}
+	deleted := map[string]struct{}{}
 	pageToken := ""
 
 	for {
@@ -238,50 +317,59 @@ func (c *Client) GetHistoryList(ctx context.Context, startHistoryID uint64) (*Hi
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
 		}
-
-		resp, err := withRetry(ctx, func() (*gmailv1.ListHistoryResponse, error) {
+		page, err := withRetry(ctx, func() (*gmailv1.ListHistoryResponse, error) {
 			return call.Context(ctx).Do()
 		})
 		if err != nil {
+			var ge *googleapi.Error
+			if errors.As(err, &ge) && ge.Code == http.StatusNotFound {
+				return nil, ErrHistoryExpired
+			}
 			return nil, fmt.Errorf("history list: %w", err)
 		}
-
-		if resp.HistoryId > latestHistoryID {
-			latestHistoryID = resp.HistoryId
+		if page.HistoryId > resp.HistoryID {
+			resp.HistoryID = page.HistoryId
 		}
 
-		for _, h := range resp.History {
+		for _, h := range page.History {
 			for _, ma := range h.MessagesAdded {
-				// History entries are partial (id+threadId+labelIds only).
-				// Fetch full metadata to get InternalDate and headers.
-				meta, err := c.GetMessageMeta(ctx, ma.Message.Id)
-				if err != nil {
-					continue
+				if _, dup := added[ma.Message.Id]; !dup {
+					added[ma.Message.Id] = struct{}{}
+					resp.AddedIDs = append(resp.AddedIDs, ma.Message.Id)
 				}
-				e := meta // copy
-				events = append(events, HistoryEvent{MessageAdded: &e})
+			}
+			for _, md := range h.MessagesDeleted {
+				deleted[md.Message.Id] = struct{}{}
 			}
 			for _, la := range h.LabelsAdded {
-				events = append(events, HistoryEvent{LabelsAdded: &LabelChange{
+				resp.Events = append(resp.Events, HistoryEvent{LabelsAdded: &LabelChange{
 					MessageID: la.Message.Id,
 					LabelIDs:  la.LabelIds,
 				}})
 			}
 			for _, lr := range h.LabelsRemoved {
-				events = append(events, HistoryEvent{LabelsRemoved: &LabelChange{
+				resp.Events = append(resp.Events, HistoryEvent{LabelsRemoved: &LabelChange{
 					MessageID: lr.Message.Id,
 					LabelIDs:  lr.LabelIds,
 				}})
 			}
 		}
 
-		if resp.NextPageToken == "" {
+		if page.NextPageToken == "" {
 			break
 		}
-		pageToken = resp.NextPageToken
+		pageToken = page.NextPageToken
 	}
 
-	return &HistoryResponse{Events: events, HistoryID: latestHistoryID}, nil
+	// A message added and deleted within the window no longer exists.
+	kept := resp.AddedIDs[:0]
+	for _, id := range resp.AddedIDs {
+		if _, gone := deleted[id]; !gone {
+			kept = append(kept, id)
+		}
+	}
+	resp.AddedIDs = kept
+	return resp, nil
 }
 
 // GetProfile returns the current historyId from the Gmail profile.
@@ -434,6 +522,16 @@ func (c *Client) GetAttachmentData(ctx context.Context, messageID, attachmentID 
 		}
 	}
 	return data, nil
+}
+
+// IsPermanent reports whether err is a Gmail client error (4xx other than rate
+// limiting) that retrying cannot fix, such as a message that no longer exists.
+func IsPermanent(err error) bool {
+	var ge *googleapi.Error
+	if !errors.As(err, &ge) {
+		return false
+	}
+	return ge.Code >= 400 && ge.Code < 500 && ge.Code != http.StatusTooManyRequests && ge.Code != http.StatusRequestTimeout
 }
 
 // withRetry calls fn with exponential backoff on 429/500 errors.

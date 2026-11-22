@@ -49,7 +49,6 @@ type Label struct {
 
 // HistoryEvent represents a change from the history list.
 type HistoryEvent struct {
-	MessageAdded  *MessageMeta
 	LabelsAdded   *LabelChange
 	LabelsRemoved *LabelChange
 }
@@ -62,6 +61,7 @@ type LabelChange struct {
 
 // HistoryResponse is the result of a history.list call.
 type HistoryResponse struct {
+	AddedIDs  []string // new messages; fetch their metadata separately
 	Events    []HistoryEvent
 	HistoryID uint64
 }

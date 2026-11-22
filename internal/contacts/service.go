@@ -34,7 +34,7 @@ func (s *Service) Sync(ctx context.Context) error {
 
 	for {
 		call := s.svc.People.Connections.List("people/me").
-			PersonFields("names,emailAddresses").
+			PersonFields("names,emailAddresses,phoneNumbers").
 			PageSize(1000)
 		if pageToken != "" {
 			call = call.PageToken(pageToken)
@@ -51,6 +51,10 @@ func (s *Service) Sync(ctx context.Context) error {
 				name = person.Names[0].DisplayName
 			}
 			etag := person.Etag
+			phone := ""
+			if len(person.PhoneNumbers) > 0 {
+				phone = person.PhoneNumbers[0].Value
+			}
 			for _, email := range person.EmailAddresses {
 				if email.Value == "" {
 					continue
@@ -62,6 +66,7 @@ func (s *Service) Sync(ctx context.Context) error {
 					Email:        email.Value,
 					ResourceName: person.ResourceName,
 					Etag:         etag,
+					Phone:        phone,
 				}
 				if err := s.store.UpsertContact(c); err != nil {
 					return err
@@ -81,7 +86,7 @@ func (s *Service) Sync(ctx context.Context) error {
 }
 
 // Create creates a new contact in Google and saves it locally.
-func (s *Service) Create(ctx context.Context, name, email string) (storage.Contact, error) {
+func (s *Service) Create(ctx context.Context, name, email, phone string) (storage.Contact, error) {
 	person := &peoplev1.Person{
 		Names: []*peoplev1.Name{
 			{GivenName: name},
@@ -89,10 +94,11 @@ func (s *Service) Create(ctx context.Context, name, email string) (storage.Conta
 		EmailAddresses: []*peoplev1.EmailAddress{
 			{Value: email},
 		},
+		PhoneNumbers: phoneNumbers(phone),
 	}
 
 	created, err := s.svc.People.CreateContact(person).
-		PersonFields("names,emailAddresses").
+		PersonFields("names,emailAddresses,phoneNumbers").
 		Context(ctx).Do()
 	if err != nil {
 		return storage.Contact{}, fmt.Errorf("create contact: %w", err)
@@ -103,6 +109,7 @@ func (s *Service) Create(ctx context.Context, name, email string) (storage.Conta
 		AccountID:    s.accountID,
 		Name:         name,
 		Email:        email,
+		Phone:        phone,
 		ResourceName: created.ResourceName,
 		Etag:         created.Etag,
 	}
@@ -114,7 +121,7 @@ func (s *Service) Create(ctx context.Context, name, email string) (storage.Conta
 
 // Update updates the name and/or email of an existing contact.
 // id is the local contact ID (resource_name:email).
-func (s *Service) Update(ctx context.Context, id, newName, newEmail string) (storage.Contact, error) {
+func (s *Service) Update(ctx context.Context, id, newName, newEmail, newPhone string) (storage.Contact, error) {
 	existing, err := s.store.GetContact(s.accountID, id)
 	if err != nil {
 		return storage.Contact{}, fmt.Errorf("contact %q not found locally; run: mailrat contacts list --sync", id)
@@ -129,10 +136,11 @@ func (s *Service) Update(ctx context.Context, id, newName, newEmail string) (sto
 		EmailAddresses: []*peoplev1.EmailAddress{
 			{Value: newEmail},
 		},
+		PhoneNumbers: phoneNumbers(newPhone),
 	}
 
 	updated, err := s.svc.People.UpdateContact(existing.ResourceName, person).
-		UpdatePersonFields("names,emailAddresses").
+		UpdatePersonFields("names,emailAddresses,phoneNumbers").
 		Context(ctx).Do()
 	if err != nil {
 		return storage.Contact{}, fmt.Errorf("update contact: %w", err)
@@ -149,6 +157,7 @@ func (s *Service) Update(ctx context.Context, id, newName, newEmail string) (sto
 		AccountID:    s.accountID,
 		Name:         newName,
 		Email:        newEmail,
+		Phone:        newPhone,
 		ResourceName: updated.ResourceName,
 		Etag:         updated.Etag,
 	}
@@ -181,4 +190,12 @@ func (s *Service) Search(query string, limit int) ([]storage.Contact, error) {
 // List returns all contacts for the account.
 func (s *Service) List() ([]storage.Contact, error) {
 	return s.store.ListContacts(s.accountID)
+}
+
+// phoneNumbers is the People API phone list for a single number; empty clears it.
+func phoneNumbers(p string) []*peoplev1.PhoneNumber {
+	if p == "" {
+		return nil
+	}
+	return []*peoplev1.PhoneNumber{{Value: p}}
 }

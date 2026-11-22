@@ -97,7 +97,7 @@ func newContactsCmd() *cobra.Command {
 				return err
 			}
 
-			c, err := svc.Create(ctx, addName, addEmail)
+			c, err := svc.Create(ctx, addName, addEmail, "")
 			if err != nil {
 				return err
 			}
@@ -150,7 +150,7 @@ func newContactsCmd() *cobra.Command {
 					}
 				}
 
-				c, err := svc.Update(ctx, id, editName, editEmail)
+				c, err := svc.Update(ctx, id, editName, editEmail, existing.Phone)
 				if err != nil {
 					return err
 				}

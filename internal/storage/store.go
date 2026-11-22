@@ -47,6 +47,7 @@ func migrate(db *sql.DB) error {
 	migrations := []string{
 		`ALTER TABLE contacts ADD COLUMN resource_name TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE contacts ADD COLUMN etag TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE contacts ADD COLUMN phone TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN has_attachments INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sync_config ADD COLUMN backfilled INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE messages ADD COLUMN message_id TEXT NOT NULL DEFAULT ''`,
@@ -60,6 +61,8 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE attachments ADD COLUMN attachment_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE attachments ADD COLUMN data BLOB`,
+		`ALTER TABLE pending_ops ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE sync_config ADD COLUMN max_emails INTEGER NOT NULL DEFAULT 0`,
 		// Repair rows stored before UpsertAttachments set the flag.
 		`UPDATE messages SET has_attachments = 1 WHERE has_attachments = 0 AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND a.account_id = messages.account_id)`,
 	}

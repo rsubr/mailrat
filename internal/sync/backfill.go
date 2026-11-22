@@ -26,13 +26,13 @@ func (m *Manager) ensureDefaultBackfillConfigs(accountID string, configs []stora
 	return configs, nil
 }
 
-func (m *Manager) runBackfillPlan(ctx context.Context, accountID string, plan backfillPlan, seen seenMessages) error {
+func (m *Manager) runBackfillPlan(ctx context.Context, accountID string, plan labelQueryPlan, seen seenMessages) error {
 	if plan.query == "" {
 		return m.markBackfilled(plan.config)
 	}
 
 	m.reporter.Printf("Backfilling %q (%s)...\n", plan.config.LabelName, plan.query)
-	if err := m.fetchAndStore(ctx, accountID, plan.query, 2000, seen); err != nil {
+	if _, err := m.fetchAndStore(ctx, accountID, plan.query, plan.limit, seen); err != nil {
 		m.reporter.Warnf("backfill for %q failed: %v\n", plan.config.LabelName, err)
 		return nil
 	}

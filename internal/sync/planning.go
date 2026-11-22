@@ -2,67 +2,54 @@ package sync
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
-type initialSyncPlan struct {
-	maxDays       int
-	allMailLabels []labelQueryPlan
-}
-
 type labelQueryPlan struct {
 	config storage.SyncConfig
 	query  string
+	limit  int64 // 0 = unlimited
 }
 
-type backfillPlan struct {
-	config storage.SyncConfig
-	query  string
-}
+type backfillPlan = labelQueryPlan
 
-func buildInitialSyncPlan(defaultDays int, configs []storage.SyncConfig) initialSyncPlan {
-	plan := initialSyncPlan{maxDays: defaultDays}
-	for _, cfg := range configs {
-		switch {
-		case cfg.DaysToSync == 0:
-			if query := labelIDToGmailQuery(cfg.LabelID, cfg.LabelName); query != "" {
-				plan.allMailLabels = append(plan.allMailLabels, labelQueryPlan{config: cfg, query: query})
-			}
-		case cfg.DaysToSync > plan.maxDays:
-			plan.maxDays = cfg.DaysToSync
-		}
+// scopeQuery turns a label's sync scope into a Gmail query and a result cap:
+// everything, last N days (newer_than), or the newest N emails (limit).
+func scopeQuery(c storage.SyncConfig) (query string, limit int64) {
+	labelQ := labelIDToGmailQuery(c.LabelID, c.LabelName)
+	switch {
+	case labelQ == "":
+		return "", 0
+	case c.MaxEmails > 0:
+		return labelQ, int64(c.MaxEmails)
+	case c.DaysToSync == 0:
+		return labelQ, 0
+	default:
+		return fmt.Sprintf("%s newer_than:%dd", labelQ, c.DaysToSync), 0
 	}
-	return plan
 }
 
-func initialSyncQuery(maxDays int) string {
-	return fmt.Sprintf("newer_than:%dd", maxDays)
-}
-
-func buildBackfillPlans(configs []storage.SyncConfig) []backfillPlan {
-	plans := make([]backfillPlan, 0, len(configs))
+// buildLabelPlans returns one plan per config; labels whose query cannot be
+// built are dropped.
+func buildLabelPlans(configs []storage.SyncConfig, onlyPending bool) []labelQueryPlan {
+	plans := make([]labelQueryPlan, 0, len(configs))
 	for _, cfg := range configs {
-		if cfg.Backfilled {
+		if onlyPending && cfg.Backfilled {
 			continue
 		}
-		plans = append(plans, backfillPlan{
-			config: cfg,
-			query:  buildBackfillQuery(cfg),
-		})
+		q, limit := scopeQuery(cfg)
+		plans = append(plans, labelQueryPlan{config: cfg, query: q, limit: limit})
 	}
 	return plans
 }
 
-func buildBackfillQuery(c storage.SyncConfig) string {
-	labelQ := labelIDToGmailQuery(c.LabelID, c.LabelName)
-	if labelQ == "" {
+func initialSyncQuery(maxDays int) string {
+	if maxDays <= 0 {
 		return ""
 	}
-	if c.DaysToSync == 0 {
-		return labelQ
-	}
-	return fmt.Sprintf("%s newer_than:%dd", labelQ, c.DaysToSync)
+	return fmt.Sprintf("newer_than:%dd", maxDays)
 }
 
 func attachmentLabelIDs(configs []storage.SyncConfig) []string {
@@ -91,13 +78,18 @@ func labelIDToGmailQuery(id, name string) string {
 		return "is:starred"
 	case "SENT":
 		return "in:sent"
-	case "DRAFTS":
+	case "DRAFT", "DRAFTS":
 		return "in:drafts"
+	case "IMPORTANT":
+		return "is:important"
 	case "SPAM":
 		return "in:spam"
 	case "TRASH":
 		return "in:trash"
 	default:
+		if strings.ContainsAny(name, " \t") {
+			return `label:"` + name + `"`
+		}
 		if name != "" {
 			return "label:" + name
 		}

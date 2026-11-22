@@ -137,3 +137,32 @@ func TestDraftCRUD(t *testing.T) {
 		t.Fatal("expected error for deleted draft")
 	}
 }
+
+func TestSyncConfigScopeChangeResetsBackfill(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.UpsertAccount(storage.Account{ID: "acc1", Email: "t@example.com", TokenJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := storage.SyncConfig{LabelID: "INBOX", AccountID: "acc1", LabelName: "INBOX", MaxEmails: 100}
+	if err := s.UpsertSyncConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkSyncConfigBackfilled("INBOX", "acc1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertSyncConfig(cfg); err != nil { // unchanged: stays backfilled
+		t.Fatal(err)
+	}
+	got, _ := s.ListSyncConfigs("acc1")
+	if len(got) != 1 || !got[0].Backfilled || got[0].MaxEmails != 100 {
+		t.Fatalf("after no-op save: %+v", got)
+	}
+	cfg.MaxEmails = 500 // scope changed: must backfill again
+	if err := s.UpsertSyncConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.ListSyncConfigs("acc1")
+	if got[0].Backfilled || got[0].MaxEmails != 500 {
+		t.Fatalf("after scope change: %+v", got)
+	}
+}

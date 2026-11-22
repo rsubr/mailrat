@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	stdsync "sync"
 
 	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/storage"
@@ -22,6 +23,9 @@ type historyStats struct {
 	added        int
 	labelChanges int
 }
+
+// maxParallel bounds concurrent full-message fetches.
+const maxParallel = 5
 
 func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta) error {
 	msg := storage.Message{
@@ -55,21 +59,24 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 	return nil
 }
 
-func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEvent) (historyStats, error) {
+// applyHistoryEvents applies label changes; messages in skip were just fetched
+// fresh from Gmail, so their labels are already current.
+func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEvent, skip map[string]struct{}) (historyStats, error) {
 	var stats historyStats
 	for _, event := range events {
 		switch {
-		case event.MessageAdded != nil:
-			if err := m.storeMessageMetadata(accountID, *event.MessageAdded); err != nil {
-				return stats, err
-			}
-			stats.added++
 		case event.LabelsAdded != nil:
+			if _, fresh := skip[event.LabelsAdded.MessageID]; fresh {
+				continue
+			}
 			if err := m.applyAddedLabels(accountID, event.LabelsAdded.MessageID, event.LabelsAdded.LabelIDs); err != nil {
 				return stats, err
 			}
 			stats.labelChanges++
 		case event.LabelsRemoved != nil:
+			if _, fresh := skip[event.LabelsRemoved.MessageID]; fresh {
+				continue
+			}
 			if err := m.applyRemovedLabels(accountID, event.LabelsRemoved.MessageID, event.LabelsRemoved.LabelIDs); err != nil {
 				return stats, err
 			}
@@ -98,12 +105,35 @@ func (m *Manager) applyRemovedLabels(accountID, messageID string, labelIDs []str
 }
 
 func (m *Manager) fetchBodiesIntoStore(ctx context.Context, accountID string, msgs []storage.Message) error {
-	for _, msg := range msgs {
-		if err := m.fetchAndStoreBody(ctx, accountID, msg); err != nil {
-			return err
-		}
+	return forEachParallel(len(msgs), func(i int) error {
+		return m.fetchAndStoreBody(ctx, accountID, msgs[i])
+	})
+}
+
+// forEachParallel runs fn(0..n-1) on up to maxParallel goroutines and returns the first error.
+func forEachParallel(n int, fn func(i int) error) error {
+	var (
+		wg       stdsync.WaitGroup
+		mu       stdsync.Mutex
+		firstErr error
+	)
+	sem := make(chan struct{}, maxParallel)
+	for i := 0; i < n; i++ {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			if err := fn(i); err != nil {
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = err
+				}
+				mu.Unlock()
+			}
+		}()
 	}
-	return nil
+	wg.Wait()
+	return firstErr
 }
 
 func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg storage.Message) error {
@@ -115,7 +145,10 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 
 	msg.Body = full.Body
 	msg.CacheState = storage.CacheBodyCached
-	if err := m.store.UpsertMessage(msg); err != nil {
+	m.writeMu.Lock()
+	err = m.store.UpsertMessage(msg)
+	m.writeMu.Unlock()
+	if err != nil {
 		return err
 	}
 
@@ -142,6 +175,8 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 			Data:         data,
 		}
 	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
 	return m.store.UpsertAttachments(accountID, msg.ID, atts)
 }
 

@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS pending_ops (
     account_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
     created_at INTEGER NOT NULL DEFAULT 0,
+    attempts   INTEGER NOT NULL DEFAULT 0,
     UNIQUE (op_type, account_id, message_id)
 );
 
@@ -86,6 +87,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     email         TEXT NOT NULL,
     resource_name TEXT NOT NULL DEFAULT '',
     etag          TEXT NOT NULL DEFAULT '',
+    phone         TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
@@ -106,6 +108,7 @@ CREATE TABLE IF NOT EXISTS sync_config (
     days_to_sync      INTEGER NOT NULL DEFAULT 30,
     fetch_attachments INTEGER NOT NULL DEFAULT 0,
     backfilled        INTEGER NOT NULL DEFAULT 0,
+    max_emails        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (label_id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
