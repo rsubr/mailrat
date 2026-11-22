@@ -27,6 +27,21 @@ type GlobalSettingsItem struct {
 	DefaultAccountID string
 }
 
+// Sync scope modes for SyncConfigItem.
+const (
+	SyncModeAll   = "all"   // every message with the label
+	SyncModeDays  = "days"  // messages from the last Value days
+	SyncModeCount = "count" // the newest Value messages
+)
+
+// SyncConfigItem is how much mail of one label is kept in sync.
+type SyncConfigItem struct {
+	LabelID   string
+	LabelName string
+	Mode      string
+	Value     int // days or message count; unused for SyncModeAll
+}
+
 // ThreadItem is the frontend representation of an inbox thread.
 type ThreadItem struct {
 	ID             string
@@ -80,8 +95,12 @@ type LabelItem struct {
 
 // ContactItem is the frontend representation of an address book contact.
 type ContactItem struct {
-	Name  string
-	Email string
+	ID        string // storage id; empty for an address that is not (yet) a saved contact
+	AccountID string
+	Name      string
+	Email     string
+	Phone     string
+	Count     int // messages exchanged, set only by FrequentAddresses
 }
 
 // AttachmentDataItem carries raw attachment bytes for the frontend.
@@ -185,7 +204,7 @@ func accountsToItems(accs []storage.Account) []AccountItem {
 func contactsToItems(contacts []storage.Contact) []ContactItem {
 	out := make([]ContactItem, len(contacts))
 	for i, c := range contacts {
-		out[i] = ContactItem{Name: c.Name, Email: c.Email}
+		out[i] = ContactItem{ID: c.ID, AccountID: c.AccountID, Name: c.Name, Email: c.Email, Phone: c.Phone}
 	}
 	return out
 }

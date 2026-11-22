@@ -2,6 +2,7 @@ package desktop
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,9 @@ type App struct {
 
 	errMu  sync.Mutex
 	errLog []APIError
+
+	queue  *mail.Queue // optimistic mutations awaiting Gmail
+	syncMu sync.Mutex
 
 	contactsMu     sync.Mutex
 	contactsSynced map[string]time.Time
@@ -67,6 +71,8 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.store = store
+	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)
+	go a.queue.Run(ctx)
 
 	credPath := filepath.Join(dir, "credentials.json")
 	mgr, err := accounts.NewManager(store, credPath)
@@ -523,277 +529,299 @@ func (a *App) SendMessage(msg OutboundMsg) error {
 	return err
 }
 
-// MarkMessageRead removes the UNREAD label from a message.
-// Optimistically updates SQLite first; queues the Gmail API call if offline.
+// MarkMessageRead removes the UNREAD label from a message. The change is
+// applied locally at once and sent to Gmail in the background.
 func (a *App) MarkMessageRead(accountID, messageID string) error {
-	if a.store != nil {
-		if msg, err := a.store.GetMessage(accountID, messageID); err == nil {
-			msg.IsUnread = false
-			_ = a.store.UpsertMessage(msg)
-		}
-	}
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
-		return nil
-	}
-	if err := client.ModifyLabels(a.ctx, messageID, nil, []string{mail.LabelUnread}); err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkRead, accountID, messageID)
-	}
-	return nil
+	return a.enqueue(storage.OpMarkRead, accountID, messageID)
 }
 
-// MarkMessageUnread adds the UNREAD label to a message.
-// Optimistically updates SQLite first; queues the Gmail API call if offline.
+// MarkMessageUnread adds the UNREAD label to a message (see MarkMessageRead).
 func (a *App) MarkMessageUnread(accountID, messageID string) error {
-	if a.store != nil {
-		if msg, err := a.store.GetMessage(accountID, messageID); err == nil {
-			msg.IsUnread = true
-			_ = a.store.UpsertMessage(msg)
-		}
-	}
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
-		return nil
-	}
-	if err := client.ModifyLabels(a.ctx, messageID, []string{mail.LabelUnread}, nil); err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkUnread, accountID, messageID)
-	}
-	return nil
+	return a.enqueue(storage.OpMarkUnread, accountID, messageID)
 }
 
 // TrashThread moves all messages in a thread to the Trash.
-// If offline, queues the operation for replay on the next sync.
 func (a *App) TrashThread(accountID, threadID string) error {
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		_ = a.store.AddPendingOp(storage.OpTrashThread, accountID, threadID)
-		return nil
-	}
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
-	}
-	svc := mail.NewLabelService(a.store, client)
-	for _, msg := range msgs {
-		if err := svc.Trash(a.ctx, accountID, msg.ID); err != nil {
-			_ = a.store.AddPendingOp(storage.OpTrashThread, accountID, threadID)
-			return nil
-		}
-	}
-	a.emitEvent("inbox:updated", nil)
-	return nil
+	return a.enqueue(storage.OpTrashThread, accountID, threadID)
 }
 
 // ArchiveThread removes the Inbox label from all messages in a thread.
 func (a *App) ArchiveThread(accountID, threadID string) error {
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		return err
-	}
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
-	}
-	svc := mail.NewLabelService(a.store, client)
-	for _, msg := range msgs {
-		if err := svc.Archive(a.ctx, accountID, msg.ID); err != nil {
-			return err
-		}
-	}
-	a.emitEvent("inbox:updated", nil)
-	return nil
+	return a.enqueue(storage.OpArchive, accountID, threadID)
 }
 
-// MarkThreadSpam moves all messages in a thread to Spam and removes from Inbox.
-// If offline, queues the operation for replay on the next sync.
+// MarkThreadSpam moves all messages in a thread to Spam and removes them from Inbox.
 func (a *App) MarkThreadSpam(accountID, threadID string) error {
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkSpam, accountID, threadID)
-		return nil
-	}
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
-	}
-	svc := mail.NewLabelService(a.store, client)
-	for _, msg := range msgs {
-		if err := svc.MarkAsSpam(a.ctx, accountID, msg.ID); err != nil {
-			_ = a.store.AddPendingOp(storage.OpMarkSpam, accountID, threadID)
-			return nil
-		}
-	}
-	a.emitEvent("inbox:updated", nil)
-	return nil
+	return a.enqueue(storage.OpMarkSpam, accountID, threadID)
 }
 
 // MarkThreadNotSpam moves all messages in a thread from Spam to Inbox.
-// If offline, queues the operation for replay on the next sync.
 func (a *App) MarkThreadNotSpam(accountID, threadID string) error {
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		_ = a.store.AddPendingOp(storage.OpMarkNotSpam, accountID, threadID)
-		return nil
-	}
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
-	}
-	svc := mail.NewLabelService(a.store, client)
-	for _, msg := range msgs {
-		if err := svc.MarkAsNotSpam(a.ctx, accountID, msg.ID); err != nil {
-			_ = a.store.AddPendingOp(storage.OpMarkNotSpam, accountID, threadID)
-			return nil
-		}
-	}
-	a.emitEvent("inbox:updated", nil)
-	return nil
+	return a.enqueue(storage.OpMarkNotSpam, accountID, threadID)
 }
 
-// SetThreadLabel adds (on) or removes a system label such as STARRED or
-// IMPORTANT on every message in a thread. Needs the network.
+// SetThreadLabel adds (on) or removes a label such as STARRED or IMPORTANT on
+// every message in a thread.
 func (a *App) SetThreadLabel(accountID, threadID, labelID string, on bool) error {
-	client, err := a.gmailClient(accountID)
-	if err != nil {
-		return err
+	op := storage.OpRemoveLabel
+	if on {
+		op = storage.OpAddLabel
 	}
-	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
-	if err != nil {
-		return err
+	return a.enqueue(op+labelID, accountID, threadID)
+}
+
+// enqueue applies a mutation locally and queues it for Gmail; it never waits on the network.
+func (a *App) enqueue(opType, accountID, targetID string) error {
+	if a.queue == nil {
+		return fmt.Errorf("store not initialised")
 	}
-	svc := mail.NewLabelService(a.store, client)
-	for _, msg := range msgs {
-		if on {
-			err = svc.ApplyLabel(a.ctx, accountID, msg.ID, labelID)
-		} else {
-			err = svc.RemoveLabel(a.ctx, accountID, msg.ID, labelID)
-		}
-		if err != nil {
-			return err
-		}
+	if err := a.queue.Enqueue(opType, accountID, targetID); err != nil {
+		return err
 	}
 	a.emitEvent("inbox:updated", nil)
 	return nil
 }
 
-// applyPendingOp applies a single pending operation via the Gmail API.
-func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp, client *gmail.Client) error {
-	switch op.OpType {
-	case storage.OpMarkRead:
-		return client.ModifyLabels(ctx, op.MessageID, nil, []string{mail.LabelUnread})
-	case storage.OpMarkUnread:
-		return client.ModifyLabels(ctx, op.MessageID, []string{mail.LabelUnread}, nil)
-	case storage.OpTrashThread:
-		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-		if err != nil {
-			return err
-		}
-		for _, msg := range msgs {
-			if err := client.TrashMessage(ctx, msg.ID); err != nil {
-				return err
-			}
-		}
-	case storage.OpMarkSpam:
-		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-		if err != nil {
-			return err
-		}
-		for _, msg := range msgs {
-			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelSpam}, []string{mail.LabelInbox}); err != nil {
-				return err
-			}
-		}
-	case storage.OpMarkNotSpam:
-		msgs, err := a.store.ListMessagesByThread(op.AccountID, op.MessageID)
-		if err != nil {
-			return err
-		}
-		for _, msg := range msgs {
-			if err := client.ModifyLabels(ctx, msg.ID, []string{mail.LabelInbox}, []string{mail.LabelSpam}); err != nil {
-				return err
-			}
-		}
+// applyPendingOp sends one queued operation to Gmail.
+func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp) error {
+	if a.accounts == nil {
+		return fmt.Errorf("no accounts configured")
 	}
-	return nil
+	client, err := a.gmailClient(op.AccountID)
+	if err != nil {
+		return err
+	}
+	return mail.ApplyOpRemote(ctx, client, op)
 }
 
-// DrainPendingOps replays queued offline operations against the Gmail API.
-// Called after a successful sync when connectivity is confirmed.
+// rollbackOp reconciles local state with Gmail after an operation was abandoned.
+func (a *App) rollbackOp(op storage.PendingOp, cause error) {
+	a.addAPIError(fmt.Sprintf("%s failed and was undone: %v", op.OpType, cause))
+	go func() {
+		client, err := a.gmailClient(op.AccountID)
+		if err != nil {
+			return
+		}
+		mgr := mailsync.NewManager(a.store, client)
+		if mail.OpIsThread(op.OpType) {
+			err = mgr.RefreshThread(a.ctx, op.AccountID, op.MessageID)
+		} else {
+			err = mgr.RefreshMessage(a.ctx, op.AccountID, op.MessageID)
+		}
+		if err == nil {
+			a.emitEvent("inbox:updated", nil)
+		}
+	}()
+}
+
+// DrainPendingOps replays queued operations against Gmail now.
 func (a *App) DrainPendingOps() {
-	if a.store == nil || a.accounts == nil {
-		return
-	}
-	ops, err := a.store.ListPendingOps()
-	if err != nil || len(ops) == 0 {
-		return
-	}
-	ctx := a.ctx
-	clients := make(map[string]*gmail.Client)
-	for _, op := range ops {
-		client, ok := clients[op.AccountID]
-		if !ok {
-			client, err = a.gmailClient(op.AccountID)
-			if err != nil {
-				continue
-			}
-			clients[op.AccountID] = client
-		}
-		if err := a.applyPendingOp(ctx, op, client); err == nil {
-			_ = a.store.DeletePendingOp(op.ID)
-		}
+	if a.queue != nil {
+		a.queue.Drain(a.ctx)
 	}
 }
 
 // Sync runs an incremental sync. Pass accountID="unified" to sync all accounts.
+// Syncs are serialised; accounts within one sync run concurrently.
 func (a *App) Sync(accountID string) error {
 	if a.accounts == nil {
 		return fmt.Errorf("no accounts configured")
 	}
+	a.syncMu.Lock()
+	defer a.syncMu.Unlock()
+	// Flush local changes first so a sync cannot overwrite them with stale state.
+	a.DrainPendingOps()
 	accs, err := a.store.ListAccounts()
 	if err != nil {
 		return err
 	}
+	var wg sync.WaitGroup
 	for _, acc := range accs {
 		if accountID != "" && accountID != "unified" && acc.ID != accountID {
 			continue
 		}
-		client, err := a.gmailClient(acc.ID)
-		if err != nil {
-			a.addAPIError(fmt.Sprintf("sync client %s: %v", acc.Email, err))
-			continue
-		}
-		a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
-		mgr := mailsync.NewManager(a.store, client)
-		stored, _ := a.store.GetAccount(acc.ID)
-		if stored.HistoryID == "" {
-			st, _ := a.store.GetAccountSettings(acc.ID)
-			days := syncPeriodToDays(st.SyncPeriod)
-			configs, _ := a.store.ListSyncConfigs(acc.ID)
-			if err := mgr.InitialSync(a.ctx, acc.ID, days, configs); err != nil {
-				a.addAPIError(fmt.Sprintf("initial sync %s: %v", acc.Email, err))
-			}
-		} else if err := mgr.IncrementalSync(a.ctx, acc.ID); err != nil {
-			a.addAPIError(fmt.Sprintf("sync %s: %v", acc.Email, err))
-		} else {
-			// Fetch bodies + attachment binaries for messages added by the incremental sync.
-			if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
-				a.addAPIError(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
-			}
-			// Download missing attachment binaries for already-cached messages (per label policy).
-			configs, _ := a.store.ListSyncConfigs(acc.ID)
-			if err := mgr.FetchMissingAttachments(a.ctx, acc.ID, configs); err != nil {
-				a.addAPIError(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
-			}
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			a.syncAccount(acc)
+		}()
 	}
+	wg.Wait()
 	a.emitEvent("sync:complete", nil)
 	a.emitEvent("inbox:updated", nil)
 	for _, acc := range accs {
 		if accountID == "" || accountID == "unified" || acc.ID == accountID {
 			go a.syncContacts(acc.ID, acc.Email)
 		}
+	}
+	return nil
+}
+
+func (a *App) syncAccount(acc storage.Account) {
+	client, err := a.gmailClient(acc.ID)
+	if err != nil {
+		a.addAPIError(fmt.Sprintf("sync client %s: %v", acc.Email, err))
+		return
+	}
+	a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
+	mgr := mailsync.NewManager(a.store, client)
+	stored, _ := a.store.GetAccount(acc.ID)
+	if stored.HistoryID == "" {
+		a.initialSync(mgr, acc)
+		return
+	}
+	err = mgr.IncrementalSync(a.ctx, acc.ID)
+	if errors.Is(err, gmail.ErrHistoryExpired) {
+		_ = a.store.UpdateHistoryID(acc.ID, "")
+		a.initialSync(mgr, acc)
+		return
+	}
+	if err != nil {
+		a.addAPIError(fmt.Sprintf("sync %s: %v", acc.Email, err))
+		return
+	}
+	// Labels whose sync scope changed (or never ran) are filled in now.
+	configs, _ := a.store.ListSyncConfigs(acc.ID)
+	if err := mgr.BackfillFromConfigs(a.ctx, acc.ID, configs); err != nil {
+		a.addAPIError(fmt.Sprintf("backfill %s: %v", acc.Email, err))
+	}
+	// Fetch bodies + attachment binaries for messages added by the incremental sync.
+	if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
+		a.addAPIError(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
+	}
+	// Download missing attachment binaries for already-cached messages (per label policy).
+	configs, _ = a.store.ListSyncConfigs(acc.ID)
+	if err := mgr.FetchMissingAttachments(a.ctx, acc.ID, configs); err != nil {
+		a.addAPIError(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
+	}
+}
+
+func (a *App) initialSync(mgr *mailsync.Manager, acc storage.Account) {
+	st, _ := a.store.GetAccountSettings(acc.ID)
+	configs, _ := a.store.ListSyncConfigs(acc.ID)
+	if err := mgr.InitialSync(a.ctx, acc.ID, syncPeriodToDays(st.SyncPeriod), configs); err != nil {
+		a.addAPIError(fmt.Sprintf("initial sync %s: %v", acc.Email, err))
+	}
+}
+
+// olderBatch is how many older messages one scroll-to-load-more request fetches.
+const olderBatch = 100
+
+// LoadOlder fetches mail older than what is stored locally for a label and
+// returns how many messages were added. Pass accountID="unified" or "" for all accounts.
+func (a *App) LoadOlder(accountID, labelID string) (int, error) {
+	if a.store == nil || a.accounts == nil {
+		return 0, nil
+	}
+	accs, err := a.store.ListAccounts()
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	var firstErr error
+	for _, acc := range accs {
+		if accountID != "" && accountID != "unified" && acc.ID != accountID {
+			continue
+		}
+		client, err := a.gmailClient(acc.ID)
+		if err == nil {
+			var n int
+			n, err = mailsync.NewManager(a.store, client).LoadOlder(a.ctx, acc.ID, labelID, olderBatch)
+			total += n
+		}
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return total, firstErr
+}
+
+// GetSyncConfigs returns the effective per-label sync scope for an account:
+// stored choices, or the defaults (Inbox and Starred sync everything; other
+// labels use the account's sync period).
+func (a *App) GetSyncConfigs(accountID string) ([]SyncConfigItem, error) {
+	if a.store == nil {
+		return nil, nil
+	}
+	labels, err := a.store.ListLabels(accountID)
+	if err != nil {
+		return nil, err
+	}
+	configs, err := a.store.ListSyncConfigs(accountID)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]storage.SyncConfig, len(configs))
+	for _, c := range configs {
+		byID[c.LabelID] = c
+	}
+	st, _ := a.store.GetAccountSettings(accountID)
+	defaultDays := syncPeriodToDays(st.SyncPeriod)
+	var out []SyncConfigItem
+	for _, l := range labels {
+		if !syncableLabel(l) {
+			continue
+		}
+		c, ok := byID[l.ID]
+		if !ok {
+			c = storage.SyncConfig{DaysToSync: defaultDays}
+			if l.ID == "INBOX" || l.ID == "STARRED" {
+				c.DaysToSync = 0
+			}
+		}
+		item := SyncConfigItem{LabelID: l.ID, LabelName: l.Name, Mode: SyncModeAll}
+		switch {
+		case c.MaxEmails > 0:
+			item.Mode, item.Value = SyncModeCount, c.MaxEmails
+		case c.DaysToSync > 0:
+			item.Mode, item.Value = SyncModeDays, c.DaysToSync
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+// syncableLabel limits the settings list to labels users browse.
+func syncableLabel(l storage.Label) bool {
+	if l.LabelType == "user" {
+		return true
+	}
+	switch l.ID {
+	case "INBOX", "STARRED", "SENT", "IMPORTANT", "DRAFT", "SPAM", "TRASH":
+		return true
+	}
+	return false
+}
+
+// SetSyncConfig persists one label's sync scope and starts a sync to honour it.
+func (a *App) SetSyncConfig(accountID string, item SyncConfigItem) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	cfg := storage.SyncConfig{
+		LabelID:          item.LabelID,
+		AccountID:        accountID,
+		LabelName:        item.LabelName,
+		FetchAttachments: item.LabelID == "INBOX" || item.LabelID == "STARRED",
+	}
+	if existing, err := a.store.ListSyncConfigs(accountID); err == nil {
+		for _, c := range existing {
+			if c.LabelID == item.LabelID {
+				cfg.FetchAttachments = c.FetchAttachments
+			}
+		}
+	}
+	switch item.Mode {
+	case SyncModeDays:
+		cfg.DaysToSync = max(item.Value, 1)
+	case SyncModeCount:
+		cfg.MaxEmails = max(item.Value, 1)
+	}
+	if err := a.store.UpsertSyncConfig(cfg); err != nil {
+		return err
+	}
+	if a.accounts != nil {
+		go func() { _ = a.Sync(accountID) }()
 	}
 	return nil
 }
@@ -827,8 +855,8 @@ func (a *App) syncContacts(accountID, email string) {
 	}
 }
 
-// SearchContacts returns contacts matching the query string (name or email prefix).
-// Pass accountID="unified" or "" to search across all accounts.
+// SearchContacts returns contacts matching the query string, prefix matches first
+// (see rankContacts). Pass accountID="unified" or "" to search across all accounts.
 func (a *App) SearchContacts(accountID, query string, limit int) ([]ContactItem, error) {
 	if a.store == nil {
 		return nil, nil
@@ -839,14 +867,14 @@ func (a *App) SearchContacts(accountID, query string, limit int) ([]ContactItem,
 	var contacts []storage.Contact
 	var err error
 	if accountID == "" || accountID == "unified" {
-		contacts, err = a.store.SearchAllContacts(query, limit)
+		contacts, err = a.store.SearchAllContacts(query, searchPool)
 	} else {
-		contacts, err = a.store.SearchContacts(accountID, query, limit)
+		contacts, err = a.store.SearchContacts(accountID, query, searchPool)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return contactsToItems(contacts), nil
+	return rankContacts(contactsToItems(contacts), query, limit), nil
 }
 
 // GetLabels returns all labels for an account.
