@@ -75,12 +75,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check tap token
+      - name: Check tap deploy key
         env:
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
-          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
-            echo "::error::Secret HOMEBREW_TAP_TOKEN is not set. Create a fine-grained PAT with Contents: read/write on rsubr/homebrew-mailrat and add it as a repo secret named HOMEBREW_TAP_TOKEN."
+          if [ -z "$HOMEBREW_TAP_DEPLOY_KEY" ]; then
+            echo "::error::Secret HOMEBREW_TAP_DEPLOY_KEY is not set. Add a write deploy key to rsubr/homebrew-mailrat and store its private half as a repo secret named HOMEBREW_TAP_DEPLOY_KEY."
             exit 1
           fi
 
@@ -88,7 +88,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: rsubr/homebrew-mailrat
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 
       - name: Update cask
         env:
