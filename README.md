@@ -130,12 +130,11 @@ The `.app` also contains the command-line binary at `mailrat.app/Contents/MacOS/
 #### Install with Homebrew
 
 ```bash
-export HOMEBREW_GITHUB_API_TOKEN=<GitHub token with repo scope>   # this repo is private
 brew tap rsubr/mailrat
 brew install --cask mailrat
 ```
 
-Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); after tagging a release, update its version, sha256 and asset id.
+Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); after tagging a release, update its version and sha256.
 
 #### Signing in
 
