@@ -134,7 +134,7 @@ brew tap rsubr/mailrat
 brew install --cask mailrat
 ```
 
-Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); after tagging a release, update its version and sha256.
+Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); pushing a `v*` tag updates its version and sha256 automatically (the `update-tap` job in `build-macos.yml`). This needs a repo secret `HOMEBREW_TAP_TOKEN`: a fine-grained PAT with Contents read/write on `rsubr/homebrew-mailrat`.
 
 #### Signing in
 

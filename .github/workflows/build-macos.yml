@@ -68,3 +68,45 @@ jobs:
           files: |
             mailrat-macos-arm64.zip
             mailrat-macos-arm64.zip.sha256
+
+  update-tap:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check tap token
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_TOKEN" ]; then
+            echo "::error::Secret HOMEBREW_TAP_TOKEN is not set. Create a fine-grained PAT with Contents: read/write on rsubr/homebrew-mailrat and add it as a repo secret named HOMEBREW_TAP_TOKEN."
+            exit 1
+          fi
+
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: rsubr/homebrew-mailrat
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update cask
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          gh release download "$TAG" -R "${{ github.repository }}" -p mailrat-macos-arm64.zip -D "$RUNNER_TEMP"
+          sha=$(sha256sum "$RUNNER_TEMP/mailrat-macos-arm64.zip" | cut -d' ' -f1)
+          sed -i -E "s/^(  version \").*(\")/\1${version}\2/; s/^(  sha256 \").*(\")/\1${sha}\2/" Casks/mailrat.rb
+          grep -q "version \"${version}\"" Casks/mailrat.rb
+          grep -q "sha256 \"${sha}\"" Casks/mailrat.rb
+          if git diff --quiet; then
+            echo "Cask already at ${version}; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "mailrat ${version}"
+          git push
