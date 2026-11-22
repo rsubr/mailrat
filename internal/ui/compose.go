@@ -16,7 +16,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		return
 	}
 	w := u.app.NewWindow("New Message")
-	w.Resize(fyne.NewSize(680, 560))
+	w.Resize(fyne.NewSize(760, 600))
 
 	accountID := draft.AccountID
 	if accountID == "" {
@@ -47,10 +47,10 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	bcc.SetText(draft.Bcc)
 	subject := widget.NewEntry()
 	subject.SetText(draft.Subject)
-	body := widget.NewMultiLineEntry()
-	body.Wrapping = fyne.TextWrapWord
+	body := newBodyEntry(&suggester{canvas: w.Canvas()})
 	body.SetText(draft.Body)
 	body.CursorRow, body.CursorColumn = 0, 0
+	editor := u.richEditor(w, body, to, cc, func() string { return accountID })
 
 	form := widget.NewForm(
 		widget.NewFormItem("From", from),
@@ -70,7 +70,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}
 		msg := desktop.OutboundMsg{
 			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
-			Subject: subject.Text, Body: body.Text, InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
+			Subject: subject.Text, Body: markupToHTML(body.Text), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
 		}
 		send.Disable()
 		var err error
@@ -93,7 +93,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		})
 	}
 	buttons := container.NewHBox(discard, widget.NewLabel(""), send)
-	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(body)))
+	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(editor)))
 	w.Show()
 	if draft.To == "" {
 		w.Canvas().Focus(to)
@@ -112,55 +112,41 @@ func (u *UI) defaultAccountID() string {
 	return u.accounts[0].ID
 }
 
+// splitRecipient splits a comma-separated address field into the finished head
+// (kept verbatim) and the address token being typed.
+func splitRecipient(text string) (head, token string) {
+	i := strings.LastIndex(text, ",")
+	if i < 0 {
+		return "", strings.TrimSpace(text)
+	}
+	return text[:i+1] + " ", strings.TrimSpace(text[i+1:])
+}
+
 // recipientEntry is a text entry that suggests contacts for the address being typed.
-func (u *UI) recipientEntry(w fyne.Window, account func() string, name string) *widget.Entry {
-	e := widget.NewEntry()
+func (u *UI) recipientEntry(w fyne.Window, account func() string, name string) *suggestEntry {
+	sg := &suggester{canvas: w.Canvas()}
+	e := newSuggestEntry(sg)
 	e.SetPlaceHolder(name)
-	var popup *widget.PopUp
-	hide := func() {
-		if popup != nil {
-			popup.Hide()
-			popup = nil
-		}
+	sg.pick = func(c desktop.ContactItem) {
+		head, _ := splitRecipient(e.Text)
+		e.SetText(head + contactLabel(c) + ", ")
+		e.CursorColumn = len([]rune(e.Text))
+		e.Refresh()
 	}
 	e.OnChanged = func(text string) {
-		hide()
-		head, token := text, text
-		if i := strings.LastIndex(text, ","); i >= 0 {
-			head, token = text[:i+1]+" ", strings.TrimSpace(text[i+1:])
-		} else {
-			head = ""
+		sg.hide()
+		if e.quiet {
+			return
 		}
+		_, token := splitRecipient(text)
 		if len(token) < 2 {
 			return
 		}
 		var found []desktop.ContactItem
 		u.bg(func() { found, _ = u.be.SearchContacts(account(), token, 8) }, func() {
-			if len(found) == 0 || e.Text != text {
-				return
+			if e.Text == text {
+				sg.show(e, found)
 			}
-			hide()
-			list := container.NewVBox()
-			for _, c := range found {
-				c := c
-				label := c.Email
-				if c.Name != "" {
-					label = c.Name + " <" + c.Email + ">"
-				}
-				b := widget.NewButton(label, func() {
-					hide()
-					e.SetText(head + label + ", ")
-					e.CursorColumn = len(e.Text)
-					e.Refresh()
-				})
-				b.Alignment = widget.ButtonAlignLeading
-				b.Importance = widget.LowImportance
-				list.Add(b)
-			}
-			popup = widget.NewPopUp(list, w.Canvas())
-			pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(e)
-			popup.ShowAtPosition(pos.Add(fyne.NewPos(0, e.Size().Height)))
-			popup.Resize(fyne.NewSize(e.Size().Width, list.MinSize().Height))
 		})
 	}
 	return e

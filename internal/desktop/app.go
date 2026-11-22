@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mailrat/mailrat/internal/accounts"
+	"github.com/mailrat/mailrat/internal/contacts"
 	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
@@ -29,6 +30,9 @@ type App struct {
 
 	errMu  sync.Mutex
 	errLog []APIError
+
+	contactsMu     sync.Mutex
+	contactsSynced map[string]time.Time
 
 	loginMu     sync.Mutex
 	login       *accounts.Login
@@ -786,7 +790,41 @@ func (a *App) Sync(accountID string) error {
 	}
 	a.emitEvent("sync:complete", nil)
 	a.emitEvent("inbox:updated", nil)
+	for _, acc := range accs {
+		if accountID == "" || accountID == "unified" || acc.ID == accountID {
+			go a.syncContacts(acc.ID, acc.Email)
+		}
+	}
 	return nil
+}
+
+// contactsSyncEvery bounds how often the full People API list is re-fetched.
+const contactsSyncEvery = time.Hour
+
+// syncContacts refreshes an account's Google contacts for compose autocomplete.
+// Failures (for example a token granted without the contacts scope) are logged as
+// warnings only: mail works without contacts.
+func (a *App) syncContacts(accountID, email string) {
+	a.contactsMu.Lock()
+	if a.contactsSynced == nil {
+		a.contactsSynced = map[string]time.Time{}
+	}
+	if time.Since(a.contactsSynced[accountID]) < contactsSyncEvery {
+		a.contactsMu.Unlock()
+		return
+	}
+	a.contactsSynced[accountID] = time.Now()
+	a.contactsMu.Unlock()
+	httpClient, err := a.accounts.GetClient(a.ctx, accountID)
+	if err == nil {
+		var svc *contacts.Service
+		if svc, err = contacts.NewService(a.ctx, a.store, accountID, httpClient); err == nil {
+			err = svc.Sync(a.ctx)
+		}
+	}
+	if err != nil {
+		a.logWarning(fmt.Sprintf("contacts sync %s: %v", email, err))
+	}
 }
 
 // SearchContacts returns contacts matching the query string (name or email prefix).
