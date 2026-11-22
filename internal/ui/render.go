@@ -62,7 +62,7 @@ var urlRe = regexp.MustCompile(`https?://[^\s<>"')]+[^\s<>"').,;:!?]`)
 // backgrounds are dropped for the same reason.
 func renderMail(src string, o renderOpts) renderResult {
 	r := &htmlRenderer{opts: o}
-	if !strings.Contains(src, "<") {
+	if !isHTML(src) {
 		r.plain(src)
 		return r.out
 	}
@@ -218,6 +218,9 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 			r.ordered, r.n, r.inList = savedOrdered, savedN, savedIn
 			r.depth--
 			return
+		case "tr":
+			r.walkRow(n, st)
+			return
 		case "li":
 			r.flush()
 			indent := strings.Repeat("\u00a0\u00a0\u00a0\u00a0", max(r.depth, 1))
@@ -244,6 +247,58 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 	if block {
 		r.flush()
 	}
+}
+
+// walkRow renders a table row. Cells holding only inline content are laid out
+// side by side on one line, separated by " │ ", so data tables keep their
+// rows; cells with block content (layout tables) stack as before.
+func (r *htmlRenderer) walkRow(tr *html.Node, st textStyle) {
+	r.flush()
+	prevInline := false
+	for c := tr.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type != html.ElementNode || (c.Data != "td" && c.Data != "th") || skipElement(c) {
+			r.walk(c, st)
+			continue
+		}
+		if hasBlock(c) {
+			r.walk(c, st)
+			prevInline = false
+			continue
+		}
+		if strings.TrimSpace(nodeText(c)) == "" {
+			continue
+		}
+		if prevInline {
+			r.text(" │ ", textStyle{pre: true, quote: st.quote})
+		}
+		cs := r.styleFor(c, st)
+		for cc := c.FirstChild; cc != nil; cc = cc.NextSibling {
+			r.walk(cc, cs)
+		}
+		prevInline = true
+	}
+	r.flush()
+}
+
+// hasBlock reports whether n contains block-level content.
+func hasBlock(n *html.Node) bool {
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if c.Type == html.ElementNode && (isBlock(c.Data) || c.Data == "td" || c.Data == "th") || hasBlock(c) {
+			return true
+		}
+	}
+	return false
+}
+
+func nodeText(n *html.Node) string {
+	if n.Type == html.TextNode {
+		return n.Data
+	}
+	var b strings.Builder
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		b.WriteString(nodeText(c))
+	}
+	return b.String()
 }
 
 func (r *htmlRenderer) image(n *html.Node, st textStyle) {

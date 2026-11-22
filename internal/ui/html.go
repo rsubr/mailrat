@@ -9,9 +9,15 @@ import (
 
 var blankLines = regexp.MustCompile(`\n{3,}`)
 
+// htmlTagRe matches real HTML markup, so plain text that merely contains "<"
+// (quoted addresses, "<https://...>" links) is not mistaken for HTML.
+var htmlTagRe = regexp.MustCompile(`(?i)</?(html|head|body|div|p|br|span|table|tbody|tr|td|th|a|b|i|u|strong|em|ul|ol|li|h[1-6]|blockquote|img|font|center|pre|hr|style|meta)(\s[^>]*)?/?>|<!doctype|<!--`)
+
+func isHTML(s string) bool { return htmlTagRe.MatchString(s) }
+
 // htmlToText renders an HTML (or plain-text) mail body as readable plain text.
 func htmlToText(src string) string {
-	if !strings.Contains(src, "<") {
+	if !isHTML(src) {
 		return strings.TrimSpace(src)
 	}
 	doc, err := html.Parse(strings.NewReader(src))

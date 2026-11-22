@@ -216,3 +216,32 @@ func TestSafeLinkAndFormatting(t *testing.T) {
 		t.Error("<u> not underlined")
 	}
 }
+
+func plainTexts(res renderResult) string {
+	var b strings.Builder
+	for _, t := range texts(res) {
+		b.WriteString(t[0])
+	}
+	return b.String()
+}
+
+func TestRenderTableKeepsRowsTogether(t *testing.T) {
+	src := `<table><tr><th>Item</th><th>Qty</th></tr><tr><td>Apple</td><td>3</td></tr></table>`
+	got := plainTexts(renderMail(src, renderOpts{bg: lightBG, fg: lightFG}))
+	for _, want := range []string{"Item │ Qty", "Apple │ 3"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %q", want, got)
+		}
+	}
+}
+
+func TestRenderPlainTextWithAngleBrackets(t *testing.T) {
+	src := "Hi Bob,\nsee <https://example.com/x>\n\nFrom: Al <al@example.com>\nthanks"
+	if isHTML(src) {
+		t.Fatal("plain text with angle brackets detected as HTML")
+	}
+	got := plainTexts(renderMail(src, renderOpts{bg: lightBG, fg: lightFG}))
+	if !strings.Contains(got, "Hi Bob,\nsee <") || !strings.Contains(got, "al@example.com>\nthanks") {
+		t.Errorf("line breaks lost: %q", got)
+	}
+}

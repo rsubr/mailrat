@@ -1,16 +1,20 @@
 package gmail
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"math"
+	"mime"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"golang.org/x/net/html/charset"
 	gmailv1 "google.golang.org/api/gmail/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -431,22 +435,21 @@ func extractBody(payload *gmailv1.MessagePart) string {
 		return ""
 	}
 
-	// Prefer text/plain; fall back to text/html.
-	plain := extractPart(payload, mimeTextPlain)
-	if plain != "" {
-		return plain
+	// Prefer text/html (the renderer handles it and it carries the author's
+	// layout); fall back to text/plain.
+	if h := extractPart(payload, mimeTextHTML); strings.TrimSpace(h) != "" {
+		return h
 	}
-	return extractPart(payload, mimeTextHTML)
+	return extractPart(payload, mimeTextPlain)
 }
 
 func extractPart(part *gmailv1.MessagePart, mimeType string) string {
 	if part == nil {
 		return ""
 	}
-	if part.MimeType == mimeType && part.Body != nil && part.Body.Data != "" {
-		b, err := base64.URLEncoding.DecodeString(part.Body.Data)
-		if err == nil {
-			return string(b)
+	if strings.EqualFold(part.MimeType, mimeType) && part.Body != nil && part.Body.Data != "" {
+		if s, ok := decodePartBody(part); ok {
+			return s
 		}
 	}
 	for _, p := range part.Parts {
@@ -455,6 +458,32 @@ func extractPart(part *gmailv1.MessagePart, mimeType string) string {
 		}
 	}
 	return ""
+}
+
+// decodePartBody base64url-decodes a part body and converts it from the
+// charset declared in its Content-Type header to UTF-8.
+func decodePartBody(part *gmailv1.MessagePart) (string, bool) {
+	data := strings.TrimRight(part.Body.Data, "=")
+	b, err := base64.RawURLEncoding.DecodeString(data)
+	if err != nil {
+		return "", false
+	}
+	for _, h := range part.Headers {
+		if !strings.EqualFold(h.Name, "Content-Type") {
+			continue
+		}
+		_, params, err := mime.ParseMediaType(h.Value)
+		if err != nil || params["charset"] == "" {
+			break
+		}
+		if r, err := charset.NewReaderLabel(params["charset"], bytes.NewReader(b)); err == nil {
+			if conv, err := io.ReadAll(r); err == nil {
+				b = conv
+			}
+		}
+		break
+	}
+	return string(b), true
 }
 
 // extractAttachments walks the MIME part tree and returns attachment metadata.
