@@ -46,28 +46,32 @@ func (u *UI) refreshListHeader() {
 	u.listTitle.Refresh()
 }
 
-// threadRow is one cell of the list: unread dot, sender + count + time,
-// subject, and a snippet line with an optional label chip.
+// threadRow is one cell of the list, shaped like Gmail's. With the sidebar
+// expanded it has two lines (sender + time; "subject - snippet" + chips); with
+// the sidebar minimal it is a single wide line (sender | subject - snippet | time).
+// Unread rows are bold on a clear background; read rows are tinted.
 type threadRow struct {
 	widget.BaseWidget
+	bg      *canvas.Rectangle
 	dotFill *canvas.Circle
 	head    *widget.RichText
 	when    *widget.Label
-	subject *widget.Label
-	snippet *widget.Label
+	body    *widget.RichText
 	clip    *canvas.Image
 	star    *canvas.Image
 	chips   *fyne.Container
 	root    fyne.CanvasObject
 }
 
-func newThreadRow() *threadRow {
+const wideSenderWidth float32 = 190
+
+func newThreadRow(wide bool) *threadRow {
 	r := &threadRow{
+		bg:      canvas.NewRectangle(color.Transparent),
 		dotFill: canvas.NewCircle(color.Transparent),
 		head:    widget.NewRichText(),
 		when:    widget.NewLabel(""),
-		subject: widget.NewLabel(""),
-		snippet: widget.NewLabel(""),
+		body:    widget.NewRichText(),
 		clip:    canvas.NewImageFromResource(icon("clip", subtle())),
 		star:    canvas.NewImageFromResource(icon("star", color.NRGBA{0xff, 0xc1, 0x07, 0xff})),
 		chips:   container.NewHBox(),
@@ -75,18 +79,21 @@ func newThreadRow() *threadRow {
 	r.star.FillMode = canvas.ImageFillContain
 	r.star.SetMinSize(fyne.NewSize(14, 14))
 	r.head.Truncation = fyne.TextTruncateEllipsis
-	r.subject.Truncation = fyne.TextTruncateEllipsis
-	r.snippet.Truncation = fyne.TextTruncateEllipsis
-	r.snippet.Importance = widget.LowImportance
-	r.when.Importance = widget.LowImportance
+	r.body.Truncation = fyne.TextTruncateEllipsis
 	r.clip.FillMode = canvas.ImageFillContain
 	r.clip.SetMinSize(fyne.NewSize(14, 14))
 
 	gutter := container.NewGridWrap(fyne.NewSize(10, 10), r.dotFill)
 	left := container.NewVBox(spacer(0, 11), gutter)
-	headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when)), tight(r.head))
-	snipRow := container.NewBorder(nil, nil, nil, r.chips, tight(r.snippet))
-	r.root = container.New(layout.NewCustomPaddedLayout(3, 3, 2, 6), container.NewBorder(nil, nil, left, nil, container.NewVBox(headRow, tight(r.subject), snipRow)))
+	var content fyne.CanvasObject
+	if wide {
+		right := container.NewHBox(r.chips, container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when))
+		content = container.NewBorder(nil, nil, container.New(fixedWidth{wideSenderWidth}, tight(r.head)), right, tight(r.body))
+	} else {
+		headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when)), tight(r.head))
+		content = container.NewVBox(headRow, container.NewBorder(nil, nil, nil, r.chips, tight(r.body)))
+	}
+	r.root = container.NewStack(r.bg, container.New(layout.NewCustomPaddedLayout(3, 3, 2, 6), container.NewBorder(nil, nil, left, nil, content)))
 	r.ExtendBaseWidget(r)
 	return r
 }
@@ -96,14 +103,19 @@ func (r *threadRow) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimp
 func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 	if t.IsUnread {
 		r.dotFill.FillColor = col(theme.ColorNamePrimary)
+		r.bg.FillColor = color.Transparent
 	} else {
 		r.dotFill.FillColor = color.Transparent
+		c := color.NRGBAModel.Convert(col(colorChip)).(color.NRGBA)
+		c.A = 0x70
+		r.bg.FillColor = c
 	}
 	r.dotFill.Refresh()
+	r.bg.Refresh()
 
 	segs := []widget.RichTextSegment{&widget.TextSegment{
 		Text:  displayParticipants(t.Participants),
-		Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: true}, ColorName: theme.ColorNameForeground, Inline: true},
+		Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: t.IsUnread}, ColorName: theme.ColorNameForeground, Inline: true},
 	}}
 	if t.MessageCount > 1 {
 		segs = append(segs, &widget.TextSegment{
@@ -113,9 +125,13 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 	}
 	r.head.Segments = segs
 	r.head.Refresh()
+	r.when.TextStyle = fyne.TextStyle{Bold: t.IsUnread}
 	r.when.SetText(formatListDate(t.Date, time.Now()))
-	r.subject.SetText(t.Subject)
-	r.snippet.SetText(t.Snippet)
+	r.body.Segments = []widget.RichTextSegment{
+		&widget.TextSegment{Text: t.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: t.IsUnread}, ColorName: theme.ColorNameForeground, Inline: true}},
+		&widget.TextSegment{Text: " - " + t.Snippet, Style: widget.RichTextStyle{ColorName: theme.ColorNamePlaceHolder, Inline: true}},
+	}
+	r.body.Refresh()
 	if t.HasAttachments {
 		r.clip.Show()
 	} else {
@@ -173,7 +189,7 @@ func displayParticipants(s string) string {
 func (u *UI) newThreadList() *keyList {
 	l := &keyList{u: u}
 	l.Length = func() int { return len(u.threads) }
-	l.CreateItem = func() fyne.CanvasObject { return newThreadRow() }
+	l.CreateItem = func() fyne.CanvasObject { return newThreadRow(u.sidebarMini) }
 	l.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
 		if i >= len(u.threads) {
 			return

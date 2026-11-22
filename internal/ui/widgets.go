@@ -120,6 +120,17 @@ func dot(d float32, c color.Color) fyne.CanvasObject {
 	return container.NewGridWrap(fyne.NewSize(d, d), canvas.NewCircle(c))
 }
 
+// fixedWidth pins its single child to w wide, keeping the child's own height.
+type fixedWidth struct{ w float32 }
+
+func (f fixedWidth) MinSize(o []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(f.w, o[0].MinSize().Height)
+}
+func (f fixedWidth) Layout(o []fyne.CanvasObject, s fyne.Size) {
+	o[0].Move(fyne.NewPos(0, 0))
+	o[0].Resize(fyne.NewSize(f.w, s.Height))
+}
+
 func spacer(w, h float32) fyne.CanvasObject {
 	r := canvas.NewRectangle(color.Transparent)
 	r.SetMinSize(fyne.NewSize(w, h))

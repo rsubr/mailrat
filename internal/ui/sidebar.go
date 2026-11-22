@@ -73,8 +73,11 @@ func (u *UI) refreshSidebar() {
 func (u *UI) buildSidebar() fyne.CanvasObject {
 	bg := canvas.NewRectangle(col(colorSidebar))
 
+	if u.sidebarMini {
+		return u.buildMiniSidebar(bg)
+	}
 	compose := iconButton("compose", "New message", func() { u.compose(desktop.OutboundMsg{}) })
-	top := container.NewBorder(nil, nil, nil, compose, spacer(1, 1))
+	top := container.NewBorder(nil, nil, iconButton("menu", "Collapse sidebar", u.toggleSidebar), compose, spacer(1, 1))
 
 	tiles := []fyne.CanvasObject{u.accountTile(unified, "Unified", "inbox", color.NRGBA{0x0a, 0x84, 0xff, 0xff})}
 	for _, a := range u.accounts {
@@ -124,15 +127,56 @@ func (u *UI) toggleLabels() {
 	u.refreshSidebar()
 }
 
-func (u *UI) accountTile(id, name, glyph string, tint color.Color) fyne.CanvasObject {
-	var badge fyne.CanvasObject
+// buildMiniSidebar is the icon-only sidebar: menu toggle, compose, accounts,
+// mailboxes (no user labels) and footer actions.
+func (u *UI) buildMiniSidebar(bg fyne.CanvasObject) fyne.CanvasObject {
+	pick := func(id string, badge fyne.CanvasObject) fyne.CanvasObject {
+		return newTapRow(container.NewCenter(badge), u.activeAccount == id, func() { u.selectAccount(id) })
+	}
+	head := container.NewVBox(
+		container.NewCenter(iconButton("menu", "Expand sidebar", u.toggleSidebar)),
+		container.NewCenter(iconButton("compose", "New message", func() { u.compose(desktop.OutboundMsg{}) })),
+		pick(unified, u.accountBadge("Unified", "inbox", color.NRGBA{0x0a, 0x84, 0xff, 0xff})),
+	)
+	for _, a := range u.accounts {
+		name := a.DisplayName
+		if name == "" {
+			name = a.Email
+		}
+		head.Add(pick(a.ID, u.accountBadge(name, "", avatarColor(a.Email))))
+	}
+	favs, _ := u.mailboxes()
+	nav := []fyne.CanvasObject{u.miniNavRow(desktop.LabelItem{ID: "INBOX", Name: u.labelName("INBOX"), Type: "system"})}
+	for _, l := range favs {
+		nav = append(nav, u.miniNavRow(l))
+	}
+	footer := container.NewVBox(hline(), container.NewCenter(iconButton("settings", "Settings", u.openSettings)), container.NewCenter(iconButton("sync", "Check for new mail", u.syncNow)))
+	body := container.NewBorder(head, footer, nil, nil, container.NewVScroll(container.NewVBox(nav...)))
+	return container.NewStack(bg, body)
+}
+
+func (u *UI) miniNavRow(l desktop.LabelItem) fyne.CanvasObject {
+	glyph, tint := "tag", subtle()
+	if g, ok := labelIcons[l.ID]; ok {
+		glyph, tint = g.icon, g.col
+	}
+	img := canvas.NewImageFromResource(icon(glyph, tint))
+	img.FillMode = canvas.ImageFillContain
+	img.SetMinSize(fyne.NewSize(20, 28))
+	return newTapRow(container.NewCenter(img), u.activeLabel == l.ID && u.query == "", func() { u.selectLabel(l.ID) })
+}
+
+func (u *UI) accountBadge(name, glyph string, tint color.Color) fyne.CanvasObject {
 	if glyph != "" {
 		img := canvas.NewImageFromResource(icon(glyph, color.White))
 		img.FillMode = canvas.ImageFillContain
-		badge = container.NewGridWrap(fyne.NewSize(26, 26), container.NewStack(canvas.NewCircle(tint), container.NewPadded(img)))
-	} else {
-		badge = avatar(initials(name), 26, tint)
+		return container.NewGridWrap(fyne.NewSize(26, 26), container.NewStack(canvas.NewCircle(tint), container.NewPadded(img)))
 	}
+	return avatar(initials(name), 26, tint)
+}
+
+func (u *UI) accountTile(id, name, glyph string, tint color.Color) fyne.CanvasObject {
+	badge := u.accountBadge(name, glyph, tint)
 	label := widget.NewLabel(name)
 	label.Truncation = fyne.TextTruncateEllipsis
 	content := container.NewVBox(spacer(0, 2), container.NewHBox(badge), tight(label), spacer(0, 2))
