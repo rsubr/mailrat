@@ -93,14 +93,35 @@ func (u *UI) buildSidebar() fyne.CanvasObject {
 		nav = append(nav, u.navRow(l, 0, false))
 	}
 	if len(user) > 0 {
-		nav = append(nav, sectionHeader("Labels"))
-		nav = append(nav, u.userLabelRows(user)...)
+		nav = append(nav, u.labelsHeader())
+		if !u.labelsHidden {
+			nav = append(nav, u.userLabelRows(user)...)
+		}
 	}
 	scroll := container.NewVScroll(container.NewVBox(nav...))
 
 	head := container.NewVBox(container.NewPadded(top), container.NewPadded(tileGrid))
 	body := container.NewBorder(head, u.sidebarFooter(), nil, nil, scroll)
 	return container.NewStack(bg, body)
+}
+
+// labelsHeader is the "Labels" section title with a chevron that hides the
+// section; the choice persists in preferences.
+func (u *UI) labelsHeader() fyne.CanvasObject {
+	glyph := "chevrondown"
+	if u.labelsHidden {
+		glyph = "chevron"
+	}
+	chev := canvas.NewImageFromResource(icon(glyph, subtle()))
+	chev.FillMode = canvas.ImageFillContain
+	chev.SetMinSize(fyne.NewSize(14, 14))
+	return newTapRow(container.NewHBox(container.NewCenter(chev), sectionHeader("Labels")), false, u.toggleLabels)
+}
+
+func (u *UI) toggleLabels() {
+	u.labelsHidden = !u.labelsHidden
+	u.app.Preferences().SetBool(prefLabelsHidden, u.labelsHidden)
+	u.refreshSidebar()
 }
 
 func (u *UI) accountTile(id, name, glyph string, tint color.Color) fyne.CanvasObject {

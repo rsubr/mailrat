@@ -376,3 +376,21 @@ func TestGmailSearchKey(t *testing.T) {
 		t.Fatal("/ should focus search")
 	}
 }
+
+func TestLabelsSectionCollapsePersists(t *testing.T) {
+	u, _, _ := testUI(t)
+	if u.labelsHidden {
+		t.Fatal("labels should start expanded")
+	}
+	u.toggleLabels()
+	if !u.labelsHidden || !u.app.Preferences().Bool(prefLabelsHidden) {
+		t.Fatal("collapse not stored")
+	}
+	if u2 := newUI(u.app, &fakeBackend{}); !u2.labelsHidden {
+		t.Fatal("state not restored from preferences")
+	}
+	u.toggleLabels()
+	if u.labelsHidden || u.app.Preferences().Bool(prefLabelsHidden) {
+		t.Fatal("expand not stored")
+	}
+}

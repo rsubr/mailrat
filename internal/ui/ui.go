@@ -47,15 +47,16 @@ type UI struct {
 	loadGen     int
 	listErr     string
 
-	selected   *desktop.ThreadItem
-	messages   []desktop.MessageItem
-	openGroups map[string]bool // expanded nested labels, by full name
-	images     map[string]bool // messages whose remote images the user chose to load
-	collapsed  map[string]bool // message IDs the user toggled away from default
-	readTimer  *time.Timer
-	threadGen  int
-	syncStatus string
-	errCount   int
+	selected     *desktop.ThreadItem
+	messages     []desktop.MessageItem
+	openGroups   map[string]bool // expanded nested labels, by full name
+	labelsHidden bool            // sidebar Labels section collapsed (persisted)
+	images       map[string]bool // messages whose remote images the user chose to load
+	collapsed    map[string]bool // message IDs the user toggled away from default
+	readTimer    *time.Timer
+	threadGen    int
+	syncStatus   string
+	errCount     int
 
 	sidebar    *fyne.Container
 	listTitle  *widget.RichText
@@ -77,6 +78,8 @@ type UI struct {
 	settingsWin fyne.Window
 	loginDlg    dialog.Dialog
 }
+
+const prefLabelsHidden = "sidebar.labelsHidden"
 
 // Run builds the main window and blocks until it is closed.
 func Run(a fyne.App, be Backend) {
@@ -127,6 +130,7 @@ func (u *UI) refreshAll() {
 
 func newUI(a fyne.App, be Backend) *UI {
 	return &UI{
+		labelsHidden:  a.Preferences().Bool(prefLabelsHidden),
 		app:           a,
 		be:            be,
 		activeAccount: unified,
