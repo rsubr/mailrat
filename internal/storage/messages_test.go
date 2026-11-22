@@ -44,6 +44,27 @@ func TestUpsertMessagePreservesBodyAndAttachmentFlags(t *testing.T) {
 	}
 }
 
+// Body sync stores a message (flag 0) and then its attachments; storing
+// attachments must raise the flag or readers never load them.
+func TestUpsertAttachmentsSetsHasAttachments(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertAccount(storage.Account{ID: "acc1", Email: "test@example.com", TokenJSON: `{}`}) //nolint:errcheck
+	msg := storage.Message{ID: "msg1", ThreadID: "thr1", AccountID: "acc1", Subject: "Hi", InternalDate: time.Now().UnixMilli(), CacheState: storage.CacheBodyCached}
+	if err := s.UpsertMessage(msg); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertAttachments("acc1", "msg1", []storage.Attachment{{Name: "a.pdf", MimeType: "application/pdf", Size: 10, AttachmentID: "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetMessage("acc1", "msg1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.HasAttachments {
+		t.Fatal("has_attachments not set after UpsertAttachments")
+	}
+}
+
 func TestListUncachedBodiesForLabelsFiltersByLabel(t *testing.T) {
 	s := openTestStore(t)
 	s.UpsertAccount(storage.Account{ID: "acc1", Email: "test@example.com", TokenJSON: `{}`}) //nolint:errcheck

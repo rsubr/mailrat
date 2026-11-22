@@ -391,6 +391,42 @@ func buttonLabels(o fyne.CanvasObject) (out []string) {
 	return
 }
 
+func findTapRow(o fyne.CanvasObject) *tapRow {
+	if r, ok := o.(*tapRow); ok {
+		return r
+	}
+	if c, ok := o.(*fyne.Container); ok {
+		for _, ch := range c.Objects {
+			if r := findTapRow(ch); r != nil {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+func TestAttachmentCard(t *testing.T) {
+	u, _, _ := testUI(t)
+	pic := desktop.AttachmentItem{Name: "p.png", MimeType: "image/png", Size: 2048}
+	doc := desktop.AttachmentItem{Name: "a.pdf", MimeType: "application/pdf", Size: 10}
+	if attachmentIcon(pic) != "image" || attachmentIcon(doc) != "file" {
+		t.Fatal("wrong attachment icons")
+	}
+	tapped := false
+	r := findTapRow(u.attachmentCard(doc, func() { tapped = true }))
+	if r == nil {
+		t.Fatal("card has no tappable row")
+	}
+	r.Tapped(nil)
+	if !tapped {
+		t.Fatal("tapping the card did not fire")
+	}
+	body := u.messageBody(desktop.MessageItem{ID: "x", Body: "hi", Attachments: []desktop.AttachmentItem{pic, doc}})
+	if findTapRow(body) == nil {
+		t.Fatal("message body shows no attachment cards")
+	}
+}
+
 func TestReplyBarAtBottom(t *testing.T) {
 	u, _, _ := testUI(t)
 	u.list.Select(2)

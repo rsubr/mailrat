@@ -60,6 +60,8 @@ func migrate(db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE attachments ADD COLUMN attachment_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE attachments ADD COLUMN data BLOB`,
+		// Repair rows stored before UpsertAttachments set the flag.
+		`UPDATE messages SET has_attachments = 1 WHERE has_attachments = 0 AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND a.account_id = messages.account_id)`,
 	}
 	for _, m := range migrations {
 		db.Exec(m) //nolint:errcheck — column-already-exists errors are fine

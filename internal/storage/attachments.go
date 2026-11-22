@@ -39,6 +39,16 @@ func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Att
 		}
 	}
 
+	// The flag drives list paperclips and whether readers load attachments.
+	if len(attachments) > 0 {
+		if _, err := tx.Exec(
+			`UPDATE messages SET has_attachments = 1 WHERE id = ? AND account_id = ?`,
+			messageID, accountID,
+		); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 

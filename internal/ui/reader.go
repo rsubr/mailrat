@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -213,15 +214,39 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 	}
 	items = append(items, container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), body))
 	if len(m.Attachments) > 0 {
-		var chips []fyne.CanvasObject
+		var cards []fyne.CanvasObject
 		for _, a := range m.Attachments {
 			a := a
-			b := widget.NewButtonWithIcon(a.Name+"  "+humanSize(a.Size), icon("clip", fg()), func() { u.saveAttachment(m, a) })
-			chips = append(chips, b)
+			cards = append(cards, u.attachmentCard(a, func() { u.saveAttachment(m, a) }))
 		}
-		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(chips...)))
+		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(cards...)))
 	}
 	return container.NewVBox(items...)
+}
+
+// attachmentIcon picks the card icon: image for pictures, a document otherwise.
+func attachmentIcon(a desktop.AttachmentItem) string {
+	if strings.HasPrefix(a.MimeType, "image/") {
+		return "image"
+	}
+	return "file"
+}
+
+// attachmentCard is Gmail's bordered tile: icon, filename and size; tap saves.
+func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func()) fyne.CanvasObject {
+	name := widget.NewLabel(a.Name)
+	name.Truncation = fyne.TextTruncateEllipsis
+	size := widget.NewLabel(humanSize(a.Size))
+	size.Importance = widget.LowImportance
+	ic := widget.NewIcon(icon(attachmentIcon(a), fg()))
+	text := container.NewVBox(name, size)
+	inner := container.NewBorder(nil, nil, container.NewCenter(ic), nil, text)
+	border := canvas.NewRectangle(color.Transparent)
+	border.CornerRadius = 8
+	border.StrokeWidth = 1
+	border.StrokeColor = col(theme.ColorNameSeparator)
+	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(2, 2, 8, 8), inner), false, onTap)
+	return container.NewGridWrap(fyne.NewSize(220, 58), container.NewStack(border, tap))
 }
 
 func (u *UI) saveAttachment(m desktop.MessageItem, a desktop.AttachmentItem) {
