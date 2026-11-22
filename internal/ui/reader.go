@@ -219,7 +219,7 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 		var cards []fyne.CanvasObject
 		for _, a := range m.Attachments {
 			a := a
-			cards = append(cards, u.attachmentCard(a, func() { u.saveAttachment(m, a) }))
+			cards = append(cards, u.attachmentCard(a, func() { u.openAttachment(m, a) }, func(p fyne.Position) { u.attachmentMenu(m, a, p) }))
 		}
 		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(cards...)))
 	}
@@ -234,8 +234,8 @@ func attachmentIcon(a desktop.AttachmentItem) string {
 	return "file"
 }
 
-// attachmentCard is Gmail's bordered tile: icon, filename and size; tap saves.
-func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func()) fyne.CanvasObject {
+// attachmentCard is Gmail's bordered tile: icon, filename and size; tap opens, right-click saves.
+func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func(), onMenu func(fyne.Position)) fyne.CanvasObject {
 	name := widget.NewLabel(a.Name)
 	name.Truncation = fyne.TextTruncateEllipsis
 	size := widget.NewLabel(humanSize(a.Size))
@@ -248,6 +248,7 @@ func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func()) fyne.CanvasO
 	border.StrokeWidth = 1
 	border.StrokeColor = col(theme.ColorNameSeparator)
 	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(2, 2, 8, 8), inner), false, onTap)
+	tap.onSecondary = onMenu
 	return container.NewGridWrap(fyne.NewSize(220, 58), container.NewStack(border, tap))
 }
 
@@ -297,7 +298,7 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, 6)
 		for i, m := range msgs {
-			if m.Body == "" || m.HasAttachments {
+			if m.Body == "" {
 				wg.Add(1)
 				sem <- struct{}{}
 				go func() {
@@ -322,7 +323,6 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 		u.messages = msgs
 		u.msgCursor = max(len(msgs)-1, 0)
 		u.refreshReader()
-		u.be.PrefetchAttachments(t.AccountID, t.ID) // returns at once; downloads run in the background
 		for _, m := range msgs {
 			if m.IsUnread {
 				u.scheduleMarkRead(gen)

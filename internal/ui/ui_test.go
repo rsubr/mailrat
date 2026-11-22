@@ -99,7 +99,6 @@ func (f *fakeBackend) GetThread(_, id string) ([]desktop.MessageItem, error) {
 func (f *fakeBackend) GetMessage(_, id string) (desktop.MessageItem, error) {
 	return desktop.MessageItem{ID: id}, nil
 }
-func (f *fakeBackend) PrefetchAttachments(_, _ string) {}
 func (f *fakeBackend) GetAttachmentData(_, _, _ string) (desktop.AttachmentDataItem, error) {
 	return desktop.AttachmentDataItem{}, nil
 }
@@ -530,7 +529,7 @@ func TestAttachmentCard(t *testing.T) {
 		t.Fatal("wrong attachment icons")
 	}
 	tapped := false
-	r := findTapRow(u.attachmentCard(doc, func() { tapped = true }))
+	r := findTapRow(u.attachmentCard(doc, func() { tapped = true }, nil))
 	if r == nil {
 		t.Fatal("card has no tappable row")
 	}
