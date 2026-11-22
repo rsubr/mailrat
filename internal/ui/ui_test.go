@@ -12,6 +12,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
 
@@ -374,5 +375,29 @@ func TestGmailSearchKey(t *testing.T) {
 	typeKeys(u, "/")
 	if u.win.Canvas().Focused() != fyne.Focusable(u.search) {
 		t.Fatal("/ should focus search")
+	}
+}
+
+// buttonLabels collects the text of every labelled button under o.
+func buttonLabels(o fyne.CanvasObject) (out []string) {
+	if b, ok := o.(*widget.Button); ok && b.Text != "" {
+		out = append(out, b.Text)
+	}
+	if c, ok := o.(*fyne.Container); ok {
+		for _, ch := range c.Objects {
+			out = append(out, buttonLabels(ch)...)
+		}
+	}
+	return
+}
+
+func TestReplyBarAtBottom(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.list.Select(2)
+	if got := buttonLabels(u.replyBar()); len(got) != 3 || got[0] != "Reply" || got[1] != "Reply all" || got[2] != "Forward" {
+		t.Fatalf("reply bar: %v", got)
+	}
+	if got := buttonLabels(u.toolbar()); len(got) != 0 {
+		t.Fatalf("toolbar still has labelled buttons: %v", got)
 	}
 }

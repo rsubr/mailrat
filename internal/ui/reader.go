@@ -30,8 +30,8 @@ func (u *UI) buildReader() fyne.CanvasObject {
 	return container.NewBorder(u.toolbar(), nil, nil, nil, u.conversation())
 }
 
-// toolbar mirrors Mimestream's: archive, trash, mark unread, | spam, reply,
-// reply all, forward — with the search field pinned right.
+// toolbar mirrors Mimestream's: archive, trash, mark unread, | spam —
+// with the search field pinned right.
 func (u *UI) toolbar() fyne.CanvasObject {
 	var buttons []*widget.Button
 	btn := func(name, tip string, fn func()) fyne.CanvasObject {
@@ -46,10 +46,6 @@ func (u *UI) toolbar() fyne.CanvasObject {
 		btn("unread", "Mark unread", u.markUnread),
 		gap(),
 		btn("spam", "Spam", u.spam),
-		gap(),
-		btn("reply", "Reply", func() { u.reply(false) }),
-		btn("replyall", "Reply all", func() { u.reply(true) }),
-		btn("forward", "Forward", u.forward),
 	)
 	if u.selected == nil {
 		for _, b := range buttons {
@@ -101,8 +97,24 @@ func (u *UI) conversation() fyne.CanvasObject {
 		u.msgCards = append(u.msgCards, card)
 		cards = append(cards, card)
 	}
+	cards = append(cards, u.replyBar())
 	u.convScroll = container.NewVScroll(container.NewVBox(cards...))
 	return u.convScroll
+}
+
+// replyBar is Gmail's Reply / Reply all / Forward row under the conversation.
+func (u *UI) replyBar() fyne.CanvasObject {
+	btn := func(label, ic string, fn func()) *widget.Button {
+		b := widget.NewButtonWithIcon(label, icon(ic, fg()), fn)
+		b.Importance = widget.MediumImportance
+		return b
+	}
+	row := container.NewHBox(
+		btn("Reply", "reply", func() { u.reply(false) }),
+		btn("Reply all", "replyall", func() { u.reply(true) }),
+		btn("Forward", "forward", u.forward),
+	)
+	return container.New(layout.NewCustomPaddedLayout(12, 16, 52, 8), row)
 }
 
 // scrollToMessage brings message i to the top of the conversation pane.
