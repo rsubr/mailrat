@@ -11,9 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -250,33 +248,25 @@ func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func()) fyne.CanvasO
 }
 
 func (u *UI) saveAttachment(m desktop.MessageItem, a desktop.AttachmentItem) {
-	var data desktop.AttachmentDataItem
 	var err error
-	u.bg(func() { data, err = u.be.GetAttachmentData(m.AccountID, m.ID, a.AttachmentID) }, func() {
-		if err != nil {
-			u.showError(err)
+	u.bg(func() {
+		dir := ""
+		if home, e := os.UserHomeDir(); e == nil {
+			dir = filepath.Join(home, "Downloads")
+		}
+		var path string
+		if path, err = pickSaveFile("Save attachment", a.Name, dir); err != nil || path == "" {
 			return
 		}
-		d := dialog.NewFileSave(func(w fyne.URIWriteCloser, err error) {
-			if err != nil {
-				u.showError(err)
-				return
-			}
-			if w == nil {
-				return
-			}
-			defer w.Close()
-			if _, err := w.Write(data.Data); err != nil {
-				u.showError(err)
-			}
-		}, u.win)
-		d.SetFileName(a.Name)
-		if home, err := os.UserHomeDir(); err == nil {
-			if l, err := storage.ListerForURI(storage.NewFileURI(filepath.Join(home, "Downloads"))); err == nil {
-				d.SetLocation(l)
-			}
+		var data desktop.AttachmentDataItem
+		if data, err = u.be.GetAttachmentData(m.AccountID, m.ID, a.AttachmentID); err != nil {
+			return
 		}
-		d.Show()
+		err = os.WriteFile(path, data.Data, 0o644)
+	}, func() {
+		if err != nil {
+			u.showError(err)
+		}
 	})
 }
 

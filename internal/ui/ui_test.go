@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -424,6 +425,40 @@ func TestAttachmentCard(t *testing.T) {
 	body := u.messageBody(desktop.MessageItem{ID: "x", Body: "hi", Attachments: []desktop.AttachmentItem{pic, doc}})
 	if findTapRow(body) == nil {
 		t.Fatal("message body shows no attachment cards")
+	}
+}
+
+func TestSaveAttachmentUsesNativeDialog(t *testing.T) {
+	u, _, _ := testUI(t)
+	oldSave := pickSaveFile
+	t.Cleanup(func() { pickSaveFile = oldSave })
+	out := filepath.Join(t.TempDir(), "x.txt")
+	var gotName string
+	pickSaveFile = func(_, name, _ string) (string, error) { gotName = name; return out, nil }
+	u.saveAttachment(desktop.MessageItem{ID: "m1", AccountID: "a1"}, desktop.AttachmentItem{Name: "x.txt", AttachmentID: "id"})
+	if gotName != "x.txt" {
+		t.Fatalf("dialog got name %q", gotName)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("attachment not written: %v", err)
+	}
+	// Cancelled dialog writes nothing.
+	pickSaveFile = func(_, _, _ string) (string, error) { return "", nil }
+	os.Remove(out)
+	u.saveAttachment(desktop.MessageItem{ID: "m1", AccountID: "a1"}, desktop.AttachmentItem{Name: "x.txt", AttachmentID: "id"})
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("cancelled save wrote a file")
+	}
+}
+
+func TestChooseCredentialsUsesNativeDialog(t *testing.T) {
+	u, fb, _ := testUI(t)
+	old := pickOpenFile
+	t.Cleanup(func() { pickOpenFile = old })
+	pickOpenFile = func(string, ...string) (string, error) { return "/tmp/creds.json", nil }
+	u.chooseCredentials()
+	if fb.imported != "/tmp/creds.json" {
+		t.Fatalf("imported %q", fb.imported)
 	}
 }
 
