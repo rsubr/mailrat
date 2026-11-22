@@ -94,3 +94,37 @@ func TestListUncachedBodiesForLabelsFiltersByLabel(t *testing.T) {
 		t.Fatalf("want only msg1, got %#v", got)
 	}
 }
+
+func TestAllMailTaggingAndReset(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertAccount(storage.Account{ID: "acc1", Email: "t@example.com", TokenJSON: `{}`, HistoryID: "9"}) //nolint:errcheck
+	for _, id := range []string{"INBOX", "TRASH", storage.AllMailLabelID} {
+		s.UpsertLabel(storage.Label{ID: id, AccountID: "acc1", Name: id, LabelType: "system"}) //nolint:errcheck
+	}
+	for _, id := range []string{"m1", "m2"} {
+		s.UpsertMessage(storage.Message{ID: id, ThreadID: "t" + id, AccountID: "acc1"}) //nolint:errcheck
+	}
+	s.SetMessageLabels("acc1", "m1", []string{"INBOX"}) //nolint:errcheck
+	s.SetMessageLabels("acc1", "m2", []string{"TRASH"}) //nolint:errcheck
+	if got, _ := s.GetMessageLabelIDs("acc1", "m1"); len(got) != 2 {
+		t.Fatalf("m1 labels = %v, want INBOX + ALL_MAIL", got)
+	}
+	if got, _ := s.GetMessageLabelIDs("acc1", "m2"); len(got) != 1 {
+		t.Fatalf("m2 labels = %v, want TRASH only", got)
+	}
+
+	s.UpsertSyncConfig(storage.SyncConfig{LabelID: "INBOX", AccountID: "acc1"}) //nolint:errcheck
+	s.MarkSyncConfigBackfilled("INBOX", "acc1")                                 //nolint:errcheck
+	if err := s.ResetAccountMail("acc1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetMessage("acc1", "m1"); err == nil {
+		t.Fatal("message survived reset")
+	}
+	if cfgs, _ := s.ListSyncConfigs("acc1"); len(cfgs) != 1 || cfgs[0].Backfilled {
+		t.Fatalf("configs after reset: %+v", cfgs)
+	}
+	if acc, _ := s.GetAccount("acc1"); acc.HistoryID != "" {
+		t.Fatalf("history id kept: %q", acc.HistoryID)
+	}
+}

@@ -80,6 +80,7 @@ type UI struct {
 	settingsWin fyne.Window
 	contactsWin fyne.Window
 	loginDlg    dialog.Dialog
+	undoPop     *widget.PopUp // "moved to Trash" bar with Undo
 }
 
 const (
@@ -476,7 +477,21 @@ func (u *UI) threadAction(call func(accountID, threadID string) error) {
 }
 
 func (u *UI) archive() { u.threadAction(u.be.ArchiveThread) }
-func (u *UI) trash()   { u.threadAction(u.be.TrashThread) }
+func (u *UI) trash() {
+	if u.selected == nil {
+		return
+	}
+	acct, id := u.selected.AccountID, u.selected.ID
+	var err error
+	u.bg(func() { err = u.be.TrashThread(acct, id) }, func() {
+		if err != nil {
+			u.showError(err)
+			return
+		}
+		u.removeSelected()
+		u.showUndoTrash(acct, id)
+	})
+}
 func (u *UI) spam() {
 	if u.activeLabel == "SPAM" {
 		u.threadAction(u.be.MarkThreadNotSpam)

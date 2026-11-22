@@ -173,3 +173,31 @@ func TestSyncConfigScopeChangeResetsBackfill(t *testing.T) {
 		t.Fatalf("after scope change: %+v", got)
 	}
 }
+
+func TestTrashedThreadHiddenFromLabelViews(t *testing.T) {
+	s := openTestStore(t)
+	s.UpsertAccount(storage.Account{ID: "acc1", Email: "test@example.com", TokenJSON: `{}`}) //nolint:errcheck
+	s.UpsertMessage(storage.Message{ID: "msg1", ThreadID: "thr1", AccountID: "acc1"})        //nolint:errcheck
+	for _, id := range []string{"SENT", "TRASH"} {
+		s.UpsertLabel(storage.Label{ID: id, AccountID: "acc1", Name: id, LabelType: "system"}) //nolint:errcheck
+	}
+	if err := s.SetMessageLabels("acc1", "msg1", []string{"SENT"}); err != nil {
+		t.Fatal(err)
+	}
+	count := func(label string) int {
+		ts, err := s.ListThreadSummariesByLabel("acc1", label, 10, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return len(ts)
+	}
+	if count("SENT") != 1 {
+		t.Fatal("sent thread should be listed")
+	}
+	if err := s.ModifyLabels("acc1", "thr1", true, []string{"TRASH"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if count("SENT") != 0 || count("TRASH") != 1 {
+		t.Fatalf("after trash: sent=%d trash=%d", count("SENT"), count("TRASH"))
+	}
+}

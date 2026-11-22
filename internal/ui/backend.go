@@ -18,6 +18,7 @@ type Backend interface {
 	CancelLogin()
 	RemoveAccount(accountID string) error
 	RenameAccount(accountID, name string) error
+	RefetchAccount(accountID string) error
 	GetAccountSettings(accountID string) (desktop.AccountSettingsItem, error)
 	SetAccountSettings(s desktop.AccountSettingsItem) error
 	GetGlobalSettings() (desktop.GlobalSettingsItem, error)
@@ -32,6 +33,7 @@ type Backend interface {
 	MarkMessageRead(accountID, messageID string) error
 	MarkMessageUnread(accountID, messageID string) error
 	TrashThread(accountID, threadID string) error
+	UndoTrashThread(accountID, threadID string) error
 	ArchiveThread(accountID, threadID string) error
 	MarkThreadSpam(accountID, threadID string) error
 	MarkThreadNotSpam(accountID, threadID string) error

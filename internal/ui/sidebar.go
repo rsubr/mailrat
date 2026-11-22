@@ -24,11 +24,11 @@ var hiddenLabels = map[string]bool{
 	"GREEN_STAR": true, "RED_BANGBANG": true, "ORANGE_GUILLEMET": true,
 	"GREEN_CHECK": true, "BLUE_INFO": true, "PURPLE_QUESTION": true,
 	"GREEN_CIRCLE": true, "ORANGE_CIRCLE": true, "RED_CIRCLE": true, "PURPLE_CIRCLE": true,
-	"CHAT": true,
+	"CHAT": true, "IMPORTANT": true,
 }
 
 var (
-	favoriteOrder = []string{"STARRED", "DRAFT", "SENT", "IMPORTANT", "ALL_MAIL", "SPAM", "TRASH"}
+	favoriteOrder = []string{"STARRED", "DRAFT", "SENT", "ALL_MAIL", "SPAM", "TRASH"}
 )
 
 // mailboxes returns the sidebar's "Favorites" entries followed by user labels.
@@ -42,7 +42,7 @@ func (u *UI) mailboxes() (favorites, user []desktop.LabelItem) {
 		seen[id] = true
 		l, ok := byID[id]
 		if !ok {
-			if id == "IMPORTANT" || id == "ALL_MAIL" {
+			if id == "ALL_MAIL" {
 				continue // only show these if the account has them
 			}
 			l = desktop.LabelItem{ID: id, Name: u.labelName(id), Type: "system"}

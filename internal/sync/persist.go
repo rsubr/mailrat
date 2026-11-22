@@ -53,6 +53,11 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 	}); err != nil {
 		return fmt.Errorf("upsert thread %s: %w", meta.ThreadID, err)
 	}
+	if m.isHeld(accountID, meta.ThreadID) {
+		if existing, _ := m.store.GetMessageLabelIDs(accountID, meta.ID); len(existing) > 0 {
+			return nil // local trash still undoable; keep its labels
+		}
+	}
 	if err := m.store.SetMessageLabels(accountID, meta.ID, meta.LabelIDs); err != nil {
 		return fmt.Errorf("set labels on %s: %w", meta.ID, err)
 	}
@@ -66,7 +71,7 @@ func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEve
 	for _, event := range events {
 		switch {
 		case event.LabelsAdded != nil:
-			if _, fresh := skip[event.LabelsAdded.MessageID]; fresh {
+			if _, fresh := skip[event.LabelsAdded.MessageID]; fresh || m.isHeldMessage(accountID, event.LabelsAdded.MessageID) {
 				continue
 			}
 			if err := m.applyAddedLabels(accountID, event.LabelsAdded.MessageID, event.LabelsAdded.LabelIDs); err != nil {
@@ -74,7 +79,7 @@ func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEve
 			}
 			stats.labelChanges++
 		case event.LabelsRemoved != nil:
-			if _, fresh := skip[event.LabelsRemoved.MessageID]; fresh {
+			if _, fresh := skip[event.LabelsRemoved.MessageID]; fresh || m.isHeldMessage(accountID, event.LabelsRemoved.MessageID) {
 				continue
 			}
 			if err := m.applyRemovedLabels(accountID, event.LabelsRemoved.MessageID, event.LabelsRemoved.LabelIDs); err != nil {

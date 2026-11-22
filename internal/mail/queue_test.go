@@ -207,3 +207,28 @@ func TestPendingOpsSurviveReopen(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 }
+
+func TestPauseBlocksEnqueueAndDrainForAccount(t *testing.T) {
+	s := queueStore(t)
+	var applied []string
+	q := NewQueue(s, func(_ context.Context, op storage.PendingOp) error {
+		applied = append(applied, op.MessageID)
+		return nil
+	}, nil, nil)
+	if err := q.Enqueue(storage.OpArchive, "a1", "t1"); err != nil {
+		t.Fatal(err)
+	}
+	resume := q.Pause("a1")
+	if err := q.Enqueue(storage.OpArchive, "a1", "t2"); !errors.Is(err, ErrPaused) {
+		t.Fatalf("err=%v", err)
+	}
+	q.Drain(context.Background())
+	if len(applied) != 0 {
+		t.Fatalf("applied while paused: %v", applied)
+	}
+	resume()
+	q.Drain(context.Background())
+	if len(applied) != 1 || applied[0] != "t1" {
+		t.Fatalf("applied=%v", applied)
+	}
+}

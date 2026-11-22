@@ -76,9 +76,18 @@ func (u *UI) installShortcuts() {
 	add(fyne.KeyComma, false, u.openSettings)
 }
 
+// modalOpen reports whether an overlay other than the passive undo bar is showing.
+func (u *UI) modalOpen() bool {
+	n := len(u.win.Canvas().Overlays().List())
+	if u.undoPop != nil {
+		n-- // the undo bar is itself an overlay
+	}
+	return n > 0
+}
+
 // typedKey handles the non-character keys; it reports whether it consumed e.
 func (u *UI) typedKey(name fyne.KeyName) bool {
-	if u.win.Canvas().Overlays().Top() != nil {
+	if u.modalOpen() {
 		return false
 	}
 	switch name {
@@ -97,7 +106,7 @@ func (u *UI) typedKey(name fyne.KeyName) bool {
 // typedRune dispatches one typed character: either a single-key shortcut or
 // the second key of a "g" sequence.
 func (u *UI) typedRune(r rune) {
-	if u.win.Canvas().Overlays().Top() != nil {
+	if u.modalOpen() {
 		return
 	}
 	if u.pendingKey != 0 {

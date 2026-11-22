@@ -224,7 +224,7 @@ func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit, offset int)
 		SELECT DISTINCT m2.thread_id
 		FROM messages m2
 		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE ml.label_id = ?
+		WHERE ml.label_id = ?` + notTrashed(labelID) + `
 	)`
 	rows, err := s.db.Query(
 		threadSummarySQL+`WHERE `+filter+
@@ -238,13 +238,22 @@ func (s *Store) ListAllThreadSummariesByLabel(labelID string, limit, offset int)
 	return scanThreadSummaries(rows)
 }
 
+// notTrashed hides trashed messages from every label view except Trash itself
+// (a trashed message keeps labels such as SENT, so it would otherwise stay listed).
+func notTrashed(labelID string) string {
+	if labelID == "TRASH" {
+		return ""
+	}
+	return ` AND NOT EXISTS (SELECT 1 FROM message_labels t WHERE t.message_id = m2.id AND t.account_id = m2.account_id AND t.label_id = 'TRASH')`
+}
+
 // ListThreadSummariesByLabel returns threads carrying a given label for one account.
 func (s *Store) ListThreadSummariesByLabel(accountID, labelID string, limit, offset int) ([]ThreadSummary, error) {
 	filter := `m.account_id = ? AND m.thread_id IN (
 		SELECT DISTINCT m2.thread_id
 		FROM messages m2
 		JOIN message_labels ml ON ml.message_id = m2.id AND ml.account_id = m2.account_id
-		WHERE m2.account_id = ? AND ml.label_id = ?
+		WHERE m2.account_id = ? AND ml.label_id = ?` + notTrashed(labelID) + `
 	)`
 	rows, err := s.db.Query(
 		threadSummarySQL+`WHERE `+filter+

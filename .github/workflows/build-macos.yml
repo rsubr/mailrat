@@ -30,7 +30,13 @@ jobs:
 
       - name: Package .app
         working-directory: cmd/mailrat
-        run: fyne package -os darwin -release
+        run: |
+          args=(-os darwin -release -app-build "${GITHUB_RUN_NUMBER}")
+          # Tag builds (vX.Y.Z) override FyneApp.toml's Version in Info.plist.
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            args+=(-app-version "${GITHUB_REF_NAME#v}")
+          fi
+          fyne package "${args[@]}"
 
       - name: Zip app bundle
         working-directory: cmd/mailrat

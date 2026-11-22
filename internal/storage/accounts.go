@@ -74,6 +74,29 @@ func (s *Store) DeleteAccount(id string) error {
 	return err
 }
 
+// ResetAccountMail wipes an account's local mail (messages, threads, queued
+// changes) and its history cursor so the next sync is a first sync. Labels,
+// settings and sync scopes are kept; scopes are marked for backfill again.
+func (s *Store) ResetAccountMail(accountID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+	for _, q := range []string{
+		`DELETE FROM messages WHERE account_id = ?`,
+		`DELETE FROM threads WHERE account_id = ?`,
+		`DELETE FROM pending_ops WHERE account_id = ?`,
+		`UPDATE sync_config SET backfilled = 0 WHERE account_id = ?`,
+		`UPDATE accounts SET history_id = '' WHERE id = ?`,
+	} {
+		if _, err := tx.Exec(q, accountID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) UpdateAccountDisplayName(id, name string) error {
 	_, err := s.db.Exec(`UPDATE accounts SET display_name = ? WHERE id = ?`, name, id)
 	return err

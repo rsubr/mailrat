@@ -32,7 +32,8 @@ type App struct {
 	errMu  sync.Mutex
 	errLog []APIError
 
-	queue  *mail.Queue // optimistic mutations awaiting Gmail
+	queue  *mail.Queue   // optimistic mutations awaiting Gmail
+	trash  *mail.Delayed // trashes still inside their undo window
 	syncMu sync.Mutex
 
 	contactsMu     sync.Mutex
@@ -72,6 +73,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.store = store
 	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)
+	a.trash = mail.NewDelayed(mail.UndoWindow)
 	go a.queue.Run(ctx)
 
 	credPath := filepath.Join(dir, "credentials.json")
@@ -139,6 +141,9 @@ func (a *App) ClearAPIErrors() {
 
 // Shutdown closes the database when the app exits.
 func (a *App) Shutdown() {
+	if a.trash != nil {
+		a.trash.Flush() // queue pending deletes so they survive the restart
+	}
 	if a.store != nil {
 		a.store.Close() //nolint:errcheck
 	}
@@ -281,6 +286,32 @@ func (a *App) RemoveAccount(accountID string) error {
 		return fmt.Errorf("store not initialized")
 	}
 	return a.store.DeleteAccount(accountID)
+}
+
+// RefetchAccount discards an account's local mail and syncs it again from
+// scratch through the first-sync path. Unsent local changes are lost.
+func (a *App) RefetchAccount(accountID string) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialized")
+	}
+	// Stop everything that could write this account's changes after the reset:
+	// held trashes are dropped (their local state is wiped anyway) and the
+	// queue is paused until the reset is done.
+	if a.trash != nil {
+		a.trash.DropPrefix(accountID + "/")
+	}
+	if a.queue != nil {
+		defer a.queue.Pause(accountID)()
+	}
+	a.syncMu.Lock()
+	err := a.store.ResetAccountMail(accountID)
+	a.syncMu.Unlock()
+	if err != nil {
+		return err
+	}
+	a.emitEvent("inbox:updated", nil)
+	go func() { _ = a.Sync(accountID) }()
+	return nil
 }
 
 // RenameAccount sets the display name shown for an account.
@@ -548,9 +579,45 @@ func (a *App) MarkMessageUnread(accountID, messageID string) error {
 	return a.enqueue(storage.OpMarkUnread, accountID, messageID)
 }
 
-// TrashThread moves all messages in a thread to the Trash.
+// TrashThread hides a thread immediately (local TRASH label) and queues the
+// Gmail deletion once the undo window has passed; UndoTrashThread cancels it.
 func (a *App) TrashThread(accountID, threadID string) error {
-	return a.enqueue(storage.OpTrashThread, accountID, threadID)
+	if a.queue == nil || a.trash == nil {
+		return fmt.Errorf("store not initialised")
+	}
+	inbox, err := a.store.MessageIDsWithLabel(accountID, threadID, mail.LabelInbox)
+	if err != nil {
+		return err
+	}
+	if err := a.store.ModifyLabels(accountID, threadID, true, []string{mail.LabelTrash}, []string{mail.LabelInbox}); err != nil {
+		return err
+	}
+	a.trash.Hold(trashKey(accountID, threadID),
+		func() { _ = a.enqueue(storage.OpTrashThread, accountID, threadID) },
+		func() {
+			_ = a.store.ModifyLabels(accountID, threadID, true, nil, []string{mail.LabelTrash})
+			for _, id := range inbox {
+				_ = a.store.ModifyLabels(accountID, id, false, []string{mail.LabelInbox}, nil)
+			}
+			a.emitEvent("inbox:updated", nil)
+		})
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
+func trashKey(accountID, threadID string) string { return accountID + "/" + threadID }
+
+// trashHeld reports whether a thread's trash is still inside its undo window.
+func (a *App) trashHeld(accountID, threadID string) bool {
+	return a.trash != nil && a.trash.IsHeld(trashKey(accountID, threadID))
+}
+
+// UndoTrashThread restores a trashed thread while its undo window is open.
+func (a *App) UndoTrashThread(accountID, threadID string) error {
+	if a.trash == nil || !a.trash.Undo(trashKey(accountID, threadID)) {
+		return fmt.Errorf("too late to undo")
+	}
+	return nil
 }
 
 // ArchiveThread removes the Inbox label from all messages in a thread.
@@ -673,6 +740,7 @@ func (a *App) syncAccount(acc storage.Account) {
 	}
 	a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
 	mgr := mailsync.NewManager(a.store, client)
+	mgr.SetHeld(a.trashHeld)
 	stored, _ := a.store.GetAccount(acc.ID)
 	if stored.HistoryID == "" {
 		a.initialSync(mgr, acc)
@@ -734,7 +802,9 @@ func (a *App) LoadOlder(accountID, labelID string) (int, error) {
 		client, err := a.gmailClient(acc.ID)
 		if err == nil {
 			var n int
-			n, err = mailsync.NewManager(a.store, client).LoadOlder(a.ctx, acc.ID, labelID, olderBatch)
+			mgr := mailsync.NewManager(a.store, client)
+			mgr.SetHeld(a.trashHeld)
+			n, err = mgr.LoadOlder(a.ctx, acc.ID, labelID, olderBatch)
 			total += n
 		}
 		if err != nil && firstErr == nil {
@@ -776,6 +846,9 @@ func (a *App) GetSyncConfigs(accountID string) ([]SyncConfigItem, error) {
 			if l.ID == "INBOX" || l.ID == "STARRED" {
 				c.DaysToSync = 0
 			}
+			if l.ID == storage.AllMailLabelID {
+				c.DaysToSync = mailsync.AllMailDefaultDays
+			}
 		}
 		item := SyncConfigItem{LabelID: l.ID, LabelName: l.Name, Mode: SyncModeAll}
 		switch {
@@ -795,7 +868,7 @@ func syncableLabel(l storage.Label) bool {
 		return true
 	}
 	switch l.ID {
-	case "INBOX", "STARRED", "SENT", "IMPORTANT", "DRAFT", "SPAM", "TRASH":
+	case "INBOX", "STARRED", "SENT", "IMPORTANT", "DRAFT", "SPAM", "TRASH", storage.AllMailLabelID:
 		return true
 	}
 	return false

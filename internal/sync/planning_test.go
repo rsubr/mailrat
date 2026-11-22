@@ -1,8 +1,10 @@
 package sync
 
 import (
+	"slices"
 	"testing"
 
+	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
@@ -37,5 +39,67 @@ func TestBuildLabelPlansSkipsBackfilledWhenPending(t *testing.T) {
 	}
 	if got := buildLabelPlans(cfgs, false); len(got) != 2 {
 		t.Fatalf("all plans = %d", len(got))
+	}
+}
+
+func TestAllMailDefaultsTo30Days(t *testing.T) {
+	var cfg storage.SyncConfig
+	for _, c := range defaultBackfillConfigs("a") {
+		if c.LabelID == storage.AllMailLabelID {
+			cfg = c
+		}
+	}
+	q, _ := scopeQuery(cfg)
+	if q != "-in:trash -in:spam newer_than:30d" {
+		t.Fatalf("query = %q", q)
+	}
+}
+
+func heldStore(t *testing.T, labels []string) *storage.Store {
+	t.Helper()
+	s, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := s.UpsertAccount(storage.Account{ID: "a1", Email: "a@x.com", TokenJSON: "{}"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range []string{"INBOX", "TRASH"} {
+		if err := s.UpsertLabel(storage.Label{ID: l, AccountID: "a1", Name: l, LabelType: "system"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.UpsertMessage(storage.Message{ID: "m1", ThreadID: "t1", AccountID: "a1", CacheState: storage.CacheMetadataOnly}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetMessageLabels("a1", "m1", labels); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestSyncSkipsLabelsOfHeldThread(t *testing.T) {
+	s := heldStore(t, []string{"TRASH"})
+	held := true
+	m := &Manager{store: s, held: func(a, th string) bool { return held && a == "a1" && th == "t1" }}
+
+	if err := m.storeMessageMetadata("a1", gmail.MessageMeta{ID: "m1", ThreadID: "t1", LabelIDs: []string{"INBOX"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := m.applyHistoryEvents("a1", []gmail.HistoryEvent{{LabelsAdded: &gmail.LabelChange{MessageID: "m1", LabelIDs: []string{"INBOX"}}}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetMessageLabelIDs("a1", "m1"); !slices.Contains(got, "TRASH") || slices.Contains(got, "INBOX") {
+		t.Fatalf("held thread labels changed: %v", got)
+	}
+
+	held = false // window closed: sync reconciles normally
+	if err := m.storeMessageMetadata("a1", gmail.MessageMeta{ID: "m1", ThreadID: "t1", LabelIDs: []string{"INBOX"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetMessageLabelIDs("a1", "m1"); !slices.Contains(got, "INBOX") || slices.Contains(got, "TRASH") {
+		t.Fatalf("labels not reconciled: %v", got)
 	}
 }

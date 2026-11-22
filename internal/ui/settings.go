@@ -39,6 +39,7 @@ func (u *UI) openSettings() {
 	w.Resize(fyne.NewSize(620, 460))
 	w.SetOnClosed(func() { u.settingsWin = nil })
 	u.settingsWin = w
+	closeOnEscape(w)
 	w.SetContent(u.buildSettings())
 	w.Show()
 }
@@ -97,6 +98,18 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 			}, u.settingsWin)
 		})
 		remove.Importance = widget.DangerImportance
+		refetch := widget.NewButton("Refetch all mail", func() {
+			dialog.ShowConfirm("Refetch all mail", "This deletes all local mail for "+a.Email+" and downloads it again. Local changes that have not synced will be lost.", func(ok bool) {
+				if !ok {
+					return
+				}
+				if err := u.be.RefetchAccount(a.ID); err != nil {
+					u.showError(err)
+					return
+				}
+				u.reloadAll()
+			}, u.settingsWin)
+		})
 		name := a.Email
 		if a.DisplayName != "" {
 			name = a.DisplayName + "  ·  " + a.Email
@@ -106,7 +119,7 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 				widget.NewFormItem("Name", container.NewBorder(nil, nil, nil, rename, nameEntry)),
 				widget.NewFormItem("Sync mail from", period),
 			),
-			container.NewBorder(nil, nil, attach, remove),
+			container.NewBorder(nil, nil, attach, container.NewHBox(refetch, remove)),
 		))
 		rows.Add(card)
 	}

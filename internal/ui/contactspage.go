@@ -98,8 +98,10 @@ func (u *UI) openContacts() {
 	)
 	account := u.activeAccount
 	detail := container.NewStack()
-	search := widget.NewEntry()
+	search := &escEntry{close: w.Close}
+	search.ExtendBaseWidget(search)
 	search.SetPlaceHolder("Search contacts")
+	closeOnEscape(w)
 	del := widget.NewButton("Delete", nil)
 	del.Importance = widget.DangerImportance
 	del.Hide()
@@ -253,7 +255,7 @@ func (u *UI) openContacts() {
 		func() fyne.CanvasObject {
 			hdr := bold("")
 			chk := widget.NewCheck("", nil)
-			cells := container.NewGridWithColumns(3, widget.NewLabel(""), widget.NewLabel(""), widget.NewLabel(""))
+			cells := container.NewGridWithColumns(3, ellipsisLabel(), ellipsisLabel(), ellipsisLabel())
 			row := container.NewBorder(nil, nil, container.NewHBox(chk, container.NewStack()), nil, cells)
 			return container.NewStack(hdr, row)
 		},
@@ -330,4 +332,33 @@ func accountFor(active string) string {
 		return ""
 	}
 	return active
+}
+
+func ellipsisLabel() *widget.Label {
+	l := widget.NewLabel("")
+	l.Truncation = fyne.TextTruncateEllipsis
+	return l
+}
+
+// escEntry is an Entry whose Escape key runs close instead of being swallowed.
+type escEntry struct {
+	widget.Entry
+	close func()
+}
+
+func (e *escEntry) TypedKey(k *fyne.KeyEvent) {
+	if k.Name == fyne.KeyEscape {
+		e.close()
+		return
+	}
+	e.Entry.TypedKey(k)
+}
+
+// closeOnEscape closes w on Escape when no dialog is open and nothing has focus.
+func closeOnEscape(w fyne.Window) {
+	w.Canvas().SetOnTypedKey(func(e *fyne.KeyEvent) {
+		if e.Name == fyne.KeyEscape && w.Canvas().Overlays().Top() == nil {
+			w.Close()
+		}
+	})
 }

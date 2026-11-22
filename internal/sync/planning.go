@@ -7,6 +7,9 @@ import (
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
+// AllMailDefaultDays is how much All Mail syncs until the user picks a scope.
+const AllMailDefaultDays = 30
+
 type labelQueryPlan struct {
 	config storage.SyncConfig
 	query  string
@@ -66,6 +69,7 @@ func defaultBackfillConfigs(accountID string) []storage.SyncConfig {
 	return []storage.SyncConfig{
 		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
 		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0, FetchAttachments: true},
+		{LabelID: storage.AllMailLabelID, LabelName: "All Mail", AccountID: accountID, DaysToSync: AllMailDefaultDays},
 	}
 }
 
@@ -86,6 +90,8 @@ func labelIDToGmailQuery(id, name string) string {
 		return "in:spam"
 	case "TRASH":
 		return "in:trash"
+	case storage.AllMailLabelID:
+		return "-in:trash -in:spam"
 	default:
 		if strings.ContainsAny(name, " \t") {
 			return `label:"` + name + `"`

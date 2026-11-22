@@ -19,6 +19,24 @@ type Manager struct {
 	client   *gmail.Client
 	reporter progressReporter
 	writeMu  stdsync.Mutex // serialises store writes made from concurrent fetches
+	held     func(accountID, threadID string) bool
+}
+
+// SetHeld installs a check for threads with a local change still inside its
+// undo window. Sync leaves their labels alone until the window closes.
+func (m *Manager) SetHeld(held func(accountID, threadID string) bool) { m.held = held }
+
+func (m *Manager) isHeld(accountID, threadID string) bool {
+	return m.held != nil && m.held(accountID, threadID)
+}
+
+// isHeldMessage is isHeld for a message ID.
+func (m *Manager) isHeldMessage(accountID, messageID string) bool {
+	if m.held == nil {
+		return false
+	}
+	msg, err := m.store.GetMessage(accountID, messageID)
+	return err == nil && m.held(accountID, msg.ThreadID)
 }
 
 // NewManager creates a SyncManager.
@@ -307,7 +325,7 @@ func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 			return err
 		}
 	}
-	return nil
+	return m.store.UpsertLabel(storage.Label{ID: storage.AllMailLabelID, AccountID: accountID, Name: "All Mail", LabelType: "system"})
 }
 
 func (m *Manager) fetchHistoryID(ctx context.Context) (uint64, error) {

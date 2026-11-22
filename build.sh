@@ -10,7 +10,9 @@ set -euo pipefail
 if [[ "${1:-}" == "app" ]]; then
   command -v fyne >/dev/null || go install fyne.io/tools/cmd/fyne@latest
   cd cmd/mailrat
-  fyne package -os darwin -release
+  # Version: $VERSION, else latest git tag (sans "v"), else FyneApp.toml's.
+  v="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || true)}"
+  fyne package -os darwin -release ${v:+-app-version "${v#v}"}
   rm -rf ../../mailrat.app && mv mailrat.app ../../mailrat.app
 else
   CGO_ENABLED=1 go build -ldflags="-s -w" -o mailrat ./cmd/mailrat

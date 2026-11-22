@@ -20,6 +20,7 @@ import (
 // fakeBackend serves canned Mimestream-style data and records mutations.
 type fakeBackend struct {
 	archived, trashed []string
+	untrashed         []string
 	spammed, labelled []string
 	syncs             int
 	sent              []desktop.OutboundMsg
@@ -37,6 +38,7 @@ type fakeBackend struct {
 
 func ms(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour).UnixMilli() }
 
+func (f *fakeBackend) RefetchAccount(string) error          { return nil }
 func (f *fakeBackend) SetEventHandler(desktop.EventHandler) {}
 func (f *fakeBackend) Start(context.Context)                {}
 func (f *fakeBackend) Shutdown()                            {}
@@ -105,6 +107,10 @@ func (f *fakeBackend) SendMessage(m desktop.OutboundMsg) error {
 func (f *fakeBackend) MarkMessageRead(_, _ string) error   { return nil }
 func (f *fakeBackend) MarkMessageUnread(_, _ string) error { return nil }
 func (f *fakeBackend) TrashThread(_, id string) error      { f.trashed = append(f.trashed, id); return nil }
+func (f *fakeBackend) UndoTrashThread(_, id string) error {
+	f.untrashed = append(f.untrashed, id)
+	return nil
+}
 func (f *fakeBackend) ArchiveThread(_, id string) error {
 	f.archived = append(f.archived, id)
 	return nil

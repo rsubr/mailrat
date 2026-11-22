@@ -46,6 +46,10 @@ func (s *Store) ListLabels(accountID string) ([]Label, error) {
 	return out, rows.Err()
 }
 
+// AllMailLabelID is a synthetic label: Gmail's API has no All Mail label, so
+// the store tags every message outside Trash and Spam with it.
+const AllMailLabelID = "ALL_MAIL"
+
 func (s *Store) SetMessageLabels(accountID, messageID string, labelIDs []string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -59,11 +63,27 @@ func (s *Store) SetMessageLabels(accountID, messageID string, labelIDs []string)
 		return err
 	}
 
+	inAllMail := true
 	for _, lid := range labelIDs {
+		if lid == "TRASH" || lid == "SPAM" {
+			inAllMail = false
+		}
+		if lid == AllMailLabelID {
+			continue
+		}
 		if _, err := tx.Exec(`
 			INSERT OR IGNORE INTO message_labels (message_id, account_id, label_id)
 			VALUES (?, ?, ?)
 		`, messageID, accountID, lid); err != nil {
+			return err
+		}
+	}
+	if inAllMail {
+		// Skipped when the account has no ALL_MAIL label row yet (foreign key).
+		if _, err := tx.Exec(`
+			INSERT OR IGNORE INTO message_labels (message_id, account_id, label_id)
+			SELECT ?, ?, id FROM labels WHERE id = ? AND account_id = ?
+		`, messageID, accountID, AllMailLabelID, accountID); err != nil {
 			return err
 		}
 	}
@@ -179,4 +199,24 @@ func (s *Store) HasMessage(accountID, messageID string) bool {
 	var n int
 	err := s.db.QueryRow(`SELECT 1 FROM messages WHERE id = ? AND account_id = ?`, messageID, accountID).Scan(&n)
 	return err == nil
+}
+
+// MessageIDsWithLabel returns the IDs of a thread's messages that carry labelID.
+func (s *Store) MessageIDsWithLabel(accountID, threadID, labelID string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT m.id FROM messages m
+		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
+		WHERE m.account_id = ? AND m.thread_id = ? AND ml.label_id = ?`, accountID, threadID, labelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

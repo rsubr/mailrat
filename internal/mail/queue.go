@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -83,16 +84,27 @@ type Queue struct {
 	onDrop func(op storage.PendingOp, err error)
 	wake   chan struct{}
 	drain  sync.Mutex // one drain at a time keeps replay in order
+
+	pauseMu sync.RWMutex    // held (read) across Enqueue so Pause waits for it
+	paused  map[string]bool // accounts whose queue is stopped
 }
+
+// ErrPaused is returned by Enqueue while the account's queue is stopped.
+var ErrPaused = errors.New("account queue is paused")
 
 // NewQueue builds a Queue. permanent may be nil (nothing is permanent; ops
 // are dropped only after MaxOpAttempts).
 func NewQueue(store *storage.Store, apply func(context.Context, storage.PendingOp) error, permanent func(error) bool, onDrop func(storage.PendingOp, error)) *Queue {
-	return &Queue{store: store, apply: apply, permanent: permanent, onDrop: onDrop, wake: make(chan struct{}, 1)}
+	return &Queue{store: store, apply: apply, permanent: permanent, onDrop: onDrop, wake: make(chan struct{}, 1), paused: map[string]bool{}}
 }
 
 // Enqueue applies the op's effect locally, persists it, and wakes the worker.
 func (q *Queue) Enqueue(opType, accountID, targetID string) error {
+	q.pauseMu.RLock()
+	defer q.pauseMu.RUnlock()
+	if q.paused[accountID] {
+		return ErrPaused
+	}
 	if e, ok := effectOf(opType); ok {
 		if err := q.store.ModifyLabels(accountID, targetID, e.thread, e.add, e.remove); err != nil {
 			return err
@@ -103,6 +115,29 @@ func (q *Queue) Enqueue(opType, accountID, targetID string) error {
 	}
 	q.Wake()
 	return nil
+}
+
+// Pause stops the account's queue: new Enqueues fail with ErrPaused, Drain
+// skips its ops, and Pause waits for any in-flight Enqueue or drain to finish
+// before returning. The returned func resumes the account.
+func (q *Queue) Pause(accountID string) (resume func()) {
+	q.pauseMu.Lock()
+	q.paused[accountID] = true
+	q.pauseMu.Unlock()
+	q.drain.Lock() // wait out a drain that started before the flag was set
+	q.drain.Unlock()
+	return func() {
+		q.pauseMu.Lock()
+		delete(q.paused, accountID)
+		q.pauseMu.Unlock()
+		q.Wake()
+	}
+}
+
+func (q *Queue) isPaused(accountID string) bool {
+	q.pauseMu.RLock()
+	defer q.pauseMu.RUnlock()
+	return q.paused[accountID]
 }
 
 // Wake asks the worker to drain now.
@@ -143,7 +178,7 @@ func (q *Queue) Drain(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if blocked[op.AccountID] {
+		if blocked[op.AccountID] || q.isPaused(op.AccountID) {
 			continue
 		}
 		err := q.apply(ctx, op)
