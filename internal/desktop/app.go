@@ -34,9 +34,6 @@ type App struct {
 
 	attachments *mail.AttachmentCache
 
-	prefetchMu     sync.Mutex
-	prefetchCancel context.CancelFunc
-
 	// Background attachment caching of synced mail, one run per account. It has
 	// its own cancel scope, separate from the thread-open prefetch above.
 	syncPrefetchMu     sync.Mutex
@@ -452,7 +449,7 @@ func (a *App) GetThread(accountID, threadID string) ([]MessageItem, error) {
 	for i, m := range msgs {
 		item := messageToItem(m)
 		if m.HasAttachments {
-			if atts, err := a.store.GetAttachments(accountID, m.ID); err == nil {
+			if atts, err := a.store.GetAttachmentsMeta(accountID, m.ID); err == nil {
 				item.Attachments = attachmentsToItems(atts)
 			}
 		}
@@ -475,7 +472,7 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 			if err == nil {
 				item := messageToItem(msg)
 				if msg.HasAttachments {
-					if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+					if atts, err := a.store.GetAttachmentsMeta(accountID, messageID); err == nil {
 						item.Attachments = attachmentsToItems(atts)
 					}
 				}
@@ -490,7 +487,7 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 	}
 	item := messageToItem(msg)
 	if msg.HasAttachments {
-		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
+		if atts, err := a.store.GetAttachmentsMeta(accountID, messageID); err == nil {
 			item.Attachments = attachmentsToItems(atts)
 		}
 	}
@@ -526,33 +523,6 @@ type noSource struct{}
 
 func (noSource) GetAttachmentData(context.Context, string, string) ([]byte, error) {
 	return nil, fmt.Errorf("attachment not cached and no account credentials available")
-}
-
-// PrefetchAttachments caches every attachment of a thread in the background
-// and returns immediately. A newer call (thread switch) or app shutdown
-// cancels the previous one.
-func (a *App) PrefetchAttachments(accountID, threadID string) {
-	if a.store == nil || a.accounts == nil {
-		return
-	}
-	ctx, cancel := context.WithCancel(a.ctx)
-	a.prefetchMu.Lock()
-	if a.prefetchCancel != nil {
-		a.prefetchCancel()
-	}
-	a.prefetchCancel = cancel
-	a.prefetchMu.Unlock()
-
-	go func() {
-		client, err := a.gmailClient(accountID)
-		if err != nil {
-			a.logWarning(fmt.Sprintf("attachment prefetch: %v", err))
-			return
-		}
-		_ = a.attachments.Prefetch(ctx, client, accountID, threadID, func(err error) {
-			a.logWarning(fmt.Sprintf("attachment prefetch: %v", err))
-		})
-	}()
 }
 
 // SendMessage sends an outbound email.

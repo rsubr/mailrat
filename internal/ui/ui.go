@@ -102,6 +102,7 @@ const (
 // Run builds the main window and blocks until it is closed.
 func Run(a fyne.App, be Backend) {
 	a.Settings().SetTheme(themeFor(a.Preferences().String(prefDarkMode)))
+	cleanAttachTemp()
 	u := newUI(a, be)
 	be.SetEventHandler(u.handleEvent)
 	be.Start(context.Background())
@@ -126,6 +127,7 @@ func Run(a fyne.App, be Backend) {
 	}()
 	u.win.ShowAndRun()
 	signal.Stop(sig)
+	cleanAttachTemp()
 	be.Shutdown()
 }
 

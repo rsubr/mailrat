@@ -201,3 +201,24 @@ func TestTrashedThreadHiddenFromLabelViews(t *testing.T) {
 		t.Fatalf("after trash: sent=%d trash=%d", count("SENT"), count("TRASH"))
 	}
 }
+
+func TestGetAttachmentsMetaOmitsData(t *testing.T) {
+	s := openTestStore(t)
+	if err := s.UpsertAccount(storage.Account{ID: "acc", Email: "a@x.com", TokenJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMessageMeta(storage.Message{ID: "m1", ThreadID: "t", AccountID: "acc"}, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	in := []storage.Attachment{{Name: "a.pdf", MimeType: "application/pdf", Size: 3, AttachmentID: "x", Data: []byte("abc")}}
+	if err := s.UpsertAttachments("acc", "m1", in); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAttachmentsMeta("acc", "m1")
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if got[0].Name != "a.pdf" || got[0].AttachmentID != "x" || got[0].Size != 3 || got[0].Data != nil {
+		t.Fatalf("unexpected %+v", got[0])
+	}
+}

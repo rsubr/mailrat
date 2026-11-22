@@ -33,13 +33,14 @@ func subtle() color.Color { return col(colorSubtle) }
 // It backs sidebar entries and account tiles.
 type tapRow struct {
 	widget.BaseWidget
-	content  fyne.CanvasObject
-	onTap    func()
-	selected bool
-	hovered  bool
-	radius   float32
-	idle     color.Color // fill when neither selected nor hovered
-	bg       *canvas.Rectangle
+	content     fyne.CanvasObject
+	onTap       func()
+	onSecondary func(abs fyne.Position)
+	selected    bool
+	hovered     bool
+	radius      float32
+	idle        color.Color // fill when neither selected nor hovered
+	bg          *canvas.Rectangle
 }
 
 func newTapRow(content fyne.CanvasObject, selected bool, onTap func()) *tapRow {
@@ -51,6 +52,11 @@ func newTapRow(content fyne.CanvasObject, selected bool, onTap func()) *tapRow {
 func (r *tapRow) Tapped(*fyne.PointEvent) {
 	if r.onTap != nil {
 		r.onTap()
+	}
+}
+func (r *tapRow) TappedSecondary(e *fyne.PointEvent) {
+	if r.onSecondary != nil {
+		r.onSecondary(e.AbsolutePosition)
 	}
 }
 func (r *tapRow) MouseIn(*desktop.MouseEvent)    { r.hovered = true; r.Refresh() }

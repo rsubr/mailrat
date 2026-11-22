@@ -71,6 +71,31 @@ func (s *Store) GetAttachments(accountID, messageID string) ([]Attachment, error
 	return out, rows.Err()
 }
 
+// GetAttachmentsMeta returns attachment metadata only; the data column is never
+// read, so opening a message does not load attachment bytes into memory.
+func (s *Store) GetAttachmentsMeta(accountID, messageID string) ([]Attachment, error) {
+	rows, err := s.db.Query(
+		`SELECT name, mime_type, size, attachment_id FROM attachments
+		 WHERE message_id = ? AND account_id = ?
+		 ORDER BY rowid`,
+		messageID, accountID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Attachment
+	for rows.Next() {
+		var a Attachment
+		if err := rows.Scan(&a.Name, &a.MimeType, &a.Size, &a.AttachmentID); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // MissingAttachment identifies an attachment row whose binary data has not yet been cached.
 type MissingAttachment struct {
 	MessageID    string
