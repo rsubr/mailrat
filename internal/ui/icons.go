@@ -31,6 +31,7 @@ var iconPaths = map[string]string{
 	"sync":        `<path d="M20 11a8 8 0 0 0-14.5-3.5L4 9M4 4v5h5"/><path d="M4 13a8 8 0 0 0 14.5 3.5L20 15M20 20v-5h-5"/>`,
 	"clip":        `<path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.6 1.6 0 0 1-2.4-2.4L14.5 7.5"/>`,
 	"menu":        `<path d="M4 6h16M4 12h16M4 18h16"/>`,
+	"file":        `<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>`,
 	"chevron":     `<path d="M9 6l6 6-6 6"/>`,
 	"chevrondown": `<path d="M6 9l6 6 6-6"/>`,
 	"filter":      `<circle cx="12" cy="12" r="9"/><path d="M7.5 9.5h9M9.5 12.5h5M11 15.5h2"/>`,

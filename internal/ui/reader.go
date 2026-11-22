@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,9 +11,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -30,8 +29,8 @@ func (u *UI) buildReader() fyne.CanvasObject {
 	return container.NewBorder(u.toolbar(), nil, nil, nil, u.conversation())
 }
 
-// toolbar mirrors Mimestream's: archive, trash, mark unread, | spam, reply,
-// reply all, forward — with the search field pinned right.
+// toolbar mirrors Mimestream's: archive, trash, mark unread, | spam —
+// with the search field pinned right.
 func (u *UI) toolbar() fyne.CanvasObject {
 	var buttons []*widget.Button
 	btn := func(name, tip string, fn func()) fyne.CanvasObject {
@@ -46,10 +45,6 @@ func (u *UI) toolbar() fyne.CanvasObject {
 		btn("unread", "Mark unread", u.markUnread),
 		gap(),
 		btn("spam", "Spam", u.spam),
-		gap(),
-		btn("reply", "Reply", func() { u.reply(false) }),
-		btn("replyall", "Reply all", func() { u.reply(true) }),
-		btn("forward", "Forward", u.forward),
 	)
 	if u.selected == nil {
 		for _, b := range buttons {
@@ -101,8 +96,24 @@ func (u *UI) conversation() fyne.CanvasObject {
 		u.msgCards = append(u.msgCards, card)
 		cards = append(cards, card)
 	}
+	cards = append(cards, u.replyBar())
 	u.convScroll = container.NewVScroll(container.NewVBox(cards...))
 	return u.convScroll
+}
+
+// replyBar is Gmail's Reply / Reply all / Forward row under the conversation.
+func (u *UI) replyBar() fyne.CanvasObject {
+	btn := func(label, ic string, fn func()) *widget.Button {
+		b := widget.NewButtonWithIcon(label, icon(ic, fg()), fn)
+		b.Importance = widget.MediumImportance
+		return b
+	}
+	row := container.NewHBox(
+		btn("Reply", "reply", func() { u.reply(false) }),
+		btn("Reply all", "replyall", func() { u.reply(true) }),
+		btn("Forward", "forward", u.forward),
+	)
+	return container.New(layout.NewCustomPaddedLayout(12, 16, 52, 8), row)
 }
 
 // scrollToMessage brings message i to the top of the conversation pane.
@@ -201,45 +212,61 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 	}
 	items = append(items, container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), body))
 	if len(m.Attachments) > 0 {
-		var chips []fyne.CanvasObject
+		var cards []fyne.CanvasObject
 		for _, a := range m.Attachments {
 			a := a
-			b := widget.NewButtonWithIcon(a.Name+"  "+humanSize(a.Size), icon("clip", fg()), func() { u.saveAttachment(m, a) })
-			chips = append(chips, b)
+			cards = append(cards, u.attachmentCard(a, func() { u.saveAttachment(m, a) }))
 		}
-		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(chips...)))
+		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(cards...)))
 	}
 	return container.NewVBox(items...)
 }
 
+// attachmentIcon picks the card icon: image for pictures, a document otherwise.
+func attachmentIcon(a desktop.AttachmentItem) string {
+	if strings.HasPrefix(a.MimeType, "image/") {
+		return "image"
+	}
+	return "file"
+}
+
+// attachmentCard is Gmail's bordered tile: icon, filename and size; tap saves.
+func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func()) fyne.CanvasObject {
+	name := widget.NewLabel(a.Name)
+	name.Truncation = fyne.TextTruncateEllipsis
+	size := widget.NewLabel(humanSize(a.Size))
+	size.Importance = widget.LowImportance
+	ic := widget.NewIcon(icon(attachmentIcon(a), fg()))
+	text := container.NewVBox(name, size)
+	inner := container.NewBorder(nil, nil, container.NewCenter(ic), nil, text)
+	border := canvas.NewRectangle(color.Transparent)
+	border.CornerRadius = 8
+	border.StrokeWidth = 1
+	border.StrokeColor = col(theme.ColorNameSeparator)
+	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(2, 2, 8, 8), inner), false, onTap)
+	return container.NewGridWrap(fyne.NewSize(220, 58), container.NewStack(border, tap))
+}
+
 func (u *UI) saveAttachment(m desktop.MessageItem, a desktop.AttachmentItem) {
-	var data desktop.AttachmentDataItem
 	var err error
-	u.bg(func() { data, err = u.be.GetAttachmentData(m.AccountID, m.ID, a.AttachmentID) }, func() {
-		if err != nil {
-			u.showError(err)
+	u.bg(func() {
+		dir := ""
+		if home, e := os.UserHomeDir(); e == nil {
+			dir = filepath.Join(home, "Downloads")
+		}
+		var path string
+		if path, err = pickSaveFile("Save attachment", a.Name, dir); err != nil || path == "" {
 			return
 		}
-		d := dialog.NewFileSave(func(w fyne.URIWriteCloser, err error) {
-			if err != nil {
-				u.showError(err)
-				return
-			}
-			if w == nil {
-				return
-			}
-			defer w.Close()
-			if _, err := w.Write(data.Data); err != nil {
-				u.showError(err)
-			}
-		}, u.win)
-		d.SetFileName(a.Name)
-		if home, err := os.UserHomeDir(); err == nil {
-			if l, err := storage.ListerForURI(storage.NewFileURI(filepath.Join(home, "Downloads"))); err == nil {
-				d.SetLocation(l)
-			}
+		var data desktop.AttachmentDataItem
+		if data, err = u.be.GetAttachmentData(m.AccountID, m.ID, a.AttachmentID); err != nil {
+			return
 		}
-		d.Show()
+		err = os.WriteFile(path, data.Data, 0o644)
+	}, func() {
+		if err != nil {
+			u.showError(err)
+		}
 	})
 }
 

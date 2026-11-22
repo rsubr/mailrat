@@ -7,6 +7,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -433,5 +434,99 @@ func TestSidebarMinimalToggleAndRowShape(t *testing.T) {
 	u.toggleSidebar()
 	if u.sidebarMini || u.app.Preferences().Bool(prefSidebarMini) {
 		t.Fatal("expand not stored")
+	}
+}
+
+// buttonLabels collects the text of every labelled button under o.
+func buttonLabels(o fyne.CanvasObject) (out []string) {
+	if b, ok := o.(*widget.Button); ok && b.Text != "" {
+		out = append(out, b.Text)
+	}
+	if c, ok := o.(*fyne.Container); ok {
+		for _, ch := range c.Objects {
+			out = append(out, buttonLabels(ch)...)
+		}
+	}
+	return
+}
+
+func findTapRow(o fyne.CanvasObject) *tapRow {
+	if r, ok := o.(*tapRow); ok {
+		return r
+	}
+	if c, ok := o.(*fyne.Container); ok {
+		for _, ch := range c.Objects {
+			if r := findTapRow(ch); r != nil {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+func TestAttachmentCard(t *testing.T) {
+	u, _, _ := testUI(t)
+	pic := desktop.AttachmentItem{Name: "p.png", MimeType: "image/png", Size: 2048}
+	doc := desktop.AttachmentItem{Name: "a.pdf", MimeType: "application/pdf", Size: 10}
+	if attachmentIcon(pic) != "image" || attachmentIcon(doc) != "file" {
+		t.Fatal("wrong attachment icons")
+	}
+	tapped := false
+	r := findTapRow(u.attachmentCard(doc, func() { tapped = true }))
+	if r == nil {
+		t.Fatal("card has no tappable row")
+	}
+	r.Tapped(nil)
+	if !tapped {
+		t.Fatal("tapping the card did not fire")
+	}
+	body := u.messageBody(desktop.MessageItem{ID: "x", Body: "hi", Attachments: []desktop.AttachmentItem{pic, doc}})
+	if findTapRow(body) == nil {
+		t.Fatal("message body shows no attachment cards")
+	}
+}
+
+func TestSaveAttachmentUsesNativeDialog(t *testing.T) {
+	u, _, _ := testUI(t)
+	oldSave := pickSaveFile
+	t.Cleanup(func() { pickSaveFile = oldSave })
+	out := filepath.Join(t.TempDir(), "x.txt")
+	var gotName string
+	pickSaveFile = func(_, name, _ string) (string, error) { gotName = name; return out, nil }
+	u.saveAttachment(desktop.MessageItem{ID: "m1", AccountID: "a1"}, desktop.AttachmentItem{Name: "x.txt", AttachmentID: "id"})
+	if gotName != "x.txt" {
+		t.Fatalf("dialog got name %q", gotName)
+	}
+	if _, err := os.Stat(out); err != nil {
+		t.Fatalf("attachment not written: %v", err)
+	}
+	// Cancelled dialog writes nothing.
+	pickSaveFile = func(_, _, _ string) (string, error) { return "", nil }
+	os.Remove(out)
+	u.saveAttachment(desktop.MessageItem{ID: "m1", AccountID: "a1"}, desktop.AttachmentItem{Name: "x.txt", AttachmentID: "id"})
+	if _, err := os.Stat(out); err == nil {
+		t.Fatal("cancelled save wrote a file")
+	}
+}
+
+func TestChooseCredentialsUsesNativeDialog(t *testing.T) {
+	u, fb, _ := testUI(t)
+	old := pickOpenFile
+	t.Cleanup(func() { pickOpenFile = old })
+	pickOpenFile = func(string, ...string) (string, error) { return "/tmp/creds.json", nil }
+	u.chooseCredentials()
+	if fb.imported != "/tmp/creds.json" {
+		t.Fatalf("imported %q", fb.imported)
+	}
+}
+
+func TestReplyBarAtBottom(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.list.Select(2)
+	if got := buttonLabels(u.replyBar()); len(got) != 3 || got[0] != "Reply" || got[1] != "Reply all" || got[2] != "Forward" {
+		t.Fatalf("reply bar: %v", got)
+	}
+	if got := buttonLabels(u.toolbar()); len(got) != 0 {
+		t.Fatalf("toolbar still has labelled buttons: %v", got)
 	}
 }

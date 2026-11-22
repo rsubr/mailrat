@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -59,17 +58,16 @@ func (u *UI) askForCredentials() {
 
 // chooseCredentials lets the user pick a Google client file, then continues sign-in.
 func (u *UI) chooseCredentials() {
-	w := u.parentWindow()
-	d := dialog.NewFileOpen(func(r fyne.URIReadCloser, err error) {
+	var path string
+	var err error
+	u.bg(func() { path, err = pickOpenFile("Choose credentials file", "*.json") }, func() {
 		if err != nil {
 			u.showError(err)
 			return
 		}
-		if r == nil {
+		if path == "" {
 			return
 		}
-		path := r.URI().Path()
-		r.Close()
 		var impErr error
 		u.bg(func() { impErr = u.be.ImportCredentials(path) }, func() {
 			if impErr != nil {
@@ -81,9 +79,7 @@ func (u *UI) chooseCredentials() {
 			}
 			u.addAccount()
 		})
-	}, w)
-	d.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
-	d.Show()
+	})
 }
 
 // showLogin waits for the browser sign-in, with a paste fallback for machines
