@@ -1,5 +1,7 @@
 # mailrat
 
+> **Alpha software.** mailrat is under active development: expect bugs, breaking changes and possible data issues. Use at your own risk, and back up any important mail before connecting an account.
+
 A native Gmail desktop client built with Go. Backend-driven architecture: Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
 
 All interfaces ship as a single binary:
@@ -32,7 +34,7 @@ All interfaces ship as a single binary:
 
 ## Requirements
 
-- Go 1.21 or later
+- Go 1.27.4 or newer
 - A Google Cloud OAuth 2.0 credentials file (`credentials.json`) with the scopes:
   - `gmail.readonly`, `gmail.modify`, `gmail.send`
   - `contacts` (for the People API)
