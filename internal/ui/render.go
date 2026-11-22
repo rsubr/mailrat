@@ -34,7 +34,7 @@ type renderResult struct {
 const minContrast = 3.5
 
 type textStyle struct {
-	bold, italic, mono, pre bool
+	bold, italic, underline, mono, pre bool
 	col                     color.Color
 	size                    fyne.ThemeSizeName
 	link                    *url.URL
@@ -148,7 +148,7 @@ func (r *htmlRenderer) text(s string, st textStyle) {
 	}
 	ts := &widget.TextSegment{Text: s, Style: widget.RichTextStyle{
 		Inline:       true,
-		TextStyle:    fyne.TextStyle{Bold: st.bold || st.size != "", Italic: st.italic, Monospace: st.mono},
+		TextStyle:    fyne.TextStyle{Bold: st.bold || st.size != "", Italic: st.italic, Underline: st.underline, Monospace: st.mono},
 		SizeName:     st.size,
 		QuotingDepth: st.quote,
 		ColorName:    r.colorName(st.col),
@@ -249,26 +249,28 @@ func (r *htmlRenderer) image(n *html.Node, st textStyle) {
 	if (w > 0 && w <= 2) || (h > 0 && h <= 2) {
 		return // tracking pixel
 	}
-	u, err := url.Parse(src)
+	if alt == "" {
+		alt = "image"
+	}
+	// Only http(s) images are ever fetched; data:, cid:, file: etc. are placeholders.
+	u, err := url.Parse(strings.TrimSpace(src))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		if alt != "" {
-			r.text(alt, st)
-		}
+		r.text("["+alt+"]", st)
 		return
 	}
 	if !r.opts.images {
 		r.out.blocked++
-		if alt != "" {
-			r.text("["+alt+"]", st)
-		}
+		r.text("["+alt+"]", st)
 		return
 	}
-	r.block(&widget.ImageSegment{Source: storage.NewURI(src), Title: alt})
+	r.block(&widget.ImageSegment{Source: storage.NewURI(strings.TrimSpace(src)), Title: alt})
 }
 
 func skipElement(n *html.Node) bool {
 	switch n.Data {
-	case "script", "style", "head", "title", "template", "noscript", "meta", "link", "svg", "object", "iframe":
+	case "script", "style", "head", "title", "template", "noscript", "meta", "link", "svg", "object", "iframe",
+		"embed", "applet", "frame", "frameset", "base", "input", "button", "select", "textarea",
+		"canvas", "audio", "video", "source", "math", "dialog":
 		return true
 	}
 	s := strings.ToLower(strings.ReplaceAll(attr(n, "style"), " ", ""))
@@ -282,6 +284,8 @@ func (r *htmlRenderer) styleFor(n *html.Node, st textStyle) textStyle {
 		st.bold = true
 	case "i", "em", "cite", "dfn":
 		st.italic = true
+	case "u", "ins":
+		st.underline = true
 	case "code", "tt", "kbd", "samp":
 		st.mono = true
 	case "pre":
@@ -318,6 +322,8 @@ func (r *htmlRenderer) styleFor(n *html.Node, st textStyle) textStyle {
 				if v == "bold" || v == "bolder" || v >= "600" && len(v) == 3 {
 					st.bold = true
 				}
+			case "text-decoration", "text-decoration-line":
+				st.underline = strings.Contains(v, "underline")
 			case "font-style":
 				st.italic = v == "italic" || v == "oblique"
 			}

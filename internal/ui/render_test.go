@@ -129,3 +129,90 @@ func TestPlainTextLinkified(t *testing.T) {
 		t.Fatalf("links=%d %v", links, texts(res))
 	}
 }
+
+func renderedAll(res renderResult) string {
+	var b strings.Builder
+	var links []string
+	for _, t := range texts(res) {
+		b.WriteString(t[0])
+		if strings.HasPrefix(t[1], "link:") {
+			links = append(links, t[1])
+		}
+	}
+	return b.String() + " " + strings.Join(links, " ") + " " + imageSources(res.segments)
+}
+
+func imageSources(segs []widget.RichTextSegment) (s string) {
+	for _, g := range segs {
+		if im, ok := g.(*widget.ImageSegment); ok {
+			s += " img:" + im.Source.String()
+		}
+	}
+	return
+}
+
+func TestXSSPayloadsNeutralised(t *testing.T) {
+	payloads := []string{
+		`<script>alert(1)</script>`,
+		`<img src=x onerror=alert(1)>`,
+		`<a href="javascript:alert(1)">click</a>`,
+		`<a href="  JaVaScRiPt:alert(1)">click</a>`,
+		`<a href="java&#9;script:alert(1)">click</a>`,
+		`<a href="data:text/html,<script>alert(1)</script>">click</a>`,
+		`<a href="vbscript:msgbox(1)">click</a>`,
+		`<iframe src="https://evil.example/x"></iframe>`,
+		`<object data="x.swf"></object><embed src="x.swf">`,
+		`<form action="https://evil.example"><input name=a><button>go</button></form>`,
+		`<svg onload=alert(1)><script>alert(1)</script></svg>`,
+		`<style>body{background:url(javascript:alert(1))}</style>`,
+		`<div style="background:url(javascript:alert(1))" onclick="alert(1)">x</div>`,
+		`<body onload=alert(1)>x</body>`,
+		`<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=">`,
+		`<img src="cid:abc@x">`,
+		`<img src="file:///etc/passwd">`,
+		`<meta http-equiv="refresh" content="0;url=javascript:alert(1)">`,
+		`<base href="javascript:alert(1)//">`,
+	}
+	for _, p := range payloads {
+		for _, images := range []bool{false, true} {
+			out := strings.ToLower(renderedAll(renderMail("<html><body>"+p+"</body></html>", renderOpts{bg: lightBG, fg: lightFG, images: images})))
+			for _, bad := range []string{"alert", "javascript:", "vbscript:", "data:", "file:", "onerror", "onclick", "evil.example", "msgbox", "cid:"} {
+				if strings.Contains(out, bad) {
+					t.Errorf("payload %q (images=%v) leaked %q: %s", p, images, bad, out)
+				}
+			}
+		}
+	}
+}
+
+func TestRemoteImageNotLoadedByDefault(t *testing.T) {
+	src := `<img src="https://tracker.example/p.png" alt="logo">`
+	res := renderMail(src, renderOpts{bg: lightBG, fg: lightFG})
+	if res.blocked != 1 || imageSources(res.segments) != "" || !strings.Contains(renderedAll(res), "[logo]") {
+		t.Fatalf("blocked=%d out=%q", res.blocked, renderedAll(res))
+	}
+	res = renderMail(src, renderOpts{bg: lightBG, fg: lightFG, images: true})
+	if !strings.Contains(imageSources(res.segments), "https://tracker.example/p.png") {
+		t.Fatal("image should load when allowed")
+	}
+}
+
+func TestSafeLinkAndFormatting(t *testing.T) {
+	src := `<h1>T</h1><p><b>b</b> <i>i</i> <u>u</u> <a href="https://ok.example/x">l</a></p><ul><li>one</li></ul><blockquote>q</blockquote>`
+	res := renderMail(src, renderOpts{bg: lightBG, fg: lightFG})
+	out := renderedAll(res)
+	for _, want := range []string{"T", "one", "q", "link:https://ok.example/x"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in %q", want, out)
+		}
+	}
+	var underlined bool
+	for _, g := range res.segments {
+		if ts, ok := g.(*widget.TextSegment); ok && ts.Text == "u" && ts.Style.TextStyle.Underline {
+			underlined = true
+		}
+	}
+	if !underlined {
+		t.Error("<u> not underlined")
+	}
+}
