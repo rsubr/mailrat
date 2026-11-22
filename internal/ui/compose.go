@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -68,7 +69,8 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	send := widget.NewButtonWithIcon("Send", icon("send", fgOnPrimary), nil)
 	send.Importance = widget.HighImportance
 	// Autosave: every draftInterval, save to local Drafts only if content changed.
-	draftID, closed := "", false
+	draftID := ""
+	var closed atomic.Bool // set on close; read by autosave callbacks
 	current := func() desktop.OutboundMsg {
 		return desktop.OutboundMsg{
 			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
@@ -77,8 +79,9 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	}
 	lastSaved := current()
 	stop := make(chan struct{})
+	interval := draftInterval // read before the goroutine starts
 	go func() {
-		t := time.NewTicker(draftInterval)
+		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
 			select {
@@ -87,7 +90,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 			case <-t.C:
 				fyne.Do(func() {
 					msg := current()
-					if closed || msg == lastSaved {
+					if closed.Load() || msg == lastSaved {
 						return
 					}
 					prev := lastSaved
@@ -100,7 +103,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 							return
 						}
 						draftID = id
-						if closed { // closed/sent while the save was in flight
+						if closed.Load() { // closed/sent while the save was in flight
 							u.bg(func() { _ = u.be.DiscardDraft(msg.AccountID, id) }, nil)
 						}
 					})
@@ -109,10 +112,9 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}
 	}()
 	finish := func(discardDraft bool) {
-		if closed {
+		if closed.Swap(true) {
 			return
 		}
-		closed = true
 		close(stop)
 		if discardDraft && draftID != "" {
 			id, acc := draftID, accountID

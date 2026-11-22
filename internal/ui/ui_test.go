@@ -595,6 +595,16 @@ func TestComposeAutosavesOnlyOnChange(t *testing.T) {
 	u, fb, _ := testUI(t)
 	u.accounts = []desktop.AccountItem{{ID: "a1", Email: "a@x.com"}}
 	u.compose(desktop.OutboundMsg{AccountID: "a1", To: "b@x.com", Subject: "s"})
+	t.Cleanup(func() { // closing the compose window stops its autosave goroutine
+		// Close from the UI goroutine, as in production; iterate a copy since Close removes windows.
+		fyne.DoAndWait(func() {
+			for _, w := range append([]fyne.Window(nil), u.app.Driver().AllWindows()...) {
+				if w != u.win {
+					w.Close()
+				}
+			}
+		})
+	})
 	time.Sleep(150 * time.Millisecond)
 	if len(fb.drafts) != 0 {
 		t.Fatalf("unchanged compose saved %d drafts", len(fb.drafts))
