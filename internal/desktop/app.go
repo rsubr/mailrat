@@ -14,13 +14,16 @@ import (
 	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 	mailsync "github.com/mailrat/mailrat/internal/sync"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// App is the Wails application struct. All exported methods are bound to the frontend.
+// EventHandler receives backend events such as "inbox:updated" or "sync:complete".
+// It may be called from any goroutine.
+type EventHandler func(name string, data any)
+
+// App is the backend facade used by the native UI.
 type App struct {
 	ctx      context.Context
-	isWails  bool
+	onEvent  EventHandler
 	store    *storage.Store
 	accounts *accounts.Manager
 
@@ -33,15 +36,11 @@ func NewApp() *App {
 	return &App{}
 }
 
-// OnStartup is called by Wails on desktop startup.
-func (a *App) OnStartup(ctx context.Context) {
-	a.isWails = true
-	a.startup(ctx)
-}
+// SetEventHandler registers the callback that receives backend events.
+func (a *App) SetEventHandler(h EventHandler) { a.onEvent = h }
 
-// StartWeb initialises the app for use in the HTTP web server (no Wails runtime).
-func (a *App) StartWeb(ctx context.Context) {
-	a.isWails = false
+// Start opens the database and begins background sync.
+func (a *App) Start(ctx context.Context) {
 	a.startup(ctx)
 }
 
@@ -85,27 +84,18 @@ func (a *App) syncLoop(ctx context.Context) {
 	}
 }
 
-// emitEvent sends a Wails runtime event only when running inside the desktop app.
 func (a *App) emitEvent(name string, data any) {
-	if a.isWails {
-		runtime.EventsEmit(a.ctx, name, data)
+	if a.onEvent != nil {
+		a.onEvent(name, data)
 	}
 }
 
 func (a *App) logError(msg string) {
-	if a.isWails {
-		runtime.LogError(a.ctx, msg)
-	} else {
-		fmt.Fprintln(os.Stderr, "ERROR:", msg)
-	}
+	fmt.Fprintln(os.Stderr, "ERROR:", msg)
 }
 
 func (a *App) logWarning(msg string) {
-	if a.isWails {
-		runtime.LogWarning(a.ctx, msg)
-	} else {
-		fmt.Fprintln(os.Stderr, "WARN:", msg)
-	}
+	fmt.Fprintln(os.Stderr, "WARN:", msg)
 }
 
 func (a *App) addAPIError(msg string) {
@@ -133,8 +123,8 @@ func (a *App) ClearAPIErrors() {
 	a.errMu.Unlock()
 }
 
-// OnShutdown closes the database when the app exits.
-func (a *App) OnShutdown(_ context.Context) {
+// Shutdown closes the database when the app exits.
+func (a *App) Shutdown() {
 	if a.store != nil {
 		a.store.Close() //nolint:errcheck
 	}
@@ -152,7 +142,7 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 	return accountsToItems(accs), nil
 }
 
-// StartAccountAdd launches the OAuth flow in a background goroutine (Wails desktop only).
+// StartAccountAdd launches the OAuth flow in a background goroutine.
 // Emits "accounts:updated" on success or "account:add:error" on failure.
 func (a *App) StartAccountAdd() error {
 	if a.accounts == nil {
@@ -229,22 +219,6 @@ func (a *App) SetGlobalSettings(settings GlobalSettingsItem) error {
 		SyncFrequency:    settings.SyncFrequency,
 		DefaultAccountID: settings.DefaultAccountID,
 	})
-}
-
-// GetOAuthURL returns the Google OAuth URL for the web redirect flow (web server use only).
-func (a *App) GetOAuthURL(callbackURL, state string) (string, error) {
-	if a.accounts == nil {
-		return "", fmt.Errorf("accounts manager not initialized — credentials.json missing")
-	}
-	return a.accounts.StartWebOAuth(callbackURL, state)
-}
-
-// CompleteOAuth exchanges an OAuth code received at the callback URL and saves the account.
-func (a *App) CompleteOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
-	if a.accounts == nil {
-		return storage.Account{}, fmt.Errorf("accounts manager not initialized")
-	}
-	return a.accounts.CompleteWebOAuth(ctx, callbackURL, code)
 }
 
 // GetInbox returns thread summaries for the inbox.

@@ -43,8 +43,7 @@ Thumbs.db
 coverage.out
 coverage.html
 
-# Wails (Phase 3)
-frontend/node_modules/
-frontend/dist/
-build/bin/
+# Build output
+mailrat.app/
+cmd/mailrat/mailrat.app/
 .playwright-mcp/

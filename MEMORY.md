@@ -2,7 +2,7 @@
 
 ## What it is
 
-Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web server (`mailrat web`), CLI. Alpine.js + Tailwind SPA frontend embedded via `//go:embed`. SQLite is the source of truth; Gmail API used only for sync and mutations.
+Single Go binary, three interfaces: native Fyne v2 desktop app (Mimestream-style), Bubbletea TUI, CLI. SQLite is the source of truth; Gmail API used only for sync and mutations.
 
 ## Completed features
 
@@ -25,18 +25,17 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 - Light/dark theme toggle with localStorage persistence
 - SVG sprite-based icon system
 - Infinite scroll pagination: scrolling to bottom of email list fetches next 60 threads (OFFSET-based), spinner shown while loading, stops when end of cache reached
-- Alpine.js and Tailwind vendored — no CDN requests
 - Local multi-term search (`/` in TUI, `SearchInbox` in desktop/web): searches subject, body, from/to/cc/bcc, and attachment filenames; space-separated terms ranked by match count descending (`LocalSearchThreadSummaries` in `internal/storage/threads.go`)
 
 ## Key files
 
 | What | Where |
 |------|-------|
-| Frontend HTML | `cmd/mailrat/frontend/index.html` |
-| Frontend JS | `cmd/mailrat/frontend/js/app.js` |
-| Web/Wails bridge shim | `cmd/mailrat/frontend/js/wails-compat.js` |
-| HTTP web server | `cmd/mailrat/main.go` |
-| Desktop App struct (Wails bindings) | `internal/desktop/app.go` |
+| Fyne UI (state, actions, events) | `internal/ui/ui.go` |
+| Sidebar / thread list / reader | `internal/ui/sidebar.go`, `threadlist.go`, `reader.go` |
+| Compose / settings windows | `internal/ui/compose.go`, `settings.go` |
+| Theme + icons | `internal/ui/theme.go`, `icons.go` |
+| Backend facade used by UI | `internal/desktop/app.go` |
 | Email send | `internal/mail/send.go` |
 | Label ops (read/unread/trash) | `internal/mail/labels.go` |
 | Gmail API client | `internal/gmail/client.go` |
@@ -48,17 +47,14 @@ Single Go binary, four interfaces: Wails desktop app, Bubbletea TUI, HTTP web se
 
 ## Architecture notes
 
-**Wails bridge pattern** — `Wails.call(method, ...args)` in `app.js` checks `window.go` availability. `wails-compat.js` polyfills `window.go.desktop.App.*` with fetch calls for web mode. Every new Go method on `App` must also get an HTTP route in `cmd/mailrat/main.go` and an entry in `wails-compat.js` to work in web mode.
+**UI/backend seam** — `internal/ui` depends only on the `Backend` interface (`backend.go`), satisfied by `desktop.App`. Backend events (`inbox:updated`, `sync:complete`, …) arrive via `SetEventHandler`; UI work from goroutines must go through `fyne.Do`. `ui` imports no Fyne driver, so it compiles and tests headlessly (fake backend in `ui_test.go`); only `cmd/mailrat` imports `fyne.io/fyne/v2/app` (cgo).
 
-**Offline-first mutations** — `App` methods update SQLite optimistically before calling Gmail. On failure, they enqueue a `pending_ops` row. `DrainPendingOps()` is called after every successful `/api/sync`. TUI uses the same table via `drainPendingOpsCmd`.
-
-**Alpine.js store** — all shared state in `Alpine.store('mail')`. Components (`sidebar`, `emailList`, `readingPane`) are thin wrappers.
+**Offline-first mutations** — `App` methods update SQLite optimistically before calling Gmail. On failure, they enqueue a `pending_ops` row. `DrainPendingOps()` is called after every successful sync. TUI uses the same table via `drainPendingOpsCmd`.
 
 **Compose modes** — `composeMode` (`'new'` | `'reply'` | `'forward'`) controls full-pane vs inline compose. Two `x-ref="editor"` in mutually exclusive `x-if` blocks.
 
 **`@keydown.window.capture`** — keyboard shortcuts that conflict with Chrome built-ins (e.g. `Ctrl+Shift+C` for DevTools, `Ctrl+Shift+B` for bookmarks) require capture-phase listeners, not bubble-phase. Same technique Gmail uses.
 
-**`addressField` Alpine component** — registered via `Alpine.data('addressField', (field) => ...)`. Reads/writes `$store.mail.composeData[field]` via getter/setter. Autocompletes the last comma-separated token. Tab accepts first suggestion; Enter requires explicit arrow-key selection.
 
 **Pagination** — `GetInbox` and `GetLabelThreads` accept `offset int`. Frontend tracks `loadingMore` / `allLoaded`. `onListScroll()` on the list container triggers `loadMore()` when within 200px of bottom. Search results disable pagination (`allLoaded = true`).
 

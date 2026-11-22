@@ -6,9 +6,8 @@ All interfaces ship as a single binary:
 
 | Invocation | Interface |
 |---|---|
-| `mailrat` | Desktop app (Wails WebView) |
+| `mailrat` | Native desktop app (Fyne) |
 | `mailrat tui` | Terminal UI (Bubbletea) |
-| `mailrat web` | HTTP server for remote browser access |
 | `mailrat <command>` | CLI (accounts, sync, inbox, send, …) |
 
 ---
@@ -69,8 +68,7 @@ mailrat sync --days=30
 
 # 3. Pick an interface — or run without args for the desktop app
 mailrat tui          # terminal UI
-mailrat web          # open http://localhost:8080 in a browser
-mailrat              # desktop app (Wails WebView)
+mailrat              # native desktop app (Fyne)
 ```
 
 ---
@@ -83,98 +81,27 @@ mailrat              # desktop app (Wails WebView)
 mailrat
 ```
 
-Launches the Wails desktop app — a native window running the Alpine.js + Tailwind CSS SPA. No separate build step or npm required; the frontend is embedded in the binary.
-
-#### Compose shortcuts
+Launches the native Fyne app, laid out after Mimestream: account tiles and mailboxes on the left, thread list in the middle, conversation and toolbar on the right. Follows the system light/dark appearance.
 
 | Shortcut | Action |
 |---|---|
-| `C` (toolbar) | New message (takes over reading pane) |
-| `Reply` / `Forward` (toolbar) | Inline compose at bottom of thread |
-| `Ctrl+Enter` / `⌘+Enter` | Send |
-| `Esc` | Discard compose |
+| `⌘N` | New message |
+| `⌘R` / `⇧⌘R` | Reply / reply all |
+| `⇧⌘F` | Forward |
+| `⌘⌫` | Trash conversation |
+| `⌘,` | Settings |
+| `⌘G` | Check for new mail |
 
----
+#### Building
 
-### Terminal UI
-
-```bash
-mailrat tui
-```
-
-Full-screen terminal UI powered by [Bubbletea](https://github.com/charmbracelet/bubbletea).
-
-#### Navigation
-
-| Key | Action |
-|---|---|
-| `j` / `k` or arrows | Move cursor |
-| `Enter` / `o` | Open thread / message |
-| `u` / `Esc` | Back |
-
-#### Actions
-
-| Key | Action |
-|---|---|
-| `c` | Compose new message |
-| `r` | Reply |
-| `a` | Reply all |
-| `f` | Forward |
-| `e` / `y` | Archive |
-| `I` | Mark unread |
-| `s` | Sync now |
-| `/` | Search |
-| `q` | Quit |
-
-#### Compose
-
-| Key | Action |
-|---|---|
-| `Tab` | Next field |
-| `Ctrl+S` / `Ctrl+Enter` | Send |
-| `Esc` | Discard |
-
----
-
-### Web server
+Fyne needs cgo, so build natively on the target OS (there is no Linux→macOS cross-compile without an Apple SDK):
 
 ```bash
-mailrat web [--addr host:port] [--static path]
+./build.sh        # ./mailrat binary
+./build.sh app    # ./mailrat.app bundle (macOS)
 ```
 
-Serves the same frontend and backend over HTTP — useful for testing on a remote machine or from any browser on the network.
-
-| Flag | Default | Description |
-|---|---|---|
-| `--addr` | `0.0.0.0:8080` | Listen address (`host:port`) |
-| `--static` | *(embedded)* | Override frontend path (dev mode) |
-
-```bash
-mailrat web                        # http://0.0.0.0:8080
-mailrat web --addr 0.0.0.0:9090
-mailrat web --addr :8080 --static cmd/mailrat/frontend   # live-reload dev
-```
-
-Open `http://<host>:<port>` in any browser. The same UI that runs in the desktop WebView works in the browser — a small shim (`wails-compat.js`) bridges `window.go.*` calls to the REST API and subscribes to the SSE stream for push events.
-
-#### REST API
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/accounts` | Connected accounts |
-| `GET` | `/api/inbox?accountId=&limit=` | Inbox thread summaries |
-| `GET` | `/api/search?q=&limit=` | Search threads |
-| `GET` | `/api/thread?accountId=&threadId=` | Messages in a thread |
-| `GET` | `/api/message?accountId=&messageId=` | Single message (lazy body fetch) |
-| `POST` | `/api/send` | Send a message (JSON body) |
-| `POST` | `/api/sync?accountId=` | Run incremental sync |
-| `POST` | `/api/trash?accountId=&threadId=` | Move thread to Trash |
-| `POST` | `/api/mark-read?accountId=&messageId=` | Mark message as read |
-| `POST` | `/api/mark-unread?accountId=&messageId=` | Mark message as unread |
-| `GET` | `/api/labels?accountId=` | Gmail labels |
-| `GET` | `/api/events` | SSE stream — `sync:progress`, `sync:complete`, `inbox:updated` |
-
-> **Note:** `/api/trash`, `/api/mark-read`, and `/api/mark-unread` are wired in the desktop app (Wails) but not yet implemented in the HTTP web server — they will silently no-op in `mailrat web` mode.
+CI (`.github/workflows/build-macos.yml`) builds `arm64` and `amd64` `.app` bundles on macOS runners.
 
 ---
 
@@ -237,7 +164,7 @@ sqlite3 ~/.mailrat/mailrat.db \
 ## Architecture
 
 ```
-Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Wails / HTTP)
+Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Fyne)
 ```
 
 ### Design principles
@@ -251,14 +178,15 @@ Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Wails /
 
 ```
 cmd/mailrat/              single binary entry point
-  main.go                 root command + desktop launch + web server
-  frontend/               Alpine.js + Tailwind SPA (embedded into binary)
+  main.go                 root command + desktop launch
+  FyneApp.toml, icon.png  app bundle metadata for `fyne package`
 
 internal/
   accounts/               OAuth2 flow and token management
   cli/                    Cobra commands + TUI launch
   contacts/               Google People API integration
-  desktop/                Wails-bound App struct and frontend-facing types
+  desktop/                backend facade (App) and UI-facing item types
+  ui/                     Fyne desktop UI (sidebar, thread list, reader, compose, settings)
   gmail/                  Gmail API client wrapper with retry / backoff
   mail/                   Business logic — inbox, send, labels, drafts
   storage/                SQLite schema and CRUD
@@ -272,11 +200,9 @@ internal/
 
 ```bash
 go test ./...                          # run tests
-go build -o mailrat ./cmd/mailrat      # build binary
-go vet ./...                           # vet
-
-# Live-reload web frontend (no rebuild needed)
-go run ./cmd/mailrat web --static cmd/mailrat/frontend
+./build.sh                             # build binary (needs cgo + OpenGL/X11 headers on Linux)
+go vet ./internal/...                  # vet
+MAILRAT_SHOT=out.png go test ./internal/ui   # render the UI headlessly to a PNG
 ```
 
 ---
