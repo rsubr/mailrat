@@ -12,6 +12,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
 
@@ -374,5 +375,63 @@ func TestGmailSearchKey(t *testing.T) {
 	typeKeys(u, "/")
 	if u.win.Canvas().Focused() != fyne.Focusable(u.search) {
 		t.Fatal("/ should focus search")
+	}
+}
+
+func TestLabelsSectionCollapsePersists(t *testing.T) {
+	u, _, _ := testUI(t)
+	if u.labelsHidden {
+		t.Fatal("labels should start expanded")
+	}
+	u.toggleLabels()
+	if !u.labelsHidden || !u.app.Preferences().Bool(prefLabelsHidden) {
+		t.Fatal("collapse not stored")
+	}
+	if u2 := newUI(u.app, &fakeBackend{}); !u2.labelsHidden {
+		t.Fatal("state not restored from preferences")
+	}
+	u.toggleLabels()
+	if u.labelsHidden || u.app.Preferences().Bool(prefLabelsHidden) {
+		t.Fatal("expand not stored")
+	}
+}
+
+func TestSidebarMinimalToggleAndRowShape(t *testing.T) {
+	u, _, _ := testUI(t)
+	if u.sidebarMini {
+		t.Fatal("sidebar should start expanded")
+	}
+	th := u.threads[0]
+	two := newThreadRow(false)
+	u.setRow(two, th)
+
+	u.toggleSidebar()
+	if !u.sidebarMini || !u.app.Preferences().Bool(prefSidebarMini) {
+		t.Fatal("minimal state not stored")
+	}
+	if u2 := newUI(u.app, &fakeBackend{}); !u2.sidebarMini {
+		t.Fatal("state not restored from preferences")
+	}
+	one := newThreadRow(true)
+	u.setRow(one, th)
+	if one.MinSize().Height >= two.MinSize().Height {
+		t.Fatalf("single-line row (%v) should be shorter than two-line (%v)", one.MinSize().Height, two.MinSize().Height)
+	}
+
+	// Unread rows are bold, read rows are not.
+	th.IsUnread = true
+	u.setRow(one, th)
+	if !one.when.TextStyle.Bold || !one.head.Segments[0].(*widget.TextSegment).Style.TextStyle.Bold {
+		t.Fatal("unread row not bold")
+	}
+	th.IsUnread = false
+	u.setRow(one, th)
+	if one.when.TextStyle.Bold {
+		t.Fatal("read row should not be bold")
+	}
+
+	u.toggleSidebar()
+	if u.sidebarMini || u.app.Preferences().Bool(prefSidebarMini) {
+		t.Fatal("expand not stored")
 	}
 }

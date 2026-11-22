@@ -47,15 +47,17 @@ type UI struct {
 	loadGen     int
 	listErr     string
 
-	selected   *desktop.ThreadItem
-	messages   []desktop.MessageItem
-	openGroups map[string]bool // expanded nested labels, by full name
-	images     map[string]bool // messages whose remote images the user chose to load
-	collapsed  map[string]bool // message IDs the user toggled away from default
-	readTimer  *time.Timer
-	threadGen  int
-	syncStatus string
-	errCount   int
+	selected     *desktop.ThreadItem
+	messages     []desktop.MessageItem
+	openGroups   map[string]bool // expanded nested labels, by full name
+	sidebarMini  bool            // sidebar shows icons only (persisted)
+	labelsHidden bool            // sidebar Labels section collapsed (persisted)
+	images       map[string]bool // messages whose remote images the user chose to load
+	collapsed    map[string]bool // message IDs the user toggled away from default
+	readTimer    *time.Timer
+	threadGen    int
+	syncStatus   string
+	errCount     int
 
 	sidebar    *fyne.Container
 	listTitle  *widget.RichText
@@ -77,6 +79,14 @@ type UI struct {
 	settingsWin fyne.Window
 	loginDlg    dialog.Dialog
 }
+
+const (
+	prefLabelsHidden = "sidebar.labelsHidden"
+	prefSidebarMini  = "sidebar.mini"
+
+	sidebarWidth     float32 = 240 // expanded: icons + text
+	sidebarMiniWidth float32 = 64  // minimal: icons only
+)
 
 // Run builds the main window and blocks until it is closed.
 func Run(a fyne.App, be Backend) {
@@ -127,6 +137,8 @@ func (u *UI) refreshAll() {
 
 func newUI(a fyne.App, be Backend) *UI {
 	return &UI{
+		labelsHidden:  a.Preferences().Bool(prefLabelsHidden),
+		sidebarMini:   a.Preferences().Bool(prefSidebarMini),
 		app:           a,
 		be:            be,
 		activeAccount: unified,
@@ -172,10 +184,23 @@ func (u *UI) build() fyne.CanvasObject {
 
 	listPane := container.NewBorder(u.listHeader(), nil, nil, nil, u.list)
 	right := container.NewHSplit(listPane, u.reader)
-	right.SetOffset(0.32)
-	all := container.NewHSplit(u.sidebar, right)
-	all.SetOffset(0.18)
-	return all
+	w := sidebarWidth
+	right.SetOffset(0.34)
+	if u.sidebarMini {
+		// A wider list gives the single-line rows room, as in Gmail.
+		w = sidebarMiniWidth
+		right.SetOffset(0.5)
+	}
+	return container.NewBorder(nil, nil, container.New(fixedWidth{w}, u.sidebar), nil, right)
+}
+
+// toggleSidebar flips between expanded and icon-only sidebar. The list rows
+// change shape with it, so the panes are rebuilt.
+func (u *UI) toggleSidebar() {
+	u.sidebarMini = !u.sidebarMini
+	u.app.Preferences().SetBool(prefSidebarMini, u.sidebarMini)
+	u.win.SetContent(u.build())
+	u.refreshAll()
 }
 
 func (u *UI) installMenu() {
