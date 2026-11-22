@@ -2,7 +2,7 @@ package accounts
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net/http"
 
@@ -45,7 +45,7 @@ func fetchProfile(ctx context.Context, client *http.Client) (email, photoURL, di
 		Name    string `json:"name"`
 		Picture string `json:"picture"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &info); err != nil {
 		return "", "", "", err
 	}
 	if info.Email == "" {

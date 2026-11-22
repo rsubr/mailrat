@@ -36,9 +36,8 @@ jobs:
         working-directory: cmd/mailrat
         run: ditto -c -k --keepParent mailrat.app ../../mailrat-macos-arm64.zip
 
-      - name: Build CLI binary
-        run: |
-          CGO_ENABLED=1 go build -ldflags="-s -w" -o mailrat-darwin-arm64 ./cmd/mailrat
+      - name: Checksum
+        run: shasum -a 256 mailrat-macos-arm64.zip | tee mailrat-macos-arm64.zip.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -46,7 +45,7 @@ jobs:
           name: mailrat-macos-arm64
           path: |
             mailrat-macos-arm64.zip
-            mailrat-darwin-arm64
+            mailrat-macos-arm64.zip.sha256
           retention-days: 14
 
   release:
@@ -67,5 +66,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mailrat-macos-*.zip
-            mailrat-darwin-*
+            mailrat-macos-arm64.zip
+            mailrat-macos-arm64.zip.sha256
