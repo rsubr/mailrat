@@ -66,9 +66,13 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 			st.AccountID = a.ID
 			st.SyncPeriod = periodCodes[period.SelectedIndex()]
 			st.FetchAttachments = attach.Checked
-			if err := u.be.SetAccountSettings(st); err != nil {
-				u.showError(err)
-			}
+			s := st
+			var err error
+			u.bgOrdered(func() { err = u.be.SetAccountSettings(s) }, func() {
+				if err != nil {
+					u.showError(err)
+				}
+			})
 		}
 		period.OnChanged = func(string) { save() }
 		attach.OnChanged = func(bool) { save() }
@@ -76,25 +80,31 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 		nameEntry.SetPlaceHolder("Display name")
 		nameEntry.SetText(a.DisplayName)
 		rename := widget.NewButton("Rename", func() {
-			if err := u.be.RenameAccount(a.ID, nameEntry.Text); err != nil {
-				u.showError(err)
-				return
-			}
-			u.reloadAccounts()
+			var err error
+			u.bgOrdered(func() { err = u.be.RenameAccount(a.ID, nameEntry.Text) }, func() {
+				if err != nil {
+					u.showError(err)
+					return
+				}
+				u.reloadAccounts()
+			})
 		})
 		remove := widget.NewButton("Remove", func() {
 			dialog.ShowConfirm("Remove account", "Delete "+a.Email+" and all its local mail?", func(ok bool) {
 				if !ok {
 					return
 				}
-				if err := u.be.RemoveAccount(a.ID); err != nil {
-					u.showError(err)
-					return
-				}
-				if u.activeAccount == a.ID {
-					u.activeAccount = unified
-				}
-				u.reloadAll()
+				var err error
+				u.bgOrdered(func() { err = u.be.RemoveAccount(a.ID) }, func() {
+					if err != nil {
+						u.showError(err)
+						return
+					}
+					if u.activeAccount == a.ID {
+						u.activeAccount = unified
+					}
+					u.reloadAll()
+				})
 			}, u.settingsWin)
 		})
 		remove.Importance = widget.DangerImportance
@@ -161,9 +171,12 @@ func (u *UI) generalTab() fyne.CanvasObject {
 				out.DefaultAccountID = a.ID
 			}
 		}
-		if err := u.be.SetGlobalSettings(out); err != nil {
-			u.showError(err)
-		}
+		var err error
+		u.bgOrdered(func() { err = u.be.SetGlobalSettings(out) }, func() {
+			if err != nil {
+				u.showError(err)
+			}
+		})
 	}
 	freq.OnChanged = func(string) { save() }
 	acct.OnChanged = func(string) { save() }
@@ -241,9 +254,13 @@ func (u *UI) labelScopeList(accountID string) fyne.CanvasObject {
 			if it.Mode == desktop.SyncModeAll {
 				it.Value = 0
 			}
-			if err := u.be.SetSyncConfig(accountID, it); err != nil {
-				u.showError(err)
-			}
+			item := it
+			var saveErr error
+			u.bgOrdered(func() { saveErr = u.be.SetSyncConfig(accountID, item) }, func() {
+				if saveErr != nil {
+					u.showError(saveErr)
+				}
+			})
 		}
 		mode.OnChanged = func(string) { refresh(); save() }
 		val.OnChanged = func(string) { save() }

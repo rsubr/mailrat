@@ -101,7 +101,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 						}
 						draftID = id
 						if closed { // closed/sent while the save was in flight
-							_ = u.be.DiscardDraft(msg.AccountID, id)
+							u.bg(func() { _ = u.be.DiscardDraft(msg.AccountID, id) }, nil)
 						}
 					})
 				})

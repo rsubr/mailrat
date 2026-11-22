@@ -37,6 +37,8 @@ type UI struct {
 	// inline runs background work synchronously; tests set it.
 	inline bool
 
+	saveTail chan struct{} // completion of the latest bgOrdered write
+
 	accounts      []desktop.AccountItem
 	activeAccount string
 	activeLabel   string
@@ -47,8 +49,10 @@ type UI struct {
 	threads     []desktop.ThreadItem
 	allLoaded   bool
 	loadingMore bool
-	loadGen     int
-	listErr     string
+	// threadLoading is true from click until the open thread's messages arrive.
+	threadLoading bool
+	loadGen       int
+	listErr       string
 
 	selected     *desktop.ThreadItem
 	messages     []desktop.MessageItem
@@ -199,6 +203,20 @@ func (u *UI) bg(work func(), done func()) {
 			fyne.Do(done)
 		}
 	}()
+}
+
+// bgOrdered is bg for writes that must land in call order (a setting saved on
+// every keystroke): each work waits for the previous one to finish.
+func (u *UI) bgOrdered(work func(), done func()) {
+	prev, next := u.saveTail, make(chan struct{})
+	u.saveTail = next
+	u.bg(func() {
+		if prev != nil {
+			<-prev
+		}
+		work()
+		close(next)
+	}, done)
 }
 
 // build assembles the three panes. Called again when the theme variant flips,

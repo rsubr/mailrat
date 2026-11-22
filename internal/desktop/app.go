@@ -300,17 +300,25 @@ func (a *App) RefetchAccount(accountID string) error {
 	if a.trash != nil {
 		a.trash.DropPrefix(accountID + "/")
 	}
-	if a.queue != nil {
-		defer a.queue.Pause(accountID)()
-	}
-	a.syncMu.Lock()
-	err := a.store.ResetAccountMail(accountID)
-	a.syncMu.Unlock()
-	if err != nil {
-		return err
-	}
-	a.emitEvent("inbox:updated", nil)
-	go func() { _ = a.Sync(accountID) }()
+	// The reset waits on syncMu (held for a whole sync, possibly another
+	// account's refetch) and on the queue drain, so it must not run on the
+	// caller's (UI) goroutine or the window freezes.
+	go func() {
+		resume := func() {}
+		if a.queue != nil {
+			resume = a.queue.Pause(accountID)
+		}
+		a.syncMu.Lock()
+		err := a.store.ResetAccountMail(accountID)
+		a.syncMu.Unlock()
+		resume()
+		if err != nil {
+			a.addAPIError(fmt.Sprintf("refetch %s: %v", accountID, err))
+			return
+		}
+		a.emitEvent("inbox:updated", nil)
+		_ = a.Sync(accountID)
+	}()
 	return nil
 }
 

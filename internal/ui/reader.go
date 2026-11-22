@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -90,6 +91,9 @@ func (u *UI) conversation() fyne.CanvasObject {
 	titleRow := container.NewBorder(nil, nil, nil, container.NewHBox(head[1:]...), head[0])
 
 	cards := []fyne.CanvasObject{container.New(layout.NewCustomPaddedLayout(8, 8, 8, 8), titleRow)}
+	if u.threadLoading {
+		cards = append(cards, widget.NewProgressBarInfinite())
+	}
 	u.msgCards = nil
 	for i, m := range u.messages {
 		card := u.messageCard(m, i == len(u.messages)-1, len(u.messages) > 1 && i == u.msgCursor)
@@ -281,24 +285,37 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 	u.messages = nil
 	u.msgCursor = 0
 	u.collapsed = map[string]bool{}
+	u.threadLoading = true
 	u.refreshReader()
 
 	var msgs []desktop.MessageItem
 	var err error
 	u.bg(func() {
 		msgs, err = u.be.GetThread(t.AccountID, t.ID)
+		// Fetch bodies concurrently: a long thread would otherwise pay one
+		// sequential Gmail round trip per message.
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 6)
 		for i, m := range msgs {
 			if m.Body == "" || m.HasAttachments {
-				if full, e := u.be.GetMessage(m.AccountID, m.ID); e == nil {
-					msgs[i] = full
-				}
+				wg.Add(1)
+				sem <- struct{}{}
+				go func() {
+					defer func() { <-sem; wg.Done() }()
+					if full, e := u.be.GetMessage(m.AccountID, m.ID); e == nil {
+						msgs[i] = full
+					}
+				}()
 			}
 		}
+		wg.Wait()
 	}, func() {
 		if gen != u.threadGen {
 			return
 		}
+		u.threadLoading = false
 		if err != nil {
+			u.refreshReader()
 			u.showError(err)
 			return
 		}
