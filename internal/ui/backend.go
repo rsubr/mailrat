@@ -30,6 +30,8 @@ type Backend interface {
 	GetMessage(accountID, messageID string) (desktop.MessageItem, error)
 	GetAttachmentData(accountID, messageID, attachmentID string) (desktop.AttachmentDataItem, error)
 	SendMessage(msg desktop.OutboundMsg) error
+	SaveDraft(localID string, msg desktop.OutboundMsg) (string, error)
+	DiscardDraft(accountID, localID string) error
 	MarkMessageRead(accountID, messageID string) error
 	MarkMessageUnread(accountID, messageID string) error
 	TrashThread(accountID, threadID string) error

@@ -2,12 +2,16 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
+
+// draftInterval is how often a compose window checks for changes to autosave.
+var draftInterval = 10 * time.Second
 
 // compose opens a message window prefilled from draft (empty for a new message).
 func (u *UI) compose(draft desktop.OutboundMsg) {
@@ -63,16 +67,66 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 
 	send := widget.NewButtonWithIcon("Send", icon("send", fgOnPrimary), nil)
 	send.Importance = widget.HighImportance
-	discard := widget.NewButton("Discard", w.Close)
+	// Autosave: every draftInterval, save to local Drafts only if content changed.
+	draftID, closed := "", false
+	current := func() desktop.OutboundMsg {
+		return desktop.OutboundMsg{
+			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
+			Subject: subject.Text, Body: markupToHTML(body.Text), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
+		}
+	}
+	lastSaved := current()
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(draftInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-t.C:
+				fyne.Do(func() {
+					msg := current()
+					if closed || msg == lastSaved {
+						return
+					}
+					prev := lastSaved
+					lastSaved = msg
+					var id string
+					var err error
+					u.bg(func() { id, err = u.be.SaveDraft(draftID, msg) }, func() {
+						if err != nil {
+							lastSaved = prev // retry next tick
+							return
+						}
+						draftID = id
+						if closed { // closed/sent while the save was in flight
+							_ = u.be.DiscardDraft(msg.AccountID, id)
+						}
+					})
+				})
+			}
+		}
+	}()
+	finish := func(discardDraft bool) {
+		if closed {
+			return
+		}
+		closed = true
+		close(stop)
+		if discardDraft && draftID != "" {
+			id, acc := draftID, accountID
+			u.bg(func() { _ = u.be.DiscardDraft(acc, id) }, nil)
+		}
+	}
+	w.SetOnClosed(func() { finish(false) })
+	discard := widget.NewButton("Discard", func() { finish(true); w.Close() })
 	send.OnTapped = func() {
 		if strings.TrimSpace(to.Text) == "" {
 			u.showErrorIn(w, errNoRecipient)
 			return
 		}
-		msg := desktop.OutboundMsg{
-			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
-			Subject: subject.Text, Body: markupToHTML(body.Text), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
-		}
+		msg := current()
 		send.Disable()
 		var err error
 		u.bg(func() { err = u.be.SendMessage(msg) }, func() {
@@ -81,6 +135,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 				u.showErrorIn(w, err)
 				return
 			}
+			finish(true) // sent mail must not leave a stale draft
 			w.Close()
 			u.app.SendNotification(fyne.NewNotification("mailrat", "Message sent"))
 		})

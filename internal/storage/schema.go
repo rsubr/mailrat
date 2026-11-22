@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS drafts (
     account_id TEXT NOT NULL,
     content    TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL DEFAULT 0,
+    remote_id  TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (id, account_id),
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );

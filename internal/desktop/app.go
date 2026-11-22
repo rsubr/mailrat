@@ -568,6 +568,28 @@ func (a *App) SendMessage(msg OutboundMsg) error {
 	return err
 }
 
+// SaveDraft autosaves a compose window to the local Drafts store (no network);
+// it syncs to Gmail on the next queue drain. localID is empty on the first
+// save; the returned ID identifies the same draft on later saves.
+func (a *App) SaveDraft(localID string, msg OutboundMsg) (string, error) {
+	acc, err := a.store.GetAccount(msg.AccountID)
+	if err != nil {
+		return "", err
+	}
+	if localID == "" {
+		localID = fmt.Sprintf("local-%d", time.Now().UnixNano())
+	}
+	return localID, mail.SaveLocalDraft(a.store, localID, msg.AccountID, mail.OutboundMessage{
+		From: acc.Email, To: msg.To, Cc: msg.Cc, Bcc: msg.Bcc, Subject: msg.Subject,
+		Body: msg.Body, InReplyTo: msg.InReplyTo, ThreadID: msg.ThreadID,
+	})
+}
+
+// DiscardDraft deletes an autosaved draft (after sending or discarding).
+func (a *App) DiscardDraft(accountID, localID string) error {
+	return mail.DiscardLocalDraft(a.store, accountID, localID)
+}
+
 // MarkMessageRead removes the UNREAD label from a message. The change is
 // applied locally at once and sent to Gmail in the background.
 func (a *App) MarkMessageRead(accountID, messageID string) error {
@@ -666,12 +688,18 @@ func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp) error {
 	if err != nil {
 		return err
 	}
+	if mail.IsDraftOp(op.OpType) {
+		return mail.ApplyDraftOp(ctx, a.store, client, op)
+	}
 	return mail.ApplyOpRemote(ctx, client, op)
 }
 
 // rollbackOp reconciles local state with Gmail after an operation was abandoned.
 func (a *App) rollbackOp(op storage.PendingOp, cause error) {
 	a.addAPIError(fmt.Sprintf("%s failed and was undone: %v", op.OpType, cause))
+	if mail.IsDraftOp(op.OpType) {
+		return
+	}
 	go func() {
 		client, err := a.gmailClient(op.AccountID)
 		if err != nil {

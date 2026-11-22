@@ -24,6 +24,8 @@ type fakeBackend struct {
 	spammed, labelled []string
 	syncs             int
 	sent              []desktop.OutboundMsg
+	drafts            []desktop.OutboundMsg
+	discarded         []string
 	noCreds           bool
 	imported          string
 	loginStarted      int
@@ -102,6 +104,14 @@ func (f *fakeBackend) GetAttachmentData(_, _, _ string) (desktop.AttachmentDataI
 }
 func (f *fakeBackend) SendMessage(m desktop.OutboundMsg) error {
 	f.sent = append(f.sent, m)
+	return nil
+}
+func (f *fakeBackend) SaveDraft(id string, m desktop.OutboundMsg) (string, error) {
+	f.drafts = append(f.drafts, m)
+	return "d1", nil
+}
+func (f *fakeBackend) DiscardDraft(_, id string) error {
+	f.discarded = append(f.discarded, id)
 	return nil
 }
 func (f *fakeBackend) MarkMessageRead(_, _ string) error   { return nil }
@@ -575,5 +585,18 @@ func TestReplyBarAtBottom(t *testing.T) {
 	}
 	if got := buttonLabels(u.toolbar()); len(got) != 0 {
 		t.Fatalf("toolbar still has labelled buttons: %v", got)
+	}
+}
+
+func TestComposeAutosavesOnlyOnChange(t *testing.T) {
+	old := draftInterval
+	draftInterval = 20 * time.Millisecond
+	t.Cleanup(func() { draftInterval = old })
+	u, fb, _ := testUI(t)
+	u.accounts = []desktop.AccountItem{{ID: "a1", Email: "a@x.com"}}
+	u.compose(desktop.OutboundMsg{AccountID: "a1", To: "b@x.com", Subject: "s"})
+	time.Sleep(150 * time.Millisecond)
+	if len(fb.drafts) != 0 {
+		t.Fatalf("unchanged compose saved %d drafts", len(fb.drafts))
 	}
 }
