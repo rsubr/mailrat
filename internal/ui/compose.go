@@ -16,7 +16,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		return
 	}
 	w := u.app.NewWindow("New Message")
-	w.Resize(fyne.NewSize(680, 560))
+	w.Resize(fyne.NewSize(760, 600))
 
 	accountID := draft.AccountID
 	if accountID == "" {
@@ -47,10 +47,10 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	bcc.SetText(draft.Bcc)
 	subject := widget.NewEntry()
 	subject.SetText(draft.Subject)
-	body := widget.NewMultiLineEntry()
-	body.Wrapping = fyne.TextWrapWord
+	body := newBodyEntry(&suggester{canvas: w.Canvas()})
 	body.SetText(draft.Body)
 	body.CursorRow, body.CursorColumn = 0, 0
+	editor := u.richEditor(w, body, to, cc, func() string { return accountID })
 
 	form := widget.NewForm(
 		widget.NewFormItem("From", from),
@@ -70,7 +70,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}
 		msg := desktop.OutboundMsg{
 			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
-			Subject: subject.Text, Body: body.Text, InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
+			Subject: subject.Text, Body: markupToHTML(body.Text), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
 		}
 		send.Disable()
 		var err error
@@ -93,7 +93,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		})
 	}
 	buttons := container.NewHBox(discard, widget.NewLabel(""), send)
-	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(body)))
+	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(editor)))
 	w.Show()
 	if draft.To == "" {
 		w.Canvas().Focus(to)
@@ -135,6 +135,9 @@ func (u *UI) recipientEntry(w fyne.Window, account func() string, name string) *
 	}
 	e.OnChanged = func(text string) {
 		sg.hide()
+		if e.quiet {
+			return
+		}
 		_, token := splitRecipient(text)
 		if len(token) < 2 {
 			return

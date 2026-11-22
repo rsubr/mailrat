@@ -68,6 +68,7 @@ func buildRaw(msg OutboundMessage) string {
 
 // htmlToText converts HTML to plain text for the text/plain MIME part.
 func htmlToText(s string) string {
+	s = strings.ReplaceAll(s, "<li>", "- ")
 	for _, tag := range []string{"</p>", "</div>", "</li>", "<br>", "<br/>", "<br />"} {
 		s = strings.ReplaceAll(s, tag, "\n")
 	}

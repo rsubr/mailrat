@@ -98,6 +98,15 @@ func (s *suggester) key(k fyne.KeyName, anchor fyne.CanvasObject) bool {
 type suggestEntry struct {
 	widget.Entry
 	sg *suggester
+	// quiet suppresses suggestions for programmatic SetText calls.
+	quiet bool
+}
+
+// setQuietly sets the text without triggering suggestions.
+func (e *suggestEntry) setQuietly(s string) {
+	e.quiet = true
+	e.SetText(s)
+	e.quiet = false
 }
 
 func newSuggestEntry(sg *suggester) *suggestEntry {
