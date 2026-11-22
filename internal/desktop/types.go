@@ -8,104 +8,104 @@ import (
 
 // AccountItem is the frontend representation of a connected account.
 type AccountItem struct {
-	ID          string `json:"id"`
-	Email       string `json:"email"`
-	PhotoURL    string `json:"photoUrl"`
-	DisplayName string `json:"displayName"`
+	ID          string
+	Email       string
+	PhotoURL    string
+	DisplayName string
 }
 
 // AccountSettingsItem is the frontend representation of per-account sync settings.
 type AccountSettingsItem struct {
-	AccountID        string `json:"accountId"`
-	SyncPeriod       string `json:"syncPeriod"`       // "all", "1y", "90d", "30d"
-	FetchAttachments bool   `json:"fetchAttachments"`
+	AccountID        string
+	SyncPeriod       string // "all", "1y", "90d", "30d"
+	FetchAttachments bool
 }
 
 // GlobalSettingsItem is the frontend representation of app-wide settings.
 type GlobalSettingsItem struct {
-	SyncFrequency    string `json:"syncFrequency"`    // "15m", "1h", "manual"
-	DefaultAccountID string `json:"defaultAccountId"`
+	SyncFrequency    string // "15m", "1h", "manual"
+	DefaultAccountID string
 }
 
 // ThreadItem is the frontend representation of an inbox thread.
 type ThreadItem struct {
-	ID             string   `json:"id"`
-	AccountID      string   `json:"accountId"`
-	Subject        string   `json:"subject"`
-	Participants   string   `json:"participants"`
-	Snippet        string   `json:"snippet"`
-	Date           int64    `json:"date"`
-	IsUnread       bool     `json:"isUnread"`
-	IsStarred      bool     `json:"isStarred"`
-	MessageCount   int      `json:"messageCount"`
-	HasAttachments bool     `json:"hasAttachments"`
-	LabelIDs       []string `json:"labelIds"`
+	ID             string
+	AccountID      string
+	Subject        string
+	Participants   string
+	Snippet        string
+	Date           int64
+	IsUnread       bool
+	IsStarred      bool
+	MessageCount   int
+	HasAttachments bool
+	LabelIDs       []string
 }
 
 // AttachmentItem is the frontend representation of a single message attachment.
 type AttachmentItem struct {
-	Name         string `json:"name"`
-	MimeType     string `json:"mimeType"`
-	Size         int64  `json:"size"`
-	AttachmentID string `json:"attachmentId"`
+	Name         string
+	MimeType     string
+	Size         int64
+	AttachmentID string
 }
 
 // MessageItem is the frontend representation of a single message.
 type MessageItem struct {
-	ID             string           `json:"id"`
-	ThreadID       string           `json:"threadId"`
-	MessageID      string           `json:"messageId"` // RFC 2822 Message-ID header value
-	AccountID      string           `json:"accountId"`
-	Subject        string           `json:"subject"`
-	FromAddr       string           `json:"from"`
-	ToAddr         string           `json:"to"`
-	CcAddr         string           `json:"cc"`
-	BccAddr        string           `json:"bcc"`
-	Body           string           `json:"body"`
-	Snippet        string           `json:"snippet"`
-	Date           int64            `json:"date"`
-	IsUnread       bool             `json:"isUnread"`
-	HasAttachments bool             `json:"hasAttachments"`
-	Attachments    []AttachmentItem `json:"attachments"`
+	ID             string
+	ThreadID       string
+	MessageID      string // RFC 2822 Message-ID header value
+	AccountID      string
+	Subject        string
+	FromAddr       string
+	ToAddr         string
+	CcAddr         string
+	BccAddr        string
+	Body           string
+	Snippet        string
+	Date           int64
+	IsUnread       bool
+	HasAttachments bool
+	Attachments    []AttachmentItem
 }
 
 // LabelItem is the frontend representation of a Gmail label.
 type LabelItem struct {
-	ID              string `json:"id"`
-	Name            string `json:"name"`
-	Type            string `json:"type"`
-	TextColor       string `json:"textColor"`
-	BackgroundColor string `json:"backgroundColor"`
+	ID              string
+	Name            string
+	Type            string
+	TextColor       string
+	BackgroundColor string
 }
 
 // ContactItem is the frontend representation of an address book contact.
 type ContactItem struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	Name  string
+	Email string
 }
 
 // AttachmentDataItem carries raw attachment bytes for the frontend.
 type AttachmentDataItem struct {
-	Data     []byte `json:"data"`
-	MimeType string `json:"mimeType"`
+	Data     []byte
+	MimeType string
 }
 
 // APIError is a timestamped error entry shown in the error log modal.
 type APIError struct {
-	Timestamp int64  `json:"timestamp"`
-	Message   string `json:"message"`
+	Timestamp int64
+	Message   string
 }
 
 // OutboundMsg is the frontend payload for sending an email.
 type OutboundMsg struct {
-	AccountID string `json:"accountId"`
-	To        string `json:"to"`
-	Cc        string `json:"cc"`
-	Bcc       string `json:"bcc"`
-	Subject   string `json:"subject"`
-	Body      string `json:"body"`
-	InReplyTo string `json:"inReplyTo"`
-	ThreadID  string `json:"threadId"`
+	AccountID string
+	To        string
+	Cc        string
+	Bcc       string
+	Subject   string
+	Body      string
+	InReplyTo string
+	ThreadID  string
 }
 
 func threadSummaryToItem(t storage.ThreadSummary) ThreadItem {
@@ -165,14 +165,6 @@ func threadSummariesToItems(summaries []storage.ThreadSummary) []ThreadItem {
 	out := make([]ThreadItem, len(summaries))
 	for i, s := range summaries {
 		out[i] = threadSummaryToItem(s)
-	}
-	return out
-}
-
-func messagesToItems(msgs []storage.Message) []MessageItem {
-	out := make([]MessageItem, len(msgs))
-	for i, m := range msgs {
-		out[i] = messageToItem(m)
 	}
 	return out
 }

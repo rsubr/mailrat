@@ -1,7 +1,7 @@
 
 Product Requirements Document (PRD)
 
-Native Gmail Client (Go + Wails)
+Native Gmail Client (Go + Fyne)
 
 ⸻
 
@@ -13,7 +13,7 @@ Native Gmail Desktop Client (Working name)
 
 1.2 Summary
 
-A native macOS desktop email client built using Go and Wails that integrates directly with the Gmail API (not IMAP). The application provides a fast, offline-capable, multi-account unified inbox with a backend-driven architecture where Go manages all application state and synchronization.
+A native macOS desktop email client built using Go and Fyne that integrates directly with the Gmail API (not IMAP). The application provides a fast, offline-capable, multi-account unified inbox with a backend-driven architecture where Go manages all application state and synchronization.
 
 1.3 Core Philosophy
     •    Go backend owns all application state
@@ -72,7 +72,7 @@ Deliverables:
 
 ⸻
 
-Phase 3: Desktop App (Wails + Frontend)
+Phase 3: Desktop App (Fyne)
 
 Purpose:
     •    Add UI layer
@@ -164,7 +164,7 @@ Push notifications    Complex
 
 6.1 High-Level Architecture
 
-Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (Wails)
+Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (Fyne)
 
 ⸻
 

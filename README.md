@@ -118,10 +118,10 @@ Fyne needs cgo, so build natively on the target OS (there is no Linux→macOS cr
 **Prerequisites (macOS, Apple silicon):**
 
 1. Xcode Command Line Tools — `xcode-select --install` (provides clang and the Cocoa/OpenGL headers Fyne needs).
-2. Go 1.27 or newer — `brew install go`.
+2. Go 1.27.4 or newer — `brew install go`.
 3. For `.app` bundles only: the Fyne packager — `go install fyne.io/tools/cmd/fyne@latest` (`build.sh app` installs it for you). Make sure `$(go env GOPATH)/bin` is on your `PATH`.
 
-No Homebrew libraries, Node, or Wails needed.
+No Homebrew libraries or Node needed.
 
 CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon (`arm64`) `.app` bundle on a macOS runner and publishes it as `mailrat-macos-arm64.zip` (plus a `.sha256`). Intel builds are not produced.
 

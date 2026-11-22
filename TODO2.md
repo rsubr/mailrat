@@ -17,7 +17,7 @@
  [ ] Pagination for mails (metadata only) for mails that are not yet synced.
  [ ] Implement right click functionality for advanced actions.
  [ ] Prevent mail send when To and CC are blank
- [x] Trash / mark-read / mark-unread wired in web server (HTTP mode) and Wails desktop
+ [x] Trash / mark-read / mark-unread wired in the Fyne desktop app
  [x] Star -- types to match GMail
  [ ] Star -- clicking on stars cycles through the star types
  [ ] Dark/Light mode must detect system settings and configure accordingly

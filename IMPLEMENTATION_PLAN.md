@@ -243,63 +243,11 @@ Wire up Cobra commands using the services above:
 
 ---
 
-## Phase 3: Desktop App (Wails + Frontend)
+## Phase 3: Desktop App (Fyne)
 
-### Step 15 — Wails Scaffold
+Native Fyne v2 UI in `internal/ui`, driven by the `desktop.App` backend facade through the `ui.Backend` interface. Mimestream-style three-pane layout, Gmail web keyboard shortcuts, HTML mail rendered as styled text in light and dark.
 
-1. `wails init` to generate project structure alongside existing Go code.
-2. Move backend services into `app.go` as Wails-bound methods:
-   - `GetInbox() []Thread`
-   - `ReadMessage(id string) Message`
-   - `SendMessage(data OutboundMessage) error`
-   - `Sync() error`
-3. Add frontend directory: `frontend/`.
-
-**Verify:** `wails dev` launches with blank frontend and Go methods callable from browser console.
-
----
-
-### Step 16 — Frontend Stack Setup
-
-1. Choose Alpine.js + Tailwind CSS (per PRD preference).
-2. Configure Tailwind via PostCSS in the Wails frontend build.
-3. Create `index.html` as single entry point with Alpine.js wired to Wails runtime.
-
-**Verify:** `wails dev` renders a styled placeholder page.
-
----
-
-### Step 17 — Inbox & Message UI
-
-1. Inbox panel: list of threads (subject, snippet, sender, date, unread dot).
-2. Message panel: renders selected message body (handle HTML email bodies safely).
-3. Data flows: Alpine `x-data` calls `GetInbox()` on mount, updates on `inbox_updated` event.
-
-**Verify:** Inbox loads and clicking a message shows its body.
-
----
-
-### Step 18 — Compose UI
-
-1. Compose modal with To, Subject, Body fields.
-2. Submit calls `SendMessage()`.
-3. Auto-complete on To field using `contacts` service.
-
-**Verify:** Can send email from desktop UI.
-
----
-
-### Step 19 — Event-Driven Updates
-
-1. Emit Wails events from Go:
-   - `inbox_updated` — after sync
-   - `message_loaded` — after body fetch
-   - `sync_progress` — during sync
-   - `draft_saved` — after draft save
-2. Frontend subscribes via `window.runtime.EventsOn`.
-3. No polling — all updates are push-based.
-
-**Verify:** Phase 3 Definition of Done met — inbox renders, messages open, compose works, events update UI without full re-render.
+**Verify:** `go test ./internal/ui` renders the UI headlessly; `./build.sh` builds the app on macOS.
 
 ---
 
@@ -312,7 +260,7 @@ Wire up Cobra commands using the services above:
 ### Security
 - OAuth tokens never logged.
 - On macOS, use Keychain for token storage.
-- HTML email bodies sanitized before rendering (prevent XSS in Wails webview).
+- HTML email bodies sanitized before rendering (remote images blocked, only http/https/mailto links active).
 
 ### Testing Strategy
 - Unit tests: storage layer, mail business logic, sync processing.
@@ -333,4 +281,4 @@ Wire up Cobra commands using the services above:
 | `github.com/charmbracelet/lipgloss` | TUI styling |
 | `github.com/charmbracelet/bubbles` | TUI components |
 | `github.com/zalando/go-keyring` | macOS Keychain |
-| `github.com/wailsapp/wails/v2` | Desktop app framework |
+| `fyne.io/fyne/v2` | Desktop app framework |
