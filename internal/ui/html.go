@@ -49,7 +49,7 @@ func htmlToText(src string) string {
 			return
 		case html.ElementNode:
 			switch n.Data {
-			case "script", "style", "head", "title":
+			case "script", "style", "head", "title", "iframe", "object", "embed", "template", "noscript", "svg", "applet", "frame", "frameset", "canvas", "audio", "video", "math":
 				return
 			case "br":
 				b.WriteByte('\n')
