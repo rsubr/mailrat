@@ -67,6 +67,29 @@ func (s *Store) UpsertMessage(m Message) error {
 	return err
 }
 
+// UpsertMessageMeta stores a synced message, bumps its thread's last date and,
+// when labelIDs is non-nil, replaces its labels, all in one transaction.
+func (s *Store) UpsertMessageMeta(m Message, labelIDs []string, setLabels bool) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	if _, err := tx.Exec(messageUpsertSQL, messageUpsertArgs(m)...); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(threadUpsertSQL, m.ThreadID, m.AccountID, m.InternalDate); err != nil {
+		return err
+	}
+	if setLabels {
+		if err := setMessageLabelsTx(tx, m.AccountID, m.ID, labelIDs); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 	row := s.db.QueryRow(`
 		SELECT `+messageSelectColumns+`
