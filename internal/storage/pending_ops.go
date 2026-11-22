@@ -9,6 +9,8 @@ const (
 	OpArchive     = "archive_thread"
 	OpMarkSpam    = "mark_spam"
 	OpMarkNotSpam = "mark_not_spam"
+	OpSyncDraft   = "sync_draft"    // target: local draft ID; create/update the Gmail draft
+	OpDeleteDraft = "delete_draft"  // target: local draft ID; delete the Gmail draft
 	OpAddLabel    = "add_label:"    // + label ID, applied to a thread
 	OpRemoveLabel = "remove_label:" // + label ID, applied to a thread
 )

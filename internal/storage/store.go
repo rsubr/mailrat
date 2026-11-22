@@ -63,6 +63,7 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE attachments ADD COLUMN data BLOB`,
 		`ALTER TABLE pending_ops ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sync_config ADD COLUMN max_emails INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE drafts ADD COLUMN remote_id TEXT NOT NULL DEFAULT ''`,
 		// Repair rows stored before UpsertAttachments set the flag.
 		`UPDATE messages SET has_attachments = 1 WHERE has_attachments = 0 AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND a.account_id = messages.account_id)`,
 	}

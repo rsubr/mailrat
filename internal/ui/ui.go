@@ -6,8 +6,11 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -109,7 +112,16 @@ func Run(a fyne.App, be Backend) {
 	if len(u.accounts) > 0 {
 		u.syncNow()
 	}
+	// Quit via the Fyne loop on SIGTERM/SIGINT (e.g. a Homebrew upgrade) so
+	// Shutdown below flushes pending work instead of the process dying.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		<-sig
+		fyne.Do(a.Quit)
+	}()
 	u.win.ShowAndRun()
+	signal.Stop(sig)
 	be.Shutdown()
 }
 
