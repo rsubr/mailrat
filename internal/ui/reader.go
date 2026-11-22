@@ -95,10 +95,22 @@ func (u *UI) conversation() fyne.CanvasObject {
 	titleRow := container.NewBorder(nil, nil, nil, container.NewHBox(head[1:]...), head[0])
 
 	cards := []fyne.CanvasObject{container.New(layout.NewCustomPaddedLayout(8, 8, 8, 8), titleRow)}
+	u.msgCards = nil
 	for i, m := range u.messages {
-		cards = append(cards, u.messageCard(m, i == len(u.messages)-1))
+		card := u.messageCard(m, i == len(u.messages)-1, len(u.messages) > 1 && i == u.msgCursor)
+		u.msgCards = append(u.msgCards, card)
+		cards = append(cards, card)
 	}
-	return container.NewVScroll(container.NewVBox(cards...))
+	u.convScroll = container.NewVScroll(container.NewVBox(cards...))
+	return u.convScroll
+}
+
+// scrollToMessage brings message i to the top of the conversation pane.
+func (u *UI) scrollToMessage(i int) {
+	if u.convScroll == nil || i < 0 || i >= len(u.msgCards) {
+		return
+	}
+	u.convScroll.ScrollToOffset(fyne.NewPos(0, u.msgCards[i].Position().Y))
 }
 
 // expanded reports whether a message shows its body. The newest message and
@@ -111,7 +123,7 @@ func (u *UI) expanded(m desktop.MessageItem, last bool) bool {
 	return def
 }
 
-func (u *UI) messageCard(m desktop.MessageItem, last bool) fyne.CanvasObject {
+func (u *UI) messageCard(m desktop.MessageItem, last, cursor bool) fyne.CanvasObject {
 	open := u.expanded(m, last)
 	name := displayName(m.FromAddr)
 
@@ -152,7 +164,14 @@ func (u *UI) messageCard(m desktop.MessageItem, last bool) fyne.CanvasObject {
 		parts = append(parts, u.messageBody(m))
 	}
 	parts = append(parts, hline())
-	return container.NewVBox(parts...)
+	card := container.NewVBox(parts...)
+	if !cursor {
+		return card
+	}
+	// Gmail's message cursor: an accent bar down the left edge.
+	bar := canvas.NewRectangle(col(theme.ColorNamePrimary))
+	bar.SetMinSize(fyne.NewSize(3, 1))
+	return container.NewBorder(nil, nil, bar, nil, card)
 }
 
 func displayRecipients(s string) string {
@@ -233,6 +252,7 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 	}
 	u.selected = &t
 	u.messages = nil
+	u.msgCursor = 0
 	u.collapsed = map[string]bool{}
 	u.refreshReader()
 
@@ -256,18 +276,43 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 			return
 		}
 		u.messages = msgs
+		u.msgCursor = max(len(msgs)-1, 0)
 		u.refreshReader()
 		for _, m := range msgs {
 			if m.IsUnread {
-				u.scheduleMarkRead(t, gen)
+				u.scheduleMarkRead(gen)
 				break
 			}
 		}
 	})
 }
 
+// markRead marks every unread message of the open thread read.
+func (u *UI) markRead() {
+	if u.selected == nil {
+		return
+	}
+	t := *u.selected
+	msgs := append([]desktop.MessageItem(nil), u.messages...)
+	u.bg(func() {
+		for _, m := range msgs {
+			if m.IsUnread {
+				_ = u.be.MarkMessageRead(m.AccountID, m.ID)
+			}
+		}
+	}, func() {
+		if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
+			for i := range u.messages {
+				u.messages[i].IsUnread = false
+			}
+		}
+		u.setThreadUnread(t.ID, t.AccountID, false)
+		u.reloadLabels()
+	})
+}
+
 // scheduleMarkRead marks the thread read after it has stayed open a few seconds.
-func (u *UI) scheduleMarkRead(t desktop.ThreadItem, gen int) {
+func (u *UI) scheduleMarkRead(gen int) {
 	if u.inline {
 		return
 	}
@@ -276,20 +321,7 @@ func (u *UI) scheduleMarkRead(t desktop.ThreadItem, gen int) {
 			if gen != u.threadGen {
 				return
 			}
-			msgs := append([]desktop.MessageItem(nil), u.messages...)
-			u.bg(func() {
-				for _, m := range msgs {
-					if m.IsUnread {
-						_ = u.be.MarkMessageRead(m.AccountID, m.ID)
-					}
-				}
-			}, func() {
-				for i := range u.messages {
-					u.messages[i].IsUnread = false
-				}
-				u.setThreadUnread(t.ID, t.AccountID, false)
-				u.reloadLabels()
-			})
+			u.markRead()
 		})
 	})
 }

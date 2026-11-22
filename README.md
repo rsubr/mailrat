@@ -83,14 +83,28 @@ mailrat
 
 Launches the native Fyne app, laid out after Mimestream: account tiles and mailboxes on the left, thread list in the middle, conversation and toolbar on the right. Follows the system light/dark appearance.
 
-| Shortcut | Action |
+Keyboard shortcuts follow Gmail on the web. Press `?` in the app for the list.
+
+| Keys | Action |
 |---|---|
-| `⌘N` | New message |
-| `⌘R` / `⇧⌘R` | Reply / reply all |
-| `⇧⌘F` | Forward |
-| `⌘⌫` | Trash conversation |
-| `⌘,` | Settings |
-| `⌘G` | Check for new mail |
+| `g` then `i` `s` `t` `d` `a` `l` | Go to Inbox, Starred, Sent, Drafts, All Mail, or a label |
+| `j` / `k` | Open next (older) / previous (newer) conversation |
+| `n` / `p` | Next / previous message in the conversation |
+| `o` or `Enter` | Open conversation; expand or collapse the current message |
+| `u` | Back to the conversation list |
+| `c` or `d` | Compose |
+| `/` | Search (`Esc` leaves the field) |
+| `e` or `y` | Archive / remove from view |
+| `#` / `!` | Trash / report spam |
+| `s` | Star or unstar |
+| `+` `=` / `-` | Mark important / not important |
+| `r` `a` `f` (or capitals) | Reply, reply all, forward |
+| `⇧I` / `⇧U` or `_` | Mark read / unread |
+| `⇧N` | Check for new mail |
+| `⌘Enter` | Send (in a message window) |
+| `⌘N` `⌘R` `⇧⌘R` `⇧⌘F` `⌘⌫` `⌘,` `⌘G` | New, reply, reply all, forward, trash, settings, check mail |
+
+Not implemented: multi-select (`x`, `*` sequences), mute (`m`), move (`v`), label (`l`), undo (`z`).
 
 #### Building
 

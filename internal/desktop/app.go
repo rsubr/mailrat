@@ -648,6 +648,32 @@ func (a *App) MarkThreadNotSpam(accountID, threadID string) error {
 	return nil
 }
 
+// SetThreadLabel adds (on) or removes a system label such as STARRED or
+// IMPORTANT on every message in a thread. Needs the network.
+func (a *App) SetThreadLabel(accountID, threadID, labelID string, on bool) error {
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return err
+	}
+	msgs, err := a.store.ListMessagesByThread(accountID, threadID)
+	if err != nil {
+		return err
+	}
+	svc := mail.NewLabelService(a.store, client)
+	for _, msg := range msgs {
+		if on {
+			err = svc.ApplyLabel(a.ctx, accountID, msg.ID, labelID)
+		} else {
+			err = svc.RemoveLabel(a.ctx, accountID, msg.ID, labelID)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	a.emitEvent("inbox:updated", nil)
+	return nil
+}
+
 // applyPendingOp applies a single pending operation via the Gmail API.
 func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp, client *gmail.Client) error {
 	switch op.OpType {

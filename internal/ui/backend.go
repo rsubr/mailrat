@@ -34,6 +34,7 @@ type Backend interface {
 	ArchiveThread(accountID, threadID string) error
 	MarkThreadSpam(accountID, threadID string) error
 	MarkThreadNotSpam(accountID, threadID string) error
+	SetThreadLabel(accountID, threadID, labelID string, on bool) error
 	Sync(accountID string) error
 	DrainPendingOps()
 	SearchContacts(accountID, query string, limit int) ([]desktop.ContactItem, error)

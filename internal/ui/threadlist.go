@@ -56,6 +56,7 @@ type threadRow struct {
 	subject *widget.Label
 	snippet *widget.Label
 	clip    *canvas.Image
+	star    *canvas.Image
 	chips   *fyne.Container
 	root    fyne.CanvasObject
 }
@@ -68,8 +69,11 @@ func newThreadRow() *threadRow {
 		subject: widget.NewLabel(""),
 		snippet: widget.NewLabel(""),
 		clip:    canvas.NewImageFromResource(icon("clip", subtle())),
+		star:    canvas.NewImageFromResource(icon("star", color.NRGBA{0xff, 0xc1, 0x07, 0xff})),
 		chips:   container.NewHBox(),
 	}
+	r.star.FillMode = canvas.ImageFillContain
+	r.star.SetMinSize(fyne.NewSize(14, 14))
 	r.head.Truncation = fyne.TextTruncateEllipsis
 	r.subject.Truncation = fyne.TextTruncateEllipsis
 	r.snippet.Truncation = fyne.TextTruncateEllipsis
@@ -80,7 +84,7 @@ func newThreadRow() *threadRow {
 
 	gutter := container.NewGridWrap(fyne.NewSize(10, 10), r.dotFill)
 	left := container.NewVBox(spacer(0, 11), gutter)
-	headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.clip), tight(r.when)), tight(r.head))
+	headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when)), tight(r.head))
 	snipRow := container.NewBorder(nil, nil, nil, r.chips, tight(r.snippet))
 	r.root = container.New(layout.NewCustomPaddedLayout(3, 3, 2, 6), container.NewBorder(nil, nil, left, nil, container.NewVBox(headRow, tight(r.subject), snipRow)))
 	r.ExtendBaseWidget(r)
@@ -116,6 +120,11 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 		r.clip.Show()
 	} else {
 		r.clip.Hide()
+	}
+	if t.IsStarred {
+		r.star.Show()
+	} else {
+		r.star.Hide()
 	}
 
 	r.chips.Objects = nil
@@ -161,24 +170,23 @@ func displayParticipants(s string) string {
 	return joinComma(out)
 }
 
-func (u *UI) newThreadList() *widget.List {
-	l := widget.NewList(
-		func() int {
-			return len(u.threads)
-		},
-		func() fyne.CanvasObject { return newThreadRow() },
-		func(i widget.ListItemID, o fyne.CanvasObject) {
-			if i >= len(u.threads) {
-				return
-			}
-			u.setRow(o.(*threadRow), u.threads[i])
-			if i >= len(u.threads)-5 {
-				u.loadMore()
-			}
-		},
-	)
+func (u *UI) newThreadList() *keyList {
+	l := &keyList{u: u}
+	l.Length = func() int { return len(u.threads) }
+	l.CreateItem = func() fyne.CanvasObject { return newThreadRow() }
+	l.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
+		if i >= len(u.threads) {
+			return
+		}
+		u.setRow(o.(*threadRow), u.threads[i])
+		if i >= len(u.threads)-5 {
+			u.loadMore()
+		}
+	}
+	l.ExtendBaseWidget(l)
 	l.OnSelected = func(i widget.ListItemID) {
 		if i < len(u.threads) {
+			u.cursor, u.cursorNext = i, false
 			t := u.threads[i]
 			if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
 				return

@@ -57,12 +57,23 @@ type UI struct {
 	syncStatus string
 	errCount   int
 
-	sidebar     *fyne.Container
-	listTitle   *widget.RichText
-	list        *widget.List
-	listHolder  *fyne.Container
-	reader      *fyne.Container
-	search      *widget.Entry
+	sidebar    *fyne.Container
+	listTitle  *widget.RichText
+	list       *keyList
+	listHolder *fyne.Container
+	reader     *fyne.Container
+	search     *searchEntry
+	convScroll *container.Scroll
+	msgCards   []fyne.CanvasObject
+
+	// keyboard state: cursor is the last list row visited (cursorNext when the
+	// row was removed, so the next row is already "under" the cursor);
+	// msgCursor is the message n/p act on; pendingKey is a "g" awaiting its pair.
+	cursor      int
+	cursorNext  bool
+	msgCursor   int
+	pendingKey  rune
+	pendingAt   time.Time
 	settingsWin fyne.Window
 	loginDlg    dialog.Dialog
 }
@@ -124,6 +135,8 @@ func newUI(a fyne.App, be Backend) *UI {
 		collapsed:     map[string]bool{},
 		images:        map[string]bool{},
 		openGroups:    map[string]bool{},
+		cursor:        -1,
+		cursorNext:    true,
 	}
 }
 
@@ -151,7 +164,7 @@ func (u *UI) build() fyne.CanvasObject {
 	u.listTitle = widget.NewRichText()
 	u.listHolder = container.NewStack()
 	u.reader = container.NewStack()
-	u.search = widget.NewEntry()
+	u.search = newSearchEntry(u)
 	u.list = u.newThreadList()
 	u.refreshSidebar()
 	u.refreshListHeader()
@@ -292,6 +305,7 @@ func (u *UI) selectAccount(id string) {
 		return
 	}
 	u.activeAccount, u.activeLabel, u.query = id, "INBOX", ""
+	u.resetCursor()
 	u.search.SetText("")
 	u.clearSelection()
 	u.refreshSidebar()
@@ -302,6 +316,7 @@ func (u *UI) selectAccount(id string) {
 
 func (u *UI) selectLabel(id string) {
 	u.activeLabel, u.query = id, ""
+	u.resetCursor()
 	u.search.SetText("")
 	u.clearSelection()
 	u.refreshSidebar()
@@ -315,6 +330,7 @@ func (u *UI) runSearch(q string) {
 		return
 	}
 	u.query = q
+	u.resetCursor()
 	u.clearSelection()
 	u.refreshListHeader()
 	u.reloadThreads()
@@ -370,10 +386,12 @@ func (u *UI) removeSelected() {
 	}
 	id, acct := u.selected.ID, u.selected.AccountID
 	kept := u.threads[:0:0]
-	for _, t := range u.threads {
-		if !(t.ID == id && t.AccountID == acct) {
-			kept = append(kept, t)
+	for i, t := range u.threads {
+		if t.ID == id && t.AccountID == acct {
+			u.cursor, u.cursorNext = i-1, true // next row slides under the cursor
+			continue
 		}
+		kept = append(kept, t)
 	}
 	u.threads = kept
 	u.clearSelection()

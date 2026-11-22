@@ -84,6 +84,14 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 			u.app.SendNotification(fyne.NewNotification("mailrat", "Message sent"))
 		})
 	}
+	// ⌘Enter sends, as in Gmail.
+	for _, k := range []fyne.KeyName{fyne.KeyReturn, fyne.KeyEnter} {
+		w.Canvas().AddShortcut(cmd(k, false), func(fyne.Shortcut) {
+			if !send.Disabled() {
+				send.OnTapped()
+			}
+		})
+	}
 	buttons := container.NewHBox(discard, widget.NewLabel(""), send)
 	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(body)))
 	w.Show()

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"fmt"
 	"fyne.io/fyne/v2/theme"
 	"image/color"
 	"image/png"
@@ -17,6 +18,8 @@ import (
 // fakeBackend serves canned Mimestream-style data and records mutations.
 type fakeBackend struct {
 	archived, trashed []string
+	spammed, labelled []string
+	syncs             int
 	sent              []desktop.OutboundMsg
 	noCreds           bool
 	imported          string
@@ -95,10 +98,17 @@ func (f *fakeBackend) ArchiveThread(_, id string) error {
 	f.archived = append(f.archived, id)
 	return nil
 }
-func (f *fakeBackend) MarkThreadSpam(_, _ string) error    { return nil }
+func (f *fakeBackend) MarkThreadSpam(_, id string) error {
+	f.spammed = append(f.spammed, id)
+	return nil
+}
 func (f *fakeBackend) MarkThreadNotSpam(_, _ string) error { return nil }
-func (f *fakeBackend) Sync(string) error                   { return nil }
-func (f *fakeBackend) DrainPendingOps()                    {}
+func (f *fakeBackend) SetThreadLabel(_, id, label string, on bool) error {
+	f.labelled = append(f.labelled, fmt.Sprintf("%s:%s:%t", id, label, on))
+	return nil
+}
+func (f *fakeBackend) Sync(string) error { f.syncs++; return nil }
+func (f *fakeBackend) DrainPendingOps()  {}
 func (f *fakeBackend) SearchContacts(_, _ string, _ int) ([]desktop.ContactItem, error) {
 	return nil, nil
 }
@@ -240,4 +250,129 @@ type darkTheme struct{ mimeTheme }
 
 func (d darkTheme) Color(n fyne.ThemeColorName, _ fyne.ThemeVariant) color.Color {
 	return d.mimeTheme.Color(n, theme.VariantDark)
+}
+
+func typeKeys(u *UI, s string) {
+	for _, r := range s {
+		u.typedRune(r)
+	}
+}
+
+func TestGmailShortcuts(t *testing.T) {
+	u, fb, _ := testUI(t)
+	u.installShortcuts()
+
+	typeKeys(u, "j") // first conversation
+	if u.selected == nil || u.selected.ID != "t1" {
+		t.Fatalf("j should open first thread: %+v", u.selected)
+	}
+	typeKeys(u, "jj")
+	if u.selected.ID != "t3" {
+		t.Fatalf("jj: want t3, got %s", u.selected.ID)
+	}
+	typeKeys(u, "k")
+	if u.selected.ID != "t2" {
+		t.Fatalf("k: want t2, got %s", u.selected.ID)
+	}
+
+	typeKeys(u, "s")
+	if len(fb.labelled) != 1 || fb.labelled[0] != "t2:STARRED:true" || !u.selected.IsStarred {
+		t.Fatalf("star: %v", fb.labelled)
+	}
+	typeKeys(u, "s")
+	if fb.labelled[1] != "t2:STARRED:false" {
+		t.Fatalf("unstar: %v", fb.labelled)
+	}
+	typeKeys(u, "+")
+	if fb.labelled[2] != "t2:IMPORTANT:true" {
+		t.Fatalf("important: %v", fb.labelled)
+	}
+
+	typeKeys(u, "e") // archive t2, cursor lands on next row
+	if len(fb.archived) != 1 || fb.archived[0] != "t2" || u.selected != nil {
+		t.Fatalf("e: %v", fb.archived)
+	}
+	typeKeys(u, "j")
+	if u.selected == nil || u.selected.ID != "t3" {
+		t.Fatalf("j after archive should open the next row, got %+v", u.selected)
+	}
+	typeKeys(u, "#")
+	if len(fb.trashed) != 1 || fb.trashed[0] != "t3" {
+		t.Fatalf("#: %v", fb.trashed)
+	}
+	typeKeys(u, "j!")
+	if len(fb.spammed) != 1 {
+		t.Fatalf("!: %v", fb.spammed)
+	}
+
+	typeKeys(u, "N")
+	if fb.syncs == 0 {
+		t.Fatal("N should sync")
+	}
+}
+
+func TestGmailGoToAndMessageKeys(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.installShortcuts()
+
+	typeKeys(u, "gs")
+	if u.activeLabel != "STARRED" {
+		t.Fatalf("g s: %s", u.activeLabel)
+	}
+	typeKeys(u, "gi")
+	if u.activeLabel != "INBOX" || u.pendingKey != 0 {
+		t.Fatalf("g i: %s", u.activeLabel)
+	}
+	typeKeys(u, "gz") // unknown pair: ignored, prefix cleared
+	if u.activeLabel != "INBOX" || u.pendingKey != 0 {
+		t.Fatal("bad sequence should reset")
+	}
+	typeKeys(u, "g")
+	u.pendingAt = time.Now().Add(-time.Minute) // stale prefix: second key acts alone
+	typeKeys(u, "j")
+	if u.selected == nil {
+		t.Fatal("stale g must not swallow j")
+	}
+
+	// Thread of three messages: cursor starts on the newest.
+	u.list.Select(2)
+	if u.msgCursor != 2 {
+		t.Fatalf("cursor: %d", u.msgCursor)
+	}
+	typeKeys(u, "p")
+	if u.msgCursor != 1 || !u.expanded(u.messages[1], false) {
+		t.Fatalf("p should open message 1: cursor=%d", u.msgCursor)
+	}
+	typeKeys(u, "pp")
+	if u.msgCursor != 0 {
+		t.Fatalf("clamp at first: %d", u.msgCursor)
+	}
+	typeKeys(u, "nn")
+	if u.msgCursor != 2 {
+		t.Fatalf("n: %d", u.msgCursor)
+	}
+	before := u.expanded(u.messages[2], true)
+	typeKeys(u, "o")
+	if u.expanded(u.messages[2], true) == before {
+		t.Fatal("o should toggle the cursor message")
+	}
+
+	typeKeys(u, "u")
+	if u.selected != nil {
+		t.Fatal("u should return to the list")
+	}
+	typeKeys(u, "?") // help dialog builds without panic
+	if u.win.Canvas().Overlays().Top() == nil {
+		t.Fatal("? should show help")
+	}
+	typeKeys(u, "e") // overlay open: keys ignored
+}
+
+func TestGmailSearchKey(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.installShortcuts()
+	typeKeys(u, "/")
+	if u.win.Canvas().Focused() != fyne.Focusable(u.search) {
+		t.Fatal("/ should focus search")
+	}
 }
