@@ -16,9 +16,8 @@ type AccountItem struct {
 
 // AccountSettingsItem is the frontend representation of per-account sync settings.
 type AccountSettingsItem struct {
-	AccountID        string
-	SyncPeriod       string // "all", "1y", "90d", "30d"
-	FetchAttachments bool
+	AccountID  string
+	SyncPeriod string // "all", "1y", "90d", "30d"
 }
 
 // GlobalSettingsItem is the frontend representation of app-wide settings.

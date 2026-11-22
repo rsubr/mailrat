@@ -1,6 +1,7 @@
 package mail
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/mailrat/mailrat/internal/storage"
@@ -22,8 +23,8 @@ func TestLocalDraftSaveAndDiscard(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if ds, _ := s.ListDrafts("a"); len(ds) != 1 {
-		t.Fatalf("want 1 draft, got %d", len(ds))
+	if _, err := s.GetDraft("a", "local-1"); err != nil {
+		t.Fatalf("want draft stored: %v", err)
 	}
 	if ops, _ := s.ListPendingOps(); len(ops) != 1 || ops[0].OpType != storage.OpSyncDraft {
 		t.Fatalf("ops: %+v", ops)
@@ -32,7 +33,7 @@ func TestLocalDraftSaveAndDiscard(t *testing.T) {
 	if err := DiscardLocalDraft(s, "a", "local-1"); err != nil {
 		t.Fatal(err)
 	}
-	if ds, _ := s.ListDrafts("a"); len(ds) != 0 {
+	if _, err := s.GetDraft("a", "local-1"); !errors.Is(err, storage.ErrDraftNotFound) {
 		t.Fatal("draft not removed")
 	}
 	// Synced: discard keeps the row and queues a Gmail delete.

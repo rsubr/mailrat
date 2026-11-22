@@ -32,6 +32,16 @@ type App struct {
 	errMu  sync.Mutex
 	errLog []APIError
 
+	attachments *mail.AttachmentCache
+
+	prefetchMu     sync.Mutex
+	prefetchCancel context.CancelFunc
+
+	// Background attachment caching of synced mail, one run per account. It has
+	// its own cancel scope, separate from the thread-open prefetch above.
+	syncPrefetchMu     sync.Mutex
+	syncPrefetchCancel map[string]context.CancelFunc
+
 	queue  *mail.Queue   // optimistic mutations awaiting Gmail
 	trash  *mail.Delayed // trashes still inside their undo window
 	syncMu sync.Mutex
@@ -72,6 +82,7 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.store = store
+	a.attachments = mail.NewAttachmentCache(store)
 	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)
 	a.trash = mail.NewDelayed(mail.UndoWindow)
 	go a.queue.Run(ctx)
@@ -264,27 +275,12 @@ func (a *App) CancelLogin() {
 	}
 }
 
-// GetOAuthURL returns the Google OAuth URL for a redirect-based (hosted) flow.
-func (a *App) GetOAuthURL(callbackURL, state string) (string, error) {
-	if a.accounts == nil {
-		return "", fmt.Errorf("accounts manager not initialized — credentials.json missing")
-	}
-	return a.accounts.StartWebOAuth(callbackURL, state)
-}
-
-// CompleteOAuth exchanges an OAuth code received at the callback URL and saves the account.
-func (a *App) CompleteOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
-	if a.accounts == nil {
-		return storage.Account{}, fmt.Errorf("accounts manager not initialized")
-	}
-	return a.accounts.CompleteWebOAuth(ctx, callbackURL, code)
-}
-
 // RemoveAccount deletes an account and all its local data via FK cascade.
 func (a *App) RemoveAccount(accountID string) error {
 	if a.store == nil {
 		return fmt.Errorf("store not initialized")
 	}
+	a.stopSyncPrefetch(accountID)
 	return a.store.DeleteAccount(accountID)
 }
 
@@ -300,6 +296,7 @@ func (a *App) RefetchAccount(accountID string) error {
 	if a.trash != nil {
 		a.trash.DropPrefix(accountID + "/")
 	}
+	a.stopSyncPrefetch(accountID)
 	// The reset waits on syncMu (held for a whole sync, possibly another
 	// account's refetch) and on the queue drain, so it must not run on the
 	// caller's (UI) goroutine or the window freezes.
@@ -340,9 +337,8 @@ func (a *App) GetAccountSettings(accountID string) (AccountSettingsItem, error) 
 		return AccountSettingsItem{}, err
 	}
 	return AccountSettingsItem{
-		AccountID:        st.AccountID,
-		SyncPeriod:       st.SyncPeriod,
-		FetchAttachments: st.FetchAttachments,
+		AccountID:  st.AccountID,
+		SyncPeriod: st.SyncPeriod,
 	}, nil
 }
 
@@ -352,9 +348,8 @@ func (a *App) SetAccountSettings(settings AccountSettingsItem) error {
 		return fmt.Errorf("store not initialized")
 	}
 	return a.store.UpsertAccountSettings(storage.AccountSettings{
-		AccountID:        settings.AccountID,
-		SyncPeriod:       settings.SyncPeriod,
-		FetchAttachments: settings.FetchAttachments,
+		AccountID:  settings.AccountID,
+		SyncPeriod: settings.SyncPeriod,
 	})
 }
 
@@ -506,47 +501,58 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 // Serves from SQLite cache when available; falls back to the Gmail API and
 // writes the result back to cache so subsequent requests are served locally.
 func (a *App) GetAttachmentData(accountID, messageID, attachmentID string) (AttachmentDataItem, error) {
-	// Single store query: find the attachment row, return cached data if present.
-	var cached *storage.Attachment
-	if a.store != nil {
-		if atts, err := a.store.GetAttachments(accountID, messageID); err == nil {
-			for i := range atts {
-				if atts[i].AttachmentID == attachmentID {
-					if atts[i].Data != nil {
-						return AttachmentDataItem{Data: atts[i].Data, MimeType: atts[i].MimeType}, nil
-					}
-					cached = &atts[i]
-					break
-				}
-			}
+	if a.store == nil {
+		return AttachmentDataItem{}, fmt.Errorf("store not initialised")
+	}
+	var src mail.AttachmentSource
+	if a.accounts != nil && !strings.HasPrefix(attachmentID, "name:") {
+		// A client error only matters on a cache miss; Get ignores src on a hit.
+		if client, err := a.gmailClient(accountID); err == nil {
+			src = client
 		}
 	}
-
-	// Inline attachments (synthetic "name:" ID) have no Gmail API path.
-	if strings.HasPrefix(attachmentID, "name:") {
-		return AttachmentDataItem{}, fmt.Errorf("attachment %q not yet downloaded; sync to cache it", strings.TrimPrefix(attachmentID, "name:"))
+	if src == nil {
+		src = noSource{}
 	}
-
-	if a.accounts == nil {
-		return AttachmentDataItem{}, fmt.Errorf("attachment not cached and no account credentials available")
-	}
-	client, err := a.gmailClient(accountID)
+	data, mimeType, err := a.attachments.Get(a.ctx, src, accountID, messageID, attachmentID)
 	if err != nil {
 		return AttachmentDataItem{}, err
-	}
-	data, err := client.GetAttachmentData(a.ctx, messageID, attachmentID)
-	if err != nil {
-		return AttachmentDataItem{}, err
-	}
-
-	mimeType := "application/octet-stream"
-	if cached != nil {
-		mimeType = cached.MimeType
-		// Write back to cache so future requests are served from SQLite.
-		cached.Data = data
-		_ = a.store.UpdateAttachmentData(accountID, messageID, attachmentID, data)
 	}
 	return AttachmentDataItem{Data: data, MimeType: mimeType}, nil
+}
+
+// noSource stands in when no Gmail client is available.
+type noSource struct{}
+
+func (noSource) GetAttachmentData(context.Context, string, string) ([]byte, error) {
+	return nil, fmt.Errorf("attachment not cached and no account credentials available")
+}
+
+// PrefetchAttachments caches every attachment of a thread in the background
+// and returns immediately. A newer call (thread switch) or app shutdown
+// cancels the previous one.
+func (a *App) PrefetchAttachments(accountID, threadID string) {
+	if a.store == nil || a.accounts == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.prefetchMu.Lock()
+	if a.prefetchCancel != nil {
+		a.prefetchCancel()
+	}
+	a.prefetchCancel = cancel
+	a.prefetchMu.Unlock()
+
+	go func() {
+		client, err := a.gmailClient(accountID)
+		if err != nil {
+			a.logWarning(fmt.Sprintf("attachment prefetch: %v", err))
+			return
+		}
+		_ = a.attachments.Prefetch(ctx, client, accountID, threadID, func(err error) {
+			a.logWarning(fmt.Sprintf("attachment prefetch: %v", err))
+		})
+	}()
 }
 
 // SendMessage sends an outbound email.
@@ -762,6 +768,7 @@ func (a *App) Sync(accountID string) error {
 	a.emitEvent("inbox:updated", nil)
 	for _, acc := range accs {
 		if accountID == "" || accountID == "unified" || acc.ID == accountID {
+			a.prefetchSyncedAttachments(acc.ID)
 			go a.syncContacts(acc.ID, acc.Email)
 		}
 	}
@@ -801,11 +808,51 @@ func (a *App) syncAccount(acc storage.Account) {
 	if err := mgr.FetchBodies(a.ctx, acc.ID, mailsync.BodyFetchLimit); err != nil {
 		a.addAPIError(fmt.Sprintf("fetch bodies %s: %v", acc.Email, err))
 	}
-	// Download missing attachment binaries for already-cached messages (per label policy).
-	configs, _ = a.store.ListSyncConfigs(acc.ID)
-	if err := mgr.FetchMissingAttachments(a.ctx, acc.ID, configs); err != nil {
-		a.addAPIError(fmt.Sprintf("fetch missing attachments %s: %v", acc.Email, err))
+}
+
+// prefetchSyncedAttachments caches, in the background, the attachments still
+// missing for mail stored by sync (any label). It covers new messages
+// and backfills older ones left uncached. It returns at once; a run already in
+// progress for the account is left alone and the next sync picks up the rest.
+func (a *App) prefetchSyncedAttachments(accountID string) {
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.syncPrefetchMu.Lock()
+	if _, running := a.syncPrefetchCancel[accountID]; running {
+		a.syncPrefetchMu.Unlock()
+		cancel()
+		return
 	}
+	if a.syncPrefetchCancel == nil {
+		a.syncPrefetchCancel = map[string]context.CancelFunc{}
+	}
+	a.syncPrefetchCancel[accountID] = cancel
+	a.syncPrefetchMu.Unlock()
+
+	go func() {
+		defer func() {
+			cancel()
+			a.syncPrefetchMu.Lock()
+			delete(a.syncPrefetchCancel, accountID)
+			a.syncPrefetchMu.Unlock()
+		}()
+		client, err := a.gmailClient(accountID)
+		if err != nil {
+			a.logWarning(fmt.Sprintf("attachment sync prefetch: %v", err))
+			return
+		}
+		_ = a.attachments.PrefetchSynced(ctx, client, accountID, mailsync.BodyFetchLimit, func(err error) {
+			a.logWarning(fmt.Sprintf("attachment sync prefetch: %v", err))
+		})
+	}()
+}
+
+// stopSyncPrefetch cancels an account's background attachment caching.
+func (a *App) stopSyncPrefetch(accountID string) {
+	a.syncPrefetchMu.Lock()
+	if cancel := a.syncPrefetchCancel[accountID]; cancel != nil {
+		cancel()
+	}
+	a.syncPrefetchMu.Unlock()
 }
 
 func (a *App) initialSync(mgr *mailsync.Manager, acc storage.Account) {
@@ -916,17 +963,9 @@ func (a *App) SetSyncConfig(accountID string, item SyncConfigItem) error {
 		return fmt.Errorf("store not initialized")
 	}
 	cfg := storage.SyncConfig{
-		LabelID:          item.LabelID,
-		AccountID:        accountID,
-		LabelName:        item.LabelName,
-		FetchAttachments: item.LabelID == "INBOX" || item.LabelID == "STARRED",
-	}
-	if existing, err := a.store.ListSyncConfigs(accountID); err == nil {
-		for _, c := range existing {
-			if c.LabelID == item.LabelID {
-				cfg.FetchAttachments = c.FetchAttachments
-			}
-		}
+		LabelID:   item.LabelID,
+		AccountID: accountID,
+		LabelName: item.LabelName,
 	}
 	switch item.Mode {
 	case SyncModeDays:

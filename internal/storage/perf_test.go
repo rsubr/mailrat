@@ -241,3 +241,42 @@ func TestPragmasOnEveryConnection(t *testing.T) {
 		c.Close()
 	}
 }
+
+func TestMigrationDropsFetchAttachmentsColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Recreate the pre-removal layout and add a row.
+	for _, q := range []string{
+		`ALTER TABLE sync_config ADD COLUMN fetch_attachments INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE account_settings ADD COLUMN fetch_attachments INTEGER NOT NULL DEFAULT 1`,
+		`INSERT INTO accounts (id, email, token_json) VALUES ('a1', 'a@x.com', '{}')`,
+		`INSERT INTO account_settings (account_id, sync_period, fetch_attachments) VALUES ('a1', '90d', 0)`,
+	} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	s.Close()
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s2.Close()
+	for _, tbl := range []string{"sync_config", "account_settings"} {
+		var n int
+		if err := s2.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'fetch_attachments'`, tbl).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("%s still has fetch_attachments", tbl)
+		}
+	}
+	st, err := s2.GetAccountSettings("a1")
+	if err != nil || st.SyncPeriod != "90d" {
+		t.Fatalf("settings = %+v, %v", st, err)
+	}
+}

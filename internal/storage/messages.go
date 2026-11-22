@@ -10,9 +10,8 @@ import (
 type CacheState string
 
 const (
-	CacheMetadataOnly     CacheState = "metadata_only"
-	CacheBodyCached       CacheState = "body_cached"
-	CacheAttachmentCached CacheState = "attachments_cached"
+	CacheMetadataOnly CacheState = "metadata_only"
+	CacheBodyCached   CacheState = "body_cached"
 )
 
 const (
@@ -102,15 +101,6 @@ func (s *Store) GetMessage(accountID, messageID string) (Message, error) {
 	return m, err
 }
 
-func (s *Store) ListMessages(accountID string, limit int) ([]Message, error) {
-	return s.queryMessages(`
-		SELECT `+messageSelectColumns+`
-		FROM messages
-		WHERE account_id = ?`+messageOrderDesc+`
-		LIMIT ?
-	`, accountID, limit)
-}
-
 func (s *Store) ListMessagesByThread(accountID, threadID string) ([]Message, error) {
 	return s.queryMessages(`
 		SELECT `+messageSelectColumns+`
@@ -118,27 +108,6 @@ func (s *Store) ListMessagesByThread(accountID, threadID string) ([]Message, err
 		WHERE account_id = ? AND thread_id = ?`+messageOrderAsc,
 		accountID, threadID,
 	)
-}
-
-// ListMessagesByLabel returns messages that have the given label (by name or ID),
-// newest first. labelQuery is matched case-insensitively against both the label
-// ID (e.g. "SENT") and the label name (e.g. "Sent").
-func (s *Store) ListMessagesByLabel(accountID, labelQuery string, limit int) ([]Message, error) {
-	return s.queryMessages(labelFilteredMessagesSQL(true), accountID, labelQuery, labelQuery, limit)
-}
-
-// ListAllMessagesByLabel is the cross-account version of ListMessagesByLabel.
-func (s *Store) ListAllMessagesByLabel(labelQuery string, limit int) ([]Message, error) {
-	return s.queryMessages(labelFilteredMessagesSQL(false), labelQuery, labelQuery, limit)
-}
-
-// ListAllMessages returns messages across all accounts, newest first.
-func (s *Store) ListAllMessages(limit int) ([]Message, error) {
-	return s.queryMessages(`
-		SELECT `+messageSelectColumns+`
-		FROM messages`+messageOrderDesc+`
-		LIMIT ?
-	`, limit)
 }
 
 func (s *Store) ListUncachedBodies(accountID string, limit int) ([]Message, error) {
@@ -168,23 +137,6 @@ func (s *Store) queryMessages(query string, args ...any) ([]Message, error) {
 	}
 	defer rows.Close()
 	return scanMessages(rows)
-}
-
-func labelFilteredMessagesSQL(scopedToAccount bool) string {
-	where := `WHERE UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?)`
-	if scopedToAccount {
-		where = `WHERE m.account_id = ?
-		  AND (UPPER(l.id) = UPPER(?) OR UPPER(l.name) = UPPER(?))`
-	}
-
-	return `
-		SELECT m.` + strings.ReplaceAll(messageSelectColumns, ", ", ", m.") + `
-		FROM messages m
-		JOIN message_labels ml ON ml.message_id = m.id AND ml.account_id = m.account_id
-		JOIN labels l          ON l.id = ml.label_id AND l.account_id = m.account_id
-		` + where + messageOrderDesc + `
-		LIMIT ?
-	`
 }
 
 func buildUncachedBodiesForLabelsQuery(accountID string, labelIDs []string, limit int) (string, []any) {

@@ -122,15 +122,6 @@ func (c *Client) GetMessageMetas(ctx context.Context, ids []string) ([]MessageMe
 	return out, firstErr
 }
 
-// ListMessages returns message metadata matching the given query.
-func (c *Client) ListMessages(ctx context.Context, query string, limit int64) ([]MessageMeta, error) {
-	ids, err := c.ListMessageIDs(ctx, query, limit)
-	if err != nil {
-		return nil, err
-	}
-	return c.GetMessageMetas(ctx, ids)
-}
-
 // GetMessageMeta fetches headers + metadata for a single message.
 func (c *Client) GetMessageMeta(ctx context.Context, id string) (MessageMeta, error) {
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
@@ -236,17 +227,6 @@ func (c *Client) TrashThread(ctx context.Context, threadID string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("trash thread %s: %w", threadID, err)
-	}
-	return nil
-}
-
-// TrashMessage moves a message to the Trash.
-func (c *Client) TrashMessage(ctx context.Context, msgID string) error {
-	_, err := withRetry(ctx, func() (*gmailv1.Message, error) {
-		return c.svc.Users.Messages.Trash("me", msgID).Context(ctx).Do()
-	})
-	if err != nil {
-		return fmt.Errorf("trash message %s: %w", msgID, err)
 	}
 	return nil
 }

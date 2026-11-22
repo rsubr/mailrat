@@ -52,7 +52,10 @@ func (m *Manager) markBackfilled(cfg storage.SyncConfig) error {
 }
 
 func (m *Manager) fetchConfiguredBodies(ctx context.Context, accountID string, configs []storage.SyncConfig) error {
-	labelIDs := attachmentLabelIDs(configs)
+	labelIDs := make([]string, 0, len(configs))
+	for _, cfg := range configs {
+		labelIDs = append(labelIDs, cfg.LabelID)
+	}
 	if len(labelIDs) == 0 {
 		return nil
 	}

@@ -79,13 +79,16 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE labels ADD COLUMN background_color TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE accounts ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE accounts ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
-		`CREATE TABLE IF NOT EXISTS account_settings (account_id TEXT PRIMARY KEY, sync_period TEXT NOT NULL DEFAULT '30d', fetch_attachments INTEGER NOT NULL DEFAULT 1, FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE)`,
+		`CREATE TABLE IF NOT EXISTS account_settings (account_id TEXT PRIMARY KEY, sync_period TEXT NOT NULL DEFAULT '30d', FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE)`,
 		`CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')`,
 		`ALTER TABLE attachments ADD COLUMN attachment_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE attachments ADD COLUMN data BLOB`,
 		`ALTER TABLE pending_ops ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sync_config ADD COLUMN max_emails INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE drafts ADD COLUMN remote_id TEXT NOT NULL DEFAULT ''`,
+		// The download-attachments setting was removed: syncing always fetches them.
+		`ALTER TABLE sync_config DROP COLUMN fetch_attachments`,
+		`ALTER TABLE account_settings DROP COLUMN fetch_attachments`,
 		// Repair rows stored before UpsertAttachments set the flag.
 		`UPDATE messages SET has_attachments = 1 WHERE has_attachments = 0 AND EXISTS (SELECT 1 FROM attachments a WHERE a.message_id = messages.id AND a.account_id = messages.account_id)`,
 	}
@@ -105,6 +108,7 @@ func migrateIndexes(db *sql.DB) error {
 	stmts := []string{
 		`CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(account_id, thread_id, internal_date)`,
 		`CREATE INDEX IF NOT EXISTS idx_attachments_msg ON attachments(account_id, message_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_attachments_missing ON attachments(account_id) WHERE data IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(account_id, thread_id) WHERE is_unread = 1`,
 	}
 	for _, q := range stmts {

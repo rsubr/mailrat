@@ -322,6 +322,7 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 		u.messages = msgs
 		u.msgCursor = max(len(msgs)-1, 0)
 		u.refreshReader()
+		u.be.PrefetchAttachments(t.AccountID, t.ID) // returns at once; downloads run in the background
 		for _, m := range msgs {
 			if m.IsUnread {
 				u.scheduleMarkRead(gen)

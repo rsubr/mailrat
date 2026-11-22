@@ -4,14 +4,6 @@
 
 A native Gmail desktop client built with Go. Backend-driven architecture: Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
 
-All interfaces ship as a single binary:
-
-| Invocation | Interface |
-|---|---|
-| `mailrat` | Native desktop app (Fyne) |
-| `mailrat tui` | Terminal UI (Bubbletea) |
-| `mailrat <command>` | CLI (accounts, sync, inbox, send, …) |
-
 ---
 
 ## Features
@@ -39,7 +31,7 @@ All interfaces ship as a single binary:
   - `gmail.readonly`, `gmail.modify`, `gmail.send`
   - `contacts` (for the People API)
 
-Place `credentials.json` in `~/.mailrat/credentials.json` before running any command.
+Place `credentials.json` in `~/.mailrat/credentials.json` before launching the app.
 
 ---
 
@@ -54,7 +46,7 @@ go build -o mailrat ./cmd/mailrat
 Or run directly without installing:
 
 ```bash
-go run ./cmd/mailrat <command>
+go run ./cmd/mailrat
 ```
 
 ---
@@ -62,22 +54,12 @@ go run ./cmd/mailrat <command>
 ## Quickstart
 
 ```bash
-# 1. Add a Gmail account (opens browser OAuth flow)
-mailrat accounts add
-
-# 2. Sync the last 30 days
-mailrat sync --days=30
-
-# 3. Pick an interface — or run without args for the desktop app
-mailrat tui          # terminal UI
-mailrat              # native desktop app (Fyne)
+mailrat    # launch the app, then choose Add Account…
 ```
 
 ---
 
-## Interfaces
-
-### Desktop app (default)
+## Desktop app
 
 ```bash
 mailrat
@@ -127,7 +109,7 @@ No Homebrew libraries or Node needed.
 
 CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon (`arm64`) `.app` bundle on a macOS runner and publishes it as `mailrat-macos-arm64.zip` (plus a `.sha256`). Intel builds are not produced.
 
-The `.app` also contains the command-line binary at `mailrat.app/Contents/MacOS/mailrat`, so one zip serves the desktop app, `mailrat tui` and the CLI. This is the artifact for a Homebrew **cask** (`binary "mailrat.app/Contents/MacOS/mailrat"` puts `mailrat` on the `PATH`).
+The `.app` binary at `mailrat.app/Contents/MacOS/mailrat` launches the desktop app. This is the artifact for a Homebrew **cask** (`binary "mailrat.app/Contents/MacOS/mailrat"` puts `mailrat` on the `PATH`).
 
 #### Install with Homebrew
 
@@ -136,38 +118,15 @@ brew tap rsubr/mailrat
 brew install --cask mailrat
 ```
 
-Installs `mailrat.app` and puts `mailrat` (TUI and CLI) on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); pushing a `v*` tag updates its version and sha256 automatically (the `update-tap` job in `build-macos.yml`). This needs a repo secret `HOMEBREW_TAP_DEPLOY_KEY`: the private half of a write deploy key on `rsubr/homebrew-mailrat`.
+Installs `mailrat.app` and puts `mailrat` on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); pushing a `v*` tag updates its version and sha256 automatically (the `update-tap` job in `build-macos.yml`). This needs a repo secret `HOMEBREW_TAP_DEPLOY_KEY`: the private half of a write deploy key on `rsubr/homebrew-mailrat`.
 
 #### Signing in
 
-Mail access goes through your own Google Cloud OAuth client. On first run choose **Add Account…**; if no client is installed the app walks you through creating one and lets you pick the downloaded `credentials.json` (it is copied to `~/.mailrat/`). Sign-in opens your browser; the local callback is state-checked, and if the browser can't reach the app (remote machine) you can paste the redirect address instead. `mailrat accounts add` offers the same flow in the terminal. Tokens refresh automatically and are stored in the local database.
+Mail access goes through your own Google Cloud OAuth client. On first run choose **Add Account…**; if no client is installed the app walks you through creating one and lets you pick the downloaded `credentials.json` (it is copied to `~/.mailrat/`). Sign-in opens your browser; the local callback is state-checked, and if the browser can't reach the app (remote machine) you can paste the redirect address instead. Tokens refresh automatically and are stored in the local database.
 
 #### HTML mail
 
 Messages render as styled text (links, lists, quotes, headings, bold/italic) in your system light or dark appearance. Author text colours are kept only when readable on the current background, so mail that ignores dark mode never shows black on black. Remote images are blocked until you choose *Load remote images* for that message.
-
----
-
-### CLI
-
-```bash
-mailrat <command> [flags]
-```
-
-| Command | Description |
-|---|---|
-| `accounts add` | OAuth flow to add a Gmail account |
-| `accounts list` | List connected accounts |
-| `accounts remove <id\|email>` | Remove an account and its local data |
-| `sync [--days=N] [--account=id]` | Sync mail (initial or incremental) |
-| `inbox list [--label=L] [--limit=N] [--account=id]` | Print unified inbox |
-| `message read <id> [--account=id]` | Print a message body |
-| `send [--to=] [--subject=] [--body=] [--account=id]` | Send an email |
-| `labels list [--account=id]` | List Gmail labels |
-| `contacts list [--sync] [--search=q]` | List / search contacts |
-| `contacts add [--name=] [--email=]` | Add a contact |
-| `contacts edit <id>` | Edit a contact |
-| `contacts delete <id> [--force]` | Delete a contact |
 
 ---
 
@@ -207,7 +166,7 @@ sqlite3 ~/.mailrat/mailrat.db \
 ## Architecture
 
 ```
-Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Fyne)
+Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (Fyne)
 ```
 
 ### Design principles
@@ -221,12 +180,11 @@ Gmail API ↔ Sync Engine ↔ SQLite ↔ Go Services ↔ UI (CLI / TUI / Fyne)
 
 ```
 cmd/mailrat/              single binary entry point
-  main.go                 root command + desktop launch
+  main.go                 desktop launch
   FyneApp.toml, icon.png  app bundle metadata for `fyne package`
 
 internal/
   accounts/               OAuth2 flow and token management
-  cli/                    Cobra commands + TUI launch
   contacts/               Google People API integration
   desktop/                backend facade (App) and UI-facing item types
   ui/                     Fyne desktop UI (sidebar, thread list, reader, compose, settings)
@@ -234,7 +192,6 @@ internal/
   mail/                   Business logic — inbox, send, labels, drafts
   storage/                SQLite schema and CRUD
   sync/                   Initial and incremental sync engine
-  tui/                    Bubbletea models and views
 ```
 
 ---

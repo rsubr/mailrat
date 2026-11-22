@@ -2,7 +2,6 @@ package mail
 
 import (
 	"context"
-	"sort"
 
 	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/storage"
@@ -17,21 +16,6 @@ type InboxService struct {
 // NewInboxService creates an InboxService.
 func NewInboxService(store *storage.Store, client *gmail.Client) *InboxService {
 	return &InboxService{store: store, client: client}
-}
-
-// GetUnifiedInbox returns messages across all accounts, sorted newest first.
-func (s *InboxService) GetUnifiedInbox(limit int) ([]storage.Message, error) {
-	return s.store.ListAllMessages(limit)
-}
-
-// GetInbox returns messages for a single account.
-func (s *InboxService) GetInbox(accountID string, limit int) ([]storage.Message, error) {
-	return s.store.ListMessages(accountID, limit)
-}
-
-// GetThread returns all messages in a thread, oldest first.
-func (s *InboxService) GetThread(accountID, threadID string) ([]storage.Message, error) {
-	return s.store.ListMessagesByThread(accountID, threadID)
 }
 
 // GetMessage returns a single message, fetching the body from Gmail if not cached.
@@ -60,18 +44,15 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 			if msg.HasAttachments {
 				atts := make([]storage.Attachment, len(full.Attachments))
 				for i, a := range full.Attachments {
-					data := a.InlineData
-					if data == nil && a.AttachmentID != "" {
-						if fetched, err := s.client.GetAttachmentData(ctx, messageID, a.AttachmentID); err == nil {
-							data = fetched
-						}
-					}
+					// Bytes of large attachments are not downloaded here: that
+					// would block opening the thread. They are fetched and
+					// cached when the attachment is saved.
 					atts[i] = storage.Attachment{
 						Name:         a.Name,
 						MimeType:     a.MimeType,
 						Size:         a.Size,
 						AttachmentID: a.AttachmentID,
-						Data:         data,
+						Data:         a.InlineData,
 					}
 				}
 				_ = s.store.UpsertAttachments(accountID, messageID, atts)
@@ -80,23 +61,4 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 	}
 
 	return msg, nil
-}
-
-// GetThreadsForInbox returns threads for the unified inbox sorted by last message date.
-func (s *InboxService) GetThreadsForInbox(accountIDs []string, limit int) ([]storage.Thread, error) {
-	var all []storage.Thread
-	for _, id := range accountIDs {
-		threads, err := s.store.ListThreads(id, limit)
-		if err != nil {
-			return nil, err
-		}
-		all = append(all, threads...)
-	}
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].LastMessageDate > all[j].LastMessageDate
-	})
-	if len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
 }

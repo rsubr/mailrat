@@ -28,6 +28,7 @@ type Backend interface {
 	SearchInbox(query string, limit int) ([]desktop.ThreadItem, error)
 	GetThread(accountID, threadID string) ([]desktop.MessageItem, error)
 	GetMessage(accountID, messageID string) (desktop.MessageItem, error)
+	PrefetchAttachments(accountID, threadID string)
 	GetAttachmentData(accountID, messageID, attachmentID string) (desktop.AttachmentDataItem, error)
 	SendMessage(msg desktop.OutboundMsg) error
 	SaveDraft(localID string, msg desktop.OutboundMsg) (string, error)

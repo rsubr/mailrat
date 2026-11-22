@@ -75,6 +75,3 @@ func (l *Login) Wait(ctx context.Context) (storage.Account, error) {
 	}
 	return l.m.saveAccount(ctx, l.flow.cfg, token)
 }
-
-// Cancel releases the listener without waiting (Wait returns once its context is done).
-func (l *Login) Cancel() { l.flow.shutdown() }

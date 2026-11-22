@@ -40,17 +40,6 @@ func (s *Store) GetAccount(id string) (Account, error) {
 	return a, err
 }
 
-func (s *Store) GetAccountByEmail(email string) (Account, error) {
-	var a Account
-	err := s.db.QueryRow(`
-		SELECT id, email, token_json, history_id, photo_url, display_name FROM accounts WHERE email = ?
-	`, email).Scan(&a.ID, &a.Email, &a.TokenJSON, &a.HistoryID, &a.PhotoURL, &a.DisplayName)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Account{}, fmt.Errorf("account %q not found", email)
-	}
-	return a, err
-}
-
 func (s *Store) ListAccounts() ([]Account, error) {
 	rows, err := s.db.Query(`SELECT id, email, token_json, history_id, photo_url, display_name FROM accounts`)
 	if err != nil {

@@ -44,27 +44,6 @@ func (s *Store) DeleteDraft(accountID, draftID string) error {
 	return err
 }
 
-func (s *Store) ListDrafts(accountID string) ([]Draft, error) {
-	rows, err := s.db.Query(`
-		SELECT id, account_id, content, updated_at, remote_id FROM drafts WHERE account_id = ?
-		ORDER BY updated_at DESC
-	`, accountID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []Draft
-	for rows.Next() {
-		var d Draft
-		if err := rows.Scan(&d.ID, &d.AccountID, &d.Content, &d.UpdatedAt, &d.RemoteID); err != nil {
-			return nil, err
-		}
-		out = append(out, d)
-	}
-	return out, rows.Err()
-}
-
 // SetDraftRemoteID records the Gmail draft ID a local draft was synced to.
 func (s *Store) SetDraftRemoteID(accountID, draftID, remoteID string) error {
 	_, err := s.db.Exec(`UPDATE drafts SET remote_id = ? WHERE id = ? AND account_id = ?`, remoteID, draftID, accountID)

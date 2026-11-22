@@ -34,20 +34,6 @@ func ValidateCredentials(data []byte) error {
 	return err
 }
 
-// AddAccount runs the CLI OAuth flow, fetches the user's profile, and persists the account.
-func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
-	cfg, err := oauthConfig(m.credentials)
-	if err != nil {
-		return storage.Account{}, err
-	}
-
-	token, err := runOAuthFlow(cfg)
-	if err != nil {
-		return storage.Account{}, err
-	}
-	return m.saveAccount(ctx, cfg, token)
-}
-
 // saveAccount fetches the profile for a freshly issued token and persists the account.
 func (m *Manager) saveAccount(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token) (storage.Account, error) {
 	client := cfg.Client(ctx, token)
@@ -77,38 +63,6 @@ func (m *Manager) saveAccount(ctx context.Context, cfg *oauth2.Config, token *oa
 		return storage.Account{}, fmt.Errorf("save account: %w", err)
 	}
 	return acc, nil
-}
-
-// StartWebOAuth returns the Google OAuth URL for the web redirect flow.
-// callbackURL must be the full URL of the /api/oauth/callback endpoint.
-func (m *Manager) StartWebOAuth(callbackURL, state string) (string, error) {
-	cfg, err := oauthConfig(m.credentials)
-	if err != nil {
-		return "", err
-	}
-	cfg.RedirectURL = callbackURL
-	return cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce), nil
-}
-
-// CompleteWebOAuth exchanges the OAuth code received by the callback, fetches the
-// user profile, and persists the account. Returns the saved account.
-func (m *Manager) CompleteWebOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
-	cfg, err := oauthConfig(m.credentials)
-	if err != nil {
-		return storage.Account{}, err
-	}
-	cfg.RedirectURL = callbackURL
-
-	token, err := cfg.Exchange(ctx, code)
-	if err != nil {
-		return storage.Account{}, fmt.Errorf("token exchange: %w", err)
-	}
-	return m.saveAccount(ctx, cfg, token)
-}
-
-// ListAccounts returns all stored accounts.
-func (m *Manager) ListAccounts() ([]storage.Account, error) {
-	return m.store.ListAccounts()
 }
 
 // GetClient returns an authenticated HTTP client for the given account ID.

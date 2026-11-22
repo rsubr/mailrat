@@ -13,7 +13,6 @@ import (
 )
 
 const (
-	browserAuthTimeout  = 3
 	manualAuthTimeout   = 10
 	callbackSuccessPage = `<html><body style="font-family:sans-serif;padding:2em"><h2>✓ Authentication successful</h2><p>You can close this tab and return to the terminal.</p></body></html>`
 )

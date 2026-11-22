@@ -180,41 +180,6 @@ func (m *Manager) BackfillFromConfigs(ctx context.Context, accountID string, con
 	return nil
 }
 
-// FetchMissingAttachments downloads binary data for attachment rows that have no cached data,
-// filtered to messages carrying labels with fetch_attachments=true in configs.
-func (m *Manager) FetchMissingAttachments(ctx context.Context, accountID string, configs []storage.SyncConfig) error {
-	labelIDs := attachmentLabelIDs(configs)
-	if len(labelIDs) == 0 {
-		return nil
-	}
-
-	missing, err := m.store.ListMissingAttachmentRows(accountID, labelIDs, BodyFetchLimit)
-	if err != nil {
-		return fmt.Errorf("list missing attachments: %w", err)
-	}
-	if len(missing) == 0 {
-		return nil
-	}
-
-	m.reporter.Printf("Fetching %d missing attachments...\n", len(missing))
-	_ = forEachParallel(len(missing), func(i int) error {
-		att := missing[i]
-		data, err := m.client.GetAttachmentData(ctx, att.MessageID, att.AttachmentID)
-		if err != nil {
-			m.reporter.Warnf("fetch attachment %q (%s): %v\n", att.Name, att.MessageID, err)
-			return nil
-		}
-		m.writeMu.Lock()
-		defer m.writeMu.Unlock()
-		if err := m.store.UpdateAttachmentData(accountID, att.MessageID, att.AttachmentID, data); err != nil {
-			m.reporter.Warnf("store attachment %q (%s): %v\n", att.Name, att.MessageID, err)
-		}
-		return nil
-	})
-	m.reporter.Printf("Missing attachment fetch complete\n")
-	return nil
-}
-
 // FetchBodiesForLabels fetches bodies/attachment metadata for metadata-only
 // messages that carry at least one of the given label IDs.
 func (m *Manager) FetchBodiesForLabels(ctx context.Context, accountID string, labelIDs []string, limit int) error {
@@ -301,11 +266,6 @@ func (m *Manager) RefreshMessage(ctx context.Context, accountID, messageID strin
 		return err
 	}
 	return m.storeMessageMetadata(accountID, meta)
-}
-
-// SyncLabels fetches all labels from the Gmail API and upserts them into the store.
-func (m *Manager) SyncLabels(ctx context.Context, accountID string) error {
-	return m.syncLabels(ctx, accountID)
 }
 
 func (m *Manager) syncLabels(ctx context.Context, accountID string) error {

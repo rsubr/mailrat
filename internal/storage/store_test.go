@@ -87,7 +87,7 @@ func TestMessageCRUD(t *testing.T) {
 		t.Fatalf("want subject Hello, got %q", got.Subject)
 	}
 
-	msgs, err := s.ListMessages("acc1", 10)
+	msgs, err := s.ListMessagesByThread("acc1", "thr1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
@@ -60,12 +61,9 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 		st, _ := u.be.GetAccountSettings(a.ID)
 		period := widget.NewSelect(syncPeriods, nil)
 		period.SetSelectedIndex(indexOf(periodCodes, st.SyncPeriod))
-		attach := widget.NewCheck("Download attachments", nil)
-		attach.SetChecked(st.FetchAttachments)
 		save := func() {
 			st.AccountID = a.ID
 			st.SyncPeriod = periodCodes[period.SelectedIndex()]
-			st.FetchAttachments = attach.Checked
 			s := st
 			var err error
 			u.bgOrdered(func() { err = u.be.SetAccountSettings(s) }, func() {
@@ -75,7 +73,6 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 			})
 		}
 		period.OnChanged = func(string) { save() }
-		attach.OnChanged = func(bool) { save() }
 		nameEntry := widget.NewEntry()
 		nameEntry.SetPlaceHolder("Display name")
 		nameEntry.SetText(a.DisplayName)
@@ -129,7 +126,7 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 				widget.NewFormItem("Name", container.NewBorder(nil, nil, nil, rename, nameEntry)),
 				widget.NewFormItem("Sync mail from", period),
 			),
-			container.NewBorder(nil, nil, attach, container.NewHBox(refetch, remove)),
+			container.NewHBox(layout.NewSpacer(), refetch, remove),
 		))
 		rows.Add(card)
 	}
