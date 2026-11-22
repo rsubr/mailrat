@@ -32,6 +32,7 @@ type tapRow struct {
 	selected bool
 	hovered  bool
 	radius   float32
+	idle     color.Color // fill when neither selected nor hovered
 	bg       *canvas.Rectangle
 }
 
@@ -82,6 +83,8 @@ func (t *tapRowRenderer) Refresh() {
 		c := col(theme.ColorNameSelection).(color.NRGBA)
 		c.A = 0x70
 		bg.FillColor = c
+	case t.row.idle != nil:
+		bg.FillColor = t.row.idle
 	default:
 		bg.FillColor = color.Transparent
 	}

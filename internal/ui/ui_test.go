@@ -18,6 +18,11 @@ import (
 type fakeBackend struct {
 	archived, trashed []string
 	sent              []desktop.OutboundMsg
+	noCreds           bool
+	imported          string
+	loginStarted      int
+	cancelled         int
+	submitted         string
 }
 
 func ms(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour).UnixMilli() }
@@ -31,8 +36,20 @@ func (f *fakeBackend) GetAccounts() ([]desktop.AccountItem, error) {
 		{ID: "a2", Email: "neil@work.com", DisplayName: "Work"},
 	}, nil
 }
-func (f *fakeBackend) StartAccountAdd() error     { return nil }
-func (f *fakeBackend) RemoveAccount(string) error { return nil }
+func (f *fakeBackend) HasCredentials() bool { return !f.noCreds }
+func (f *fakeBackend) ImportCredentials(p string) error {
+	f.imported = p
+	f.noCreds = false
+	return nil
+}
+func (f *fakeBackend) BeginLogin() (string, error) {
+	f.loginStarted++
+	return "https://accounts.example/auth?x=1", nil
+}
+func (f *fakeBackend) OpenLoginBrowser() bool           { return true }
+func (f *fakeBackend) SubmitLoginCode(raw string) error { f.submitted = raw; return nil }
+func (f *fakeBackend) CancelLogin()                     { f.cancelled++ }
+func (f *fakeBackend) RemoveAccount(string) error       { return nil }
 func (f *fakeBackend) GetAccountSettings(id string) (desktop.AccountSettingsItem, error) {
 	return desktop.AccountSettingsItem{AccountID: id, SyncPeriod: "90d"}, nil
 }
@@ -58,7 +75,7 @@ func (f *fakeBackend) GetThread(_, id string) ([]desktop.MessageItem, error) {
 	return []desktop.MessageItem{
 		{ID: "m1", ThreadID: id, AccountID: "a1", Subject: "Lunch this Friday?", FromAddr: "Ben Johnson <ben@x.com>", ToAddr: "Neil Jhaveri <n@x.com>", Snippet: "Hey Neil, It's been a while since we've caught up! I'm going to be in…", Date: ms(20), Body: "<div>Hey Neil, It's been a while since we've caught up! I'm going to be in town.</div>"},
 		{ID: "m2", ThreadID: id, AccountID: "a1", Subject: "Lunch this Friday?", FromAddr: "Neil Jhaveri <n@x.com>", ToAddr: "Ben Johnson <ben@x.com>", Snippet: "Hey Ben, Yes! Lunch on Friday sounds great to me!", Date: ms(14), Body: "Hey Ben, Yes! Lunch on Friday sounds great to me!"},
-		{ID: "m3", ThreadID: id, AccountID: "a1", Subject: "Lunch this Friday?", FromAddr: "Ben Johnson <ben@x.com>", ToAddr: "Neil Jhaveri <n@x.com>", Snippet: "12PM at Delarosa", Date: ms(5), Body: "<p>12PM at Delarosa sounds great to me!</p><p>See you on Friday!</p><p>– Ben</p>"},
+		{ID: "m3", ThreadID: id, AccountID: "a1", Subject: "Lunch this Friday?", FromAddr: "Ben Johnson <ben@x.com>", ToAddr: "Neil Jhaveri <n@x.com>", Snippet: "12PM at Delarosa", Date: ms(5), Body: `<html><body style="background:#ffffff;color:#000000"><p style="color:#000">12PM at Delarosa sounds great to me!</p><p><font color="#222222">See you on Friday!</font> Menu: <a href="https://example.com/menu" style="color:#1a0dab">delarosa.com/menu</a></p><ul><li style="color:#000">Bring <b>cash</b></li><li>Parking is <i>tight</i></li></ul><img src="https://x.example/logo.png" alt="Delarosa"><blockquote>On Tue, Neil wrote: sounds good</blockquote><p>– Ben</p></body></html>`},
 	}, nil
 }
 func (f *fakeBackend) GetMessage(_, id string) (desktop.MessageItem, error) {
@@ -94,6 +111,8 @@ func (f *fakeBackend) GetLabels(string) ([]desktop.LabelItem, error) {
 		{ID: "SPAM", Name: "Spam", Type: "system"},
 		{ID: "TRASH", Name: "Trash", Type: "system"},
 		{ID: "L1", Name: "Inquiries", Type: "user", BackgroundColor: "#a4c2f4", TextColor: "#0b3a8c"},
+		{ID: "L3", Name: "Home", Type: "user"},
+		{ID: "L4", Name: "Home/Remodel", Type: "user"},
 		{ID: "L2", Name: "Travel", Type: "user", BackgroundColor: "#d5a6bd", TextColor: "#5c1a4d"},
 	}, nil
 }
@@ -136,6 +155,37 @@ func TestThreadFlowAndActions(t *testing.T) {
 	u.trash()
 	if len(fb.trashed) != 1 || len(u.threads) != 3 {
 		t.Fatalf("trash: %v", fb.trashed)
+	}
+}
+
+func TestAddAccountFlow(t *testing.T) {
+	u, fb, _ := testUI(t)
+	u.addAccount()
+	if fb.loginStarted != 1 || u.loginDlg == nil {
+		t.Fatalf("sign-in not started: started=%d dlg=%v", fb.loginStarted, u.loginDlg)
+	}
+	// Backend reports success: dialog closes without cancelling the (finished) login.
+	u.handleEvent("accounts:updated", nil)
+	if u.loginDlg != nil || fb.cancelled != 0 {
+		t.Fatalf("dialog should close cleanly: dlg=%v cancelled=%d", u.loginDlg, fb.cancelled)
+	}
+}
+
+func TestAddAccountWithoutCredentialsAsksForThem(t *testing.T) {
+	u, fb, _ := testUI(t)
+	fb.noCreds = true
+	u.addAccount()
+	if fb.loginStarted != 0 {
+		t.Fatal("must not start sign-in without credentials")
+	}
+}
+
+func TestLoginErrorShown(t *testing.T) {
+	u, _, _ := testUI(t)
+	u.showLogin("https://x")
+	u.handleEvent("account:add:error", "") // cancellation: silent
+	if u.loginDlg != nil {
+		t.Fatal("dialog should close on cancel event")
 	}
 }
 

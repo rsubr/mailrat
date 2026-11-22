@@ -3,6 +3,8 @@ package accounts
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
@@ -20,6 +22,7 @@ type oauthFlow struct {
 	listener    net.Listener
 	redirectURL string
 	authURL     string
+	state       string
 	codeCh      chan string
 	serverErrCh chan error
 }
@@ -66,11 +69,18 @@ func newOAuthFlow(cfg *oauth2.Config) (*oauthFlow, error) {
 	redirectURL := fmt.Sprintf("http://127.0.0.1:%d/callback", listener.Addr().(*net.TCPAddr).Port)
 	cfg.RedirectURL = redirectURL
 
+	state, err := randomState()
+	if err != nil {
+		listener.Close()
+		return nil, err
+	}
+
 	return &oauthFlow{
+		state:       state,
 		cfg:         cfg,
 		listener:    listener,
 		redirectURL: redirectURL,
-		authURL:     cfg.AuthCodeURL(oauthStateToken, oauth2.AccessTypeOffline, oauth2.ApprovalForce),
+		authURL:     cfg.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce),
 		codeCh:      make(chan string, 1),
 		serverErrCh: make(chan error, 1),
 	}, nil
@@ -97,14 +107,30 @@ func (f *oauthFlow) shutdown() {
 }
 
 func (f *oauthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
+	q := r.URL.Query()
+	if q.Get("state") != f.state {
+		// Not our flow (stale tab, or another local process probing the port).
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	code := q.Get("code")
 	if code == "" {
 		http.Error(w, "missing code parameter", http.StatusBadRequest)
-		f.serverErrCh <- fmt.Errorf("callback received no code")
+		reason := q.Get("error")
+		if reason == "" {
+			reason = "callback received no code"
+		}
+		select {
+		case f.serverErrCh <- fmt.Errorf("sign-in failed: %s", reason):
+		default:
+		}
 		return
 	}
 	fmt.Fprintln(w, callbackSuccessPage)
-	f.codeCh <- code
+	select {
+	case f.codeCh <- code:
+	default:
+	}
 }
 
 func (f *oauthFlow) tryBrowserFlow() bool {
@@ -220,4 +246,12 @@ func parseCodeFromRedirectURL(raw string) (string, error) {
 
 func oauthContext() context.Context {
 	return context.Background()
+}
+
+func randomState() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate state: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

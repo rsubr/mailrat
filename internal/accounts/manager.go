@@ -28,6 +28,12 @@ func NewManager(store *storage.Store, credentialsPath string) (*Manager, error) 
 	return &Manager{store: store, credentials: b}, nil
 }
 
+// ValidateCredentials reports whether data is a usable Google OAuth client file.
+func ValidateCredentials(data []byte) error {
+	_, err := oauthConfig(data)
+	return err
+}
+
 // AddAccount runs the CLI OAuth flow, fetches the user's profile, and persists the account.
 func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 	cfg, err := oauthConfig(m.credentials)
@@ -39,7 +45,11 @@ func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 	if err != nil {
 		return storage.Account{}, err
 	}
+	return m.saveAccount(ctx, cfg, token)
+}
 
+// saveAccount fetches the profile for a freshly issued token and persists the account.
+func (m *Manager) saveAccount(ctx context.Context, cfg *oauth2.Config, token *oauth2.Token) (storage.Account, error) {
 	client := cfg.Client(ctx, token)
 	email, photoURL, displayName, err := fetchProfile(ctx, client)
 	if err != nil {
@@ -51,9 +61,8 @@ func (m *Manager) AddAccount(ctx context.Context) (storage.Account, error) {
 		return storage.Account{}, err
 	}
 
-	id := fmt.Sprintf("%x", md5.Sum([]byte(email)))
 	acc := storage.Account{
-		ID:          id,
+		ID:          fmt.Sprintf("%x", md5.Sum([]byte(email))),
 		Email:       email,
 		TokenJSON:   tokenJSON,
 		HistoryID:   "",
@@ -90,31 +99,7 @@ func (m *Manager) CompleteWebOAuth(ctx context.Context, callbackURL, code string
 	if err != nil {
 		return storage.Account{}, fmt.Errorf("token exchange: %w", err)
 	}
-
-	client := cfg.Client(ctx, token)
-	email, photoURL, displayName, err := fetchProfile(ctx, client)
-	if err != nil {
-		return storage.Account{}, fmt.Errorf("fetch profile: %w", err)
-	}
-
-	tokenJSON, err := tokenToJSON(token)
-	if err != nil {
-		return storage.Account{}, err
-	}
-
-	id := fmt.Sprintf("%x", md5.Sum([]byte(email)))
-	acc := storage.Account{
-		ID:          id,
-		Email:       email,
-		TokenJSON:   tokenJSON,
-		HistoryID:   "",
-		PhotoURL:    photoURL,
-		DisplayName: displayName,
-	}
-	if err := m.store.UpsertAccount(acc); err != nil {
-		return storage.Account{}, fmt.Errorf("save account: %w", err)
-	}
-	return acc, nil
+	return m.saveAccount(ctx, cfg, token)
 }
 
 // ListAccounts returns all stored accounts.

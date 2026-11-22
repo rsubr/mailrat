@@ -101,7 +101,23 @@ Fyne needs cgo, so build natively on the target OS (there is no Linux→macOS cr
 ./build.sh app    # ./mailrat.app bundle (macOS)
 ```
 
-CI (`.github/workflows/build-macos.yml`) builds `arm64` and `amd64` `.app` bundles on macOS runners.
+**Prerequisites (macOS, Apple silicon):**
+
+1. Xcode Command Line Tools — `xcode-select --install` (provides clang and the Cocoa/OpenGL headers Fyne needs).
+2. Go 1.26 or newer — `brew install go`.
+3. For `.app` bundles only: the Fyne packager — `go install fyne.io/tools/cmd/fyne@latest` (`build.sh app` installs it for you). Make sure `$(go env GOPATH)/bin` is on your `PATH`.
+
+No Homebrew libraries, Node, or Wails needed.
+
+CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon (`arm64`) `.app` bundle and binary on a macOS runner. Intel builds are not produced.
+
+#### Signing in
+
+Mail access goes through your own Google Cloud OAuth client. On first run choose **Add Account…**; if no client is installed the app walks you through creating one and lets you pick the downloaded `credentials.json` (it is copied to `~/.mailrat/`). Sign-in opens your browser; the local callback is state-checked, and if the browser can't reach the app (remote machine) you can paste the redirect address instead. `mailrat accounts add` offers the same flow in the terminal. Tokens refresh automatically and are stored in the local database.
+
+#### HTML mail
+
+Messages render as styled text (links, lists, quotes, headings, bold/italic) in your system light or dark appearance. Author text colours are kept only when readable on the current background, so mail that ignores dark mode never shows black on black. Remote images are blocked until you choose *Load remote images* for that message.
 
 ---
 

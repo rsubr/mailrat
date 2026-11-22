@@ -10,14 +10,7 @@ on:
 
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14
-          - arch: amd64
-            runner: macos-15-intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14 # Apple silicon (arm64)
 
     steps:
       - name: Checkout
@@ -41,19 +34,19 @@ jobs:
 
       - name: Zip app bundle
         working-directory: cmd/mailrat
-        run: ditto -c -k --keepParent mailrat.app ../../mailrat-macos-${{ matrix.arch }}.zip
+        run: ditto -c -k --keepParent mailrat.app ../../mailrat-macos-arm64.zip
 
       - name: Build CLI binary
         run: |
-          CGO_ENABLED=1 go build -ldflags="-s -w" -o mailrat-darwin-${{ matrix.arch }} ./cmd/mailrat
+          CGO_ENABLED=1 go build -ldflags="-s -w" -o mailrat-darwin-arm64 ./cmd/mailrat
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: mailrat-macos-${{ matrix.arch }}
+          name: mailrat-macos-arm64
           path: |
-            mailrat-macos-${{ matrix.arch }}.zip
-            mailrat-darwin-${{ matrix.arch }}
+            mailrat-macos-arm64.zip
+            mailrat-darwin-arm64
           retention-days: 14
 
   release:

@@ -97,13 +97,15 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 	if len(u.accounts) == 0 {
 		rows.Add(widget.NewLabel("No accounts yet. Add a Google account to get started."))
 	}
-	add := widget.NewButton("Add Account…", func() {
-		if err := u.be.StartAccountAdd(); err != nil {
-			u.showError(err)
-		}
-	})
+	add := widget.NewButton("Add Account…", u.addAccount)
 	add.Importance = widget.HighImportance
-	return container.NewBorder(nil, container.NewPadded(container.NewHBox(add)), nil, nil, container.NewVScroll(rows))
+	credStatus := "Google credentials: not configured"
+	if u.be.HasCredentials() {
+		credStatus = "Google credentials: configured"
+	}
+	creds := widget.NewButton("Import credentials.json…", u.chooseCredentials)
+	footer := container.NewHBox(add, creds, widget.NewLabel(credStatus))
+	return container.NewBorder(nil, container.NewPadded(footer), nil, nil, container.NewVScroll(rows))
 }
 
 func (u *UI) generalTab() fyne.CanvasObject {

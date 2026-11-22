@@ -49,6 +49,8 @@ type UI struct {
 
 	selected   *desktop.ThreadItem
 	messages   []desktop.MessageItem
+	openGroups map[string]bool // expanded nested labels, by full name
+	images     map[string]bool // messages whose remote images the user chose to load
 	collapsed  map[string]bool // message IDs the user toggled away from default
 	readTimer  *time.Timer
 	threadGen  int
@@ -62,6 +64,7 @@ type UI struct {
 	reader      *fyne.Container
 	search      *widget.Entry
 	settingsWin fyne.Window
+	loginDlg    dialog.Dialog
 }
 
 // Run builds the main window and blocks until it is closed.
@@ -119,6 +122,8 @@ func newUI(a fyne.App, be Backend) *UI {
 		activeLabel:   "INBOX",
 		unread:        map[string]int{},
 		collapsed:     map[string]bool{},
+		images:        map[string]bool{},
+		openGroups:    map[string]bool{},
 	}
 }
 
@@ -482,10 +487,15 @@ func (u *UI) handleEvent(name string, data any) {
 		case "inbox:updated":
 			u.reloadThreads()
 		case "accounts:updated":
-			u.reloadAccounts()
+			u.closeLogin()
+			u.reloadAll()
 			u.openSettings()
+			u.syncNow()
 		case "account:add:error":
-			u.showError(fmt.Errorf("%v", data))
+			u.closeLogin()
+			if msg := fmt.Sprint(data); msg != "" {
+				u.showError(fmt.Errorf("%s", msg))
+			}
 		case "api:error":
 			u.errCount++
 			u.refreshSidebar()

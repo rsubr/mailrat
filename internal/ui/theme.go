@@ -21,6 +21,9 @@ type mimeTheme struct{}
 func rgb(r, g, b uint8) color.Color { return color.NRGBA{r, g, b, 0xff} }
 
 func (mimeTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	if c, ok := parseHexName(n); ok { // author colour from rendered mail
+		return c
+	}
 	dark := v == theme.VariantDark
 	pick := func(d, l color.Color) color.Color {
 		if dark {
@@ -66,7 +69,7 @@ func (mimeTheme) Size(n fyne.ThemeSizeName) float32 {
 	case theme.SizeNameHeadingText:
 		return 24
 	case theme.SizeNameSubHeadingText:
-		return 17
+		return 19
 	case theme.SizeNamePadding:
 		return 4
 	case theme.SizeNameInnerPadding:

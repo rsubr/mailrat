@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -31,18 +33,27 @@ func (u *UI) buildReader() fyne.CanvasObject {
 // toolbar mirrors Mimestream's: archive, trash, mark unread, | spam, reply,
 // reply all, forward — with the search field pinned right.
 func (u *UI) toolbar() fyne.CanvasObject {
+	var buttons []*widget.Button
+	btn := func(name, tip string, fn func()) fyne.CanvasObject {
+		b := iconButton(name, tip, fn)
+		buttons = append(buttons, b)
+		return b
+	}
+	gap := func() fyne.CanvasObject { return spacer(10, 1) }
 	btns := container.NewHBox(
-		iconButton("archive", "Archive", u.archive),
-		iconButton("trash", "Trash", u.trash),
-		iconButton("unread", "Mark unread", u.markUnread),
-		iconButton("spam", "Spam", u.spam),
-		iconButton("reply", "Reply", func() { u.reply(false) }),
-		iconButton("replyall", "Reply all", func() { u.reply(true) }),
-		iconButton("forward", "Forward", u.forward),
+		btn("archive", "Archive", u.archive),
+		btn("trash", "Trash", u.trash),
+		btn("unread", "Mark unread", u.markUnread),
+		gap(),
+		btn("spam", "Spam", u.spam),
+		gap(),
+		btn("reply", "Reply", func() { u.reply(false) }),
+		btn("replyall", "Reply all", func() { u.reply(true) }),
+		btn("forward", "Forward", u.forward),
 	)
 	if u.selected == nil {
-		for _, o := range btns.Objects {
-			o.(*widget.Button).Disable()
+		for _, b := range buttons {
+			b.Disable()
 		}
 	}
 	u.search.SetPlaceHolder("Search")
@@ -58,6 +69,9 @@ func (u *UI) toolbar() fyne.CanvasObject {
 }
 
 func (u *UI) conversation() fyne.CanvasObject {
+	if len(u.accounts) == 0 {
+		return u.welcome()
+	}
 	if u.selected == nil {
 		t := canvas.NewText("No Conversation Selected", subtle())
 		t.TextSize = 18
@@ -74,7 +88,7 @@ func (u *UI) conversation() fyne.CanvasObject {
 	title.Wrapping = fyne.TextWrapWord
 	head := []fyne.CanvasObject{title}
 	for _, id := range u.selected.LabelIDs {
-		if l, ok := u.findLabel(id); ok && l.Type == "user" {
+		if l, ok := u.findLabel(id); ok && (l.Type == "user" || id == "INBOX") {
 			head = append(head, chip(l.Name, col(colorChip), fg()))
 		}
 	}
@@ -120,8 +134,13 @@ func (u *UI) messageCard(m desktop.MessageItem, last bool) fyne.CanvasObject {
 		sn.Truncation = fyne.TextTruncateEllipsis
 		sub = sn
 	}
+	var right fyne.CanvasObject = when
+	if open {
+		reply := iconButton("reply", "Reply", func() { u.compose(replyDraft(m, false)) })
+		right = container.NewHBox(when, reply)
+	}
 	header := container.NewBorder(nil, nil, container.NewVBox(avatar(initials(name), 40, avatarColor(m.FromAddr))), nil,
-		container.NewVBox(container.NewBorder(nil, nil, nil, when, nameL), sub))
+		container.NewVBox(container.NewBorder(nil, nil, nil, right, nameL), sub))
 	tap := newTapRow(header, false, func() {
 		u.collapsed[m.ID] = !u.collapsed[m.ID]
 		u.refreshReader()
@@ -145,14 +164,23 @@ func displayRecipients(s string) string {
 }
 
 func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
-	text := htmlToText(m.Body)
-	if text == "" {
-		text = m.Snippet
+	src := m.Body
+	if strings.TrimSpace(htmlToText(src)) == "" {
+		src = m.Snippet
 	}
-	body := widget.NewLabel(text)
+	res := renderMail(src, renderOpts{bg: col(theme.ColorNameBackground), fg: fg(), images: u.images[m.ID]})
+	body := widget.NewRichText(res.segments...)
 	body.Wrapping = fyne.TextWrapWord
-	body.Selectable = true
-	items := []fyne.CanvasObject{container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), body)}
+	items := []fyne.CanvasObject{}
+	if res.blocked > 0 {
+		load := widget.NewButtonWithIcon(fmt.Sprintf("Load %d remote image(s)", res.blocked), icon("image", fg()), func() {
+			u.images[m.ID] = true
+			u.refreshReader()
+		})
+		load.Importance = widget.LowImportance
+		items = append(items, container.New(layout.NewCustomPaddedLayout(2, 2, 52, 8), container.NewHBox(load)))
+	}
+	items = append(items, container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), body))
 	if len(m.Attachments) > 0 {
 		var chips []fyne.CanvasObject
 		for _, a := range m.Attachments {

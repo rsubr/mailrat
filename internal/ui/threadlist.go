@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -81,7 +82,7 @@ func newThreadRow() *threadRow {
 	left := container.NewVBox(spacer(0, 11), gutter)
 	headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.clip), tight(r.when)), tight(r.head))
 	snipRow := container.NewBorder(nil, nil, nil, r.chips, tight(r.snippet))
-	r.root = container.NewPadded(container.NewBorder(nil, nil, left, nil, container.NewVBox(headRow, tight(r.subject), snipRow)))
+	r.root = container.New(layout.NewCustomPaddedLayout(3, 3, 2, 6), container.NewBorder(nil, nil, left, nil, container.NewVBox(headRow, tight(r.subject), snipRow)))
 	r.ExtendBaseWidget(r)
 	return r
 }

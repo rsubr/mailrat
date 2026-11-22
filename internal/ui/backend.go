@@ -10,7 +10,12 @@ import (
 type Backend interface {
 	SetEventHandler(h desktop.EventHandler)
 	GetAccounts() ([]desktop.AccountItem, error)
-	StartAccountAdd() error
+	HasCredentials() bool
+	ImportCredentials(path string) error
+	BeginLogin() (authURL string, err error)
+	OpenLoginBrowser() bool
+	SubmitLoginCode(raw string) error
+	CancelLogin()
 	RemoveAccount(accountID string) error
 	GetAccountSettings(accountID string) (desktop.AccountSettingsItem, error)
 	SetAccountSettings(s desktop.AccountSettingsItem) error
@@ -39,3 +44,6 @@ type Backend interface {
 	Start(ctx context.Context)
 	Shutdown()
 }
+
+// *desktop.App must keep satisfying Backend; cmd/mailrat passes it to Run.
+var _ Backend = (*desktop.App)(nil)

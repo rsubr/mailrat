@@ -29,6 +29,10 @@ type App struct {
 
 	errMu  sync.Mutex
 	errLog []APIError
+
+	loginMu     sync.Mutex
+	login       *accounts.Login
+	loginCancel context.CancelFunc
 }
 
 // NewApp creates a new App instance.
@@ -142,21 +146,123 @@ func (a *App) GetAccounts() ([]AccountItem, error) {
 	return accountsToItems(accs), nil
 }
 
-// StartAccountAdd launches the OAuth flow in a background goroutine.
-// Emits "accounts:updated" on success or "account:add:error" on failure.
-func (a *App) StartAccountAdd() error {
-	if a.accounts == nil {
-		return fmt.Errorf("accounts manager not initialized — credentials.json missing")
+// HasCredentials reports whether a Google OAuth client (credentials.json) is configured.
+func (a *App) HasCredentials() bool { return a.accounts != nil }
+
+// ImportCredentials validates a Google Cloud OAuth client file and installs it as
+// ~/.mailrat/credentials.json so accounts can be added from the UI.
+func (a *App) ImportCredentials(path string) error {
+	if a.store == nil {
+		return fmt.Errorf("store not initialised")
 	}
-	go func() {
-		_, err := a.accounts.AddAccount(a.ctx)
-		if err != nil {
-			a.emitEvent("account:add:error", err.Error())
-			return
-		}
-		a.emitEvent("accounts:updated", nil)
-	}()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if err := accounts.ValidateCredentials(data); err != nil {
+		return err
+	}
+	dir, err := dataDir()
+	if err != nil {
+		return err
+	}
+	credPath := filepath.Join(dir, "credentials.json")
+	if err := os.WriteFile(credPath, data, 0600); err != nil {
+		return err
+	}
+	mgr, err := accounts.NewManager(a.store, credPath)
+	if err != nil {
+		return err
+	}
+	first := a.accounts == nil
+	a.accounts = mgr
+	if first {
+		go a.syncLoop(a.ctx)
+	}
 	return nil
+}
+
+// BeginLogin starts a Google sign-in: it opens the system browser and waits for
+// the redirect in the background. The returned URL lets the UI offer a copy
+// link if the browser did not open. Success emits "accounts:updated"; failure or
+// cancellation emits "account:add:error" (cancellation carries no message).
+func (a *App) BeginLogin() (string, error) {
+	if a.accounts == nil {
+		return "", fmt.Errorf("no Google credentials configured — import credentials.json first")
+	}
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if a.loginCancel != nil {
+		a.loginCancel() // supersede a stale attempt
+	}
+	login, err := a.accounts.BeginLogin()
+	if err != nil {
+		return "", err
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.login, a.loginCancel = login, cancel
+	login.OpenBrowser()
+	go func() {
+		_, err := login.Wait(ctx)
+		cancel()
+		a.loginMu.Lock()
+		if a.login == login {
+			a.login, a.loginCancel = nil, nil
+		}
+		a.loginMu.Unlock()
+		switch {
+		case err == nil:
+			a.emitEvent("accounts:updated", nil)
+		case ctx.Err() != nil:
+			a.emitEvent("account:add:error", "")
+		default:
+			a.emitEvent("account:add:error", err.Error())
+		}
+	}()
+	return login.AuthURL(), nil
+}
+
+// OpenLoginBrowser re-opens the consent page for the sign-in in progress.
+func (a *App) OpenLoginBrowser() bool {
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	return a.login != nil && a.login.OpenBrowser()
+}
+
+// SubmitLoginCode completes the sign-in in progress from a pasted redirect URL,
+// for when the browser cannot reach the local callback (remote machine, firewall).
+func (a *App) SubmitLoginCode(raw string) error {
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if a.login == nil {
+		return fmt.Errorf("no sign-in in progress")
+	}
+	return a.login.Submit(raw)
+}
+
+// CancelLogin abandons the sign-in in progress.
+func (a *App) CancelLogin() {
+	a.loginMu.Lock()
+	defer a.loginMu.Unlock()
+	if a.loginCancel != nil {
+		a.loginCancel()
+	}
+}
+
+// GetOAuthURL returns the Google OAuth URL for a redirect-based (hosted) flow.
+func (a *App) GetOAuthURL(callbackURL, state string) (string, error) {
+	if a.accounts == nil {
+		return "", fmt.Errorf("accounts manager not initialized — credentials.json missing")
+	}
+	return a.accounts.StartWebOAuth(callbackURL, state)
+}
+
+// CompleteOAuth exchanges an OAuth code received at the callback URL and saves the account.
+func (a *App) CompleteOAuth(ctx context.Context, callbackURL, code string) (storage.Account, error) {
+	if a.accounts == nil {
+		return storage.Account{}, fmt.Errorf("accounts manager not initialized")
+	}
+	return a.accounts.CompleteWebOAuth(ctx, callbackURL, code)
 }
 
 // RemoveAccount deletes an account and all its local data via FK cascade.

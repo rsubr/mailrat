@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
@@ -56,6 +57,7 @@ func (u *UI) mailboxes() (favorites, user []desktop.LabelItem) {
 			favorites = append(favorites, l)
 		}
 	}
+	// Sorting by full name keeps children directly after their parent.
 	sort.SliceStable(user, func(i, j int) bool { return strings.ToLower(user[i].Name) < strings.ToLower(user[j].Name) })
 	return
 }
@@ -85,16 +87,14 @@ func (u *UI) buildSidebar() fyne.CanvasObject {
 	tileGrid := container.NewGridWithColumns(2, tiles...)
 
 	favs, user := u.mailboxes()
-	nav := []fyne.CanvasObject{sectionHeader("Inboxes"), u.navRow(desktop.LabelItem{ID: "INBOX", Name: u.labelName("INBOX"), Type: "system"})}
+	nav := []fyne.CanvasObject{sectionHeader("Inboxes"), u.navRow(desktop.LabelItem{ID: "INBOX", Name: u.labelName("INBOX"), Type: "system"}, 0, false)}
 	nav = append(nav, sectionHeader("Favorites"))
 	for _, l := range favs {
-		nav = append(nav, u.navRow(l))
+		nav = append(nav, u.navRow(l, 0, false))
 	}
 	if len(user) > 0 {
 		nav = append(nav, sectionHeader("Labels"))
-		for _, l := range user {
-			nav = append(nav, u.navRow(l))
-		}
+		nav = append(nav, u.userLabelRows(user)...)
 	}
 	scroll := container.NewVScroll(container.NewVBox(nav...))
 
@@ -114,11 +114,16 @@ func (u *UI) accountTile(id, name, glyph string, tint color.Color) fyne.CanvasOb
 	}
 	label := widget.NewLabel(name)
 	label.Truncation = fyne.TextTruncateEllipsis
-	content := container.NewVBox(container.NewHBox(badge), label)
-	return newTapRow(content, u.activeAccount == id, func() { u.selectAccount(id) })
+	content := container.NewVBox(spacer(0, 2), container.NewHBox(badge), tight(label), spacer(0, 2))
+	tile := newTapRow(content, u.activeAccount == id, func() { u.selectAccount(id) })
+	tile.idle = col(theme.ColorNameBackground)
+	tile.radius = 9
+	return tile
 }
 
-func (u *UI) navRow(l desktop.LabelItem) fyne.CanvasObject {
+// navRow is one mailbox line. depth indents nested labels; hasKids shows the
+// disclosure chevron Mimestream uses for expandable mailboxes.
+func (u *UI) navRow(l desktop.LabelItem, depth int, hasKids bool) fyne.CanvasObject {
 	glyph, tint := "tag", subtle()
 	if g, ok := labelIcons[l.ID]; ok {
 		glyph, tint = g.icon, g.col
@@ -129,7 +134,7 @@ func (u *UI) navRow(l desktop.LabelItem) fyne.CanvasObject {
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(20, 20))
 
-	name := widget.NewLabel(l.Name)
+	name := widget.NewLabel(displayLeaf(l.Name))
 	name.Truncation = fyne.TextTruncateEllipsis
 	var right fyne.CanvasObject = spacer(0, 0)
 	if n := u.unread[l.ID]; n > 0 {
@@ -137,8 +142,66 @@ func (u *UI) navRow(l desktop.LabelItem) fyne.CanvasObject {
 		c.TextSize = 13
 		right = container.NewCenter(c)
 	}
-	row := container.NewBorder(nil, nil, container.NewCenter(img), right, name)
-	return newTapRow(row, u.activeLabel == l.ID && u.query == "", func() { u.selectLabel(l.ID) })
+
+	// Fixed 14px disclosure column keeps icons aligned whether or not a chevron shows.
+	var disclosure fyne.CanvasObject = spacer(14, 1)
+	if hasKids {
+		glyph := "chevron"
+		if u.openGroups[l.Name] {
+			glyph = "chevrondown"
+		}
+		chev := canvas.NewImageFromResource(icon(glyph, subtle()))
+		chev.FillMode = canvas.ImageFillContain
+		chev.SetMinSize(fyne.NewSize(14, 14))
+		disclosure = container.NewCenter(chev)
+	}
+	lead := container.NewHBox(spacer(float32(depth)*16, 1), disclosure, container.NewCenter(img))
+	row := container.NewBorder(nil, nil, lead, right, tight(name))
+	r := newTapRow(row, u.activeLabel == l.ID && u.query == "", func() {
+		if hasKids {
+			u.openGroups[l.Name] = !u.openGroups[l.Name]
+		}
+		u.selectLabel(l.ID)
+	})
+	return r
+}
+
+// displayLeaf shows only the last path segment of a nested label ("Work/Receipts" → "Receipts").
+func displayLeaf(name string) string {
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		return name[i+1:]
+	}
+	return name
+}
+
+// userLabelRows lays out user labels as a tree following Gmail's "Parent/Child" naming.
+func (u *UI) userLabelRows(user []desktop.LabelItem) []fyne.CanvasObject {
+	var rows []fyne.CanvasObject
+	for _, l := range user {
+		depth := strings.Count(l.Name, "/")
+		kids := false
+		for _, o := range user {
+			if strings.HasPrefix(o.Name, l.Name+"/") {
+				kids = true
+				break
+			}
+		}
+		if !u.pathOpen(l.Name) {
+			continue
+		}
+		rows = append(rows, u.navRow(l, depth, kids))
+	}
+	return rows
+}
+
+// pathOpen reports whether every ancestor of a nested label is expanded.
+func (u *UI) pathOpen(name string) bool {
+	for i := 0; i < len(name); i++ {
+		if name[i] == '/' && !u.openGroups[name[:i]] {
+			return false
+		}
+	}
+	return true
 }
 
 func (u *UI) sidebarFooter() fyne.CanvasObject {
