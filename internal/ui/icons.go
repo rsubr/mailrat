@@ -27,7 +27,9 @@ var iconPaths = map[string]string{
 	"forward":     `<path d="M15 7l5 5-5 5"/><path d="M20 12H10a6 6 0 0 0-6 6v1"/>`,
 	"compose":     `<path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M17.5 3.5a1.8 1.8 0 0 1 2.5 2.5L11 15l-3.5 1 1-3.5z"/>`,
 	"search":      `<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>`,
-	"settings":    `<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>`,
+	"settings":    `<path d="M9.60 5.21L9.86 2.44L14.14 2.44L14.40 5.21L15.10 5.50L17.25 3.73L20.27 6.75L18.50 8.90L18.79 9.60L21.56 9.86L21.56 14.14L18.79 14.40L18.50 15.10L20.27 17.25L17.25 20.27L15.10 18.50L14.40 18.79L14.14 21.56L9.86 21.56L9.60 18.79L8.90 18.50L6.75 20.27L3.73 17.25L5.50 15.10L5.21 14.40L2.44 14.14L2.44 9.86L5.21 9.60L5.50 8.90L3.73 6.75L6.75 3.73L8.90 5.50z"/><circle cx="12" cy="12" r="3"/>`,
+	"moon":        `<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>`,
+	"sun":         `<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>`,
 	"sync":        `<path d="M20 11a8 8 0 0 0-14.5-3.5L4 9M4 4v5h5"/><path d="M4 13a8 8 0 0 0 14.5 3.5L20 15M20 20v-5h-5"/>`,
 	"clip":        `<path d="M20 11.5l-8 8a5 5 0 0 1-7-7l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7L9.7 17.2a1.6 1.6 0 0 1-2.4-2.4L14.5 7.5"/>`,
 	"menu":        `<path d="M4 6h16M4 12h16M4 18h16"/>`,
@@ -43,16 +45,22 @@ var iconPaths = map[string]string{
 }
 
 // icon returns the named glyph tinted with c.
-func icon(name string, c color.Color) fyne.Resource {
+func icon(name string, c color.Color) fyne.Resource { return iconRot(name, c, 0) }
+
+// iconRot is icon rotated deg degrees about its centre (spinner frames).
+func iconRot(name string, c color.Color, deg int) fyne.Resource {
 	body, ok := iconPaths[name]
 	if !ok {
 		body = iconPaths["tag"]
 	}
 	r, g, b, _ := c.RGBA()
 	hex := fmt.Sprintf("#%02x%02x%02x", r>>8, g>>8, b>>8)
+	if deg != 0 {
+		body = fmt.Sprintf(`<g transform="rotate(%d 12 12)">%s</g>`, deg, body)
+	}
 	svg := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">` + body + `</svg>`
 	svg = strings.ReplaceAll(svg, "currentColor", hex)
-	return fyne.NewStaticResource(fmt.Sprintf("%s-%s.svg", name, hex[1:]), []byte(svg))
+	return fyne.NewStaticResource(fmt.Sprintf("%s-%s-%d.svg", name, hex[1:], deg), []byte(svg))
 }
 
 // Mimestream tints each system mailbox icon with its own colour.

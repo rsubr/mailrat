@@ -18,7 +18,7 @@ var composeColors = []struct{ name, hex string }{
 
 // richEditor is the Gmail-style body editor: a formatting toolbar over the body entry,
 // with an Edit/Preview switch (the entry holds markup, see richtext.go) and @/+ mentions.
-func (u *UI) richEditor(w fyne.Window, body *bodyEntry, to, cc *suggestEntry, account func() string) fyne.CanvasObject {
+func (u *UI) richEditor(w fyne.Window, body *bodyEntry, mention *suggestHost, to, cc *suggestEntry, account func() string) fyne.CanvasObject {
 	apply := func(open, close string) func() {
 		return func() { body.wrap(open, close); w.Canvas().Focus(body) }
 	}
@@ -93,7 +93,6 @@ func (u *UI) richEditor(w fyne.Window, body *bodyEntry, to, cc *suggestEntry, ac
 		link,
 		btn("Clear", func() { body.clearFormatting(); w.Canvas().Focus(body) }),
 	))
-	body.anchor = bar
 
 	// Edit / Preview: the preview renders the HTML that will be sent.
 	preview := container.NewVScroll(widget.NewRichText())
@@ -140,11 +139,11 @@ func (u *UI) richEditor(w fyne.Window, body *bodyEntry, to, cc *suggestEntry, ac
 		var found []desktop.ContactItem
 		u.bg(func() { found, _ = u.be.SearchContacts(account(), q, 8) }, func() {
 			if q2, ok := mentionAt([]rune(body.Text), body.CursorTextOffset()); ok && q2 == q {
-				sg.show(bar, found)
+				sg.show(found)
 			}
 		})
 	}
 
 	top := container.NewBorder(nil, nil, nil, toggle, bar)
-	return container.NewBorder(top, nil, nil, nil, container.NewStack(body, preview))
+	return container.NewBorder(container.NewVBox(top, mention.box), nil, nil, nil, container.NewStack(body, preview))
 }

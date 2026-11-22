@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"fmt"
+	"strconv"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -43,6 +46,7 @@ func (u *UI) openSettings() {
 func (u *UI) buildSettings() fyne.CanvasObject {
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Accounts", u.accountsTab()),
+		container.NewTabItem("Labels", u.labelsTab()),
 		container.NewTabItem("General", u.generalTab()),
 	)
 	return container.NewPadded(tabs)
@@ -142,4 +146,84 @@ func (u *UI) generalTab() fyne.CanvasObject {
 		widget.NewFormItem("Check for new mail", freq),
 		widget.NewFormItem("Send new mail from", acct),
 	))
+}
+
+var (
+	scopeModes = []string{"Everything", "Last N days", "Last N emails"}
+	scopeCodes = []string{desktop.SyncModeAll, desktop.SyncModeDays, desktop.SyncModeCount}
+)
+
+// labelsTab lets the user choose, per label, how much mail stays synced.
+func (u *UI) labelsTab() fyne.CanvasObject {
+	if len(u.accounts) == 0 {
+		return widget.NewLabel("Add an account to choose what to sync.")
+	}
+	body := container.NewStack()
+	show := func(accountID string) {
+		body.Objects = []fyne.CanvasObject{u.labelScopeList(accountID)}
+		body.Refresh()
+	}
+	var emails []string
+	for _, a := range u.accounts {
+		emails = append(emails, a.Email)
+	}
+	pick := widget.NewSelect(emails, func(sel string) {
+		for _, a := range u.accounts {
+			if a.Email == sel {
+				show(a.ID)
+			}
+		}
+	})
+	pick.SetSelectedIndex(0)
+	intro := widget.NewLabel("Choose how much mail to keep synced per label. Older mail loads on demand as you scroll.")
+	intro.Wrapping = fyne.TextWrapWord
+	return container.NewBorder(container.NewVBox(intro, pick), nil, nil, nil, body)
+}
+
+func (u *UI) labelScopeList(accountID string) fyne.CanvasObject {
+	items, err := u.be.GetSyncConfigs(accountID)
+	if err != nil {
+		return widget.NewLabel(err.Error())
+	}
+	rows := container.NewVBox()
+	for _, it := range items {
+		it := it
+		mode := widget.NewSelect(scopeModes, nil)
+		mode.SetSelectedIndex(indexOf(scopeCodes, it.Mode))
+		val := widget.NewEntry()
+		val.SetText(strconv.Itoa(max(it.Value, 30)))
+		val.Validator = func(s string) error {
+			if n, err := strconv.Atoi(s); err != nil || n < 1 {
+				return fmt.Errorf("enter a number of 1 or more")
+			}
+			return nil
+		}
+		valBox := container.NewGridWrap(fyne.NewSize(80, val.MinSize().Height), val)
+		refresh := func() {
+			if scopeCodes[mode.SelectedIndex()] == desktop.SyncModeAll {
+				valBox.Hide()
+			} else {
+				valBox.Show()
+			}
+		}
+		save := func() {
+			it.Mode = scopeCodes[mode.SelectedIndex()]
+			n, err := strconv.Atoi(val.Text)
+			if it.Mode != desktop.SyncModeAll && (err != nil || n < 1) {
+				return
+			}
+			it.Value = n
+			if it.Mode == desktop.SyncModeAll {
+				it.Value = 0
+			}
+			if err := u.be.SetSyncConfig(accountID, it); err != nil {
+				u.showError(err)
+			}
+		}
+		mode.OnChanged = func(string) { refresh(); save() }
+		val.OnChanged = func(string) { save() }
+		refresh()
+		rows.Add(container.NewBorder(nil, nil, nil, container.NewHBox(mode, valBox), widget.NewLabel(it.LabelName)))
+	}
+	return container.NewVScroll(rows)
 }

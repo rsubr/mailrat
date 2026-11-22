@@ -56,7 +56,10 @@ type threadRow struct {
 	dotFill *canvas.Circle
 	head    *widget.RichText
 	when    *widget.Label
-	body    *widget.RichText
+	subj    *widget.RichText // subject and snippet are separate so each truncates
+	snip    *widget.RichText
+	body    fyne.CanvasObject
+	subjW   float32 // natural subject width, set by setRow
 	clip    *canvas.Image
 	star    *canvas.Image
 	chips   *fyne.Container
@@ -71,7 +74,8 @@ func newThreadRow(wide bool) *threadRow {
 		dotFill: canvas.NewCircle(color.Transparent),
 		head:    widget.NewRichText(),
 		when:    widget.NewLabel(""),
-		body:    widget.NewRichText(),
+		subj:    widget.NewRichText(),
+		snip:    widget.NewRichText(),
 		clip:    canvas.NewImageFromResource(icon("clip", subtle())),
 		star:    canvas.NewImageFromResource(icon("star", color.NRGBA{0xff, 0xc1, 0x07, 0xff})),
 		chips:   container.NewHBox(),
@@ -79,7 +83,9 @@ func newThreadRow(wide bool) *threadRow {
 	r.star.FillMode = canvas.ImageFillContain
 	r.star.SetMinSize(fyne.NewSize(14, 14))
 	r.head.Truncation = fyne.TextTruncateEllipsis
-	r.body.Truncation = fyne.TextTruncateEllipsis
+	r.subj.Truncation = fyne.TextTruncateEllipsis
+	r.snip.Truncation = fyne.TextTruncateEllipsis
+	r.body = container.New(subjectLine{&r.subjW}, tight(r.subj), tight(r.snip))
 	r.clip.FillMode = canvas.ImageFillContain
 	r.clip.SetMinSize(fyne.NewSize(14, 14))
 
@@ -88,10 +94,10 @@ func newThreadRow(wide bool) *threadRow {
 	var content fyne.CanvasObject
 	if wide {
 		right := container.NewHBox(r.chips, container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when))
-		content = container.NewBorder(nil, nil, container.New(fixedWidth{wideSenderWidth}, tight(r.head)), right, tight(r.body))
+		content = container.NewBorder(nil, nil, container.New(fixedWidth{wideSenderWidth}, container.New(shrinkable{}, tight(r.head))), right, container.New(shrinkable{}, tight(r.body)))
 	} else {
-		headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when)), tight(r.head))
-		content = container.NewVBox(headRow, container.NewBorder(nil, nil, nil, r.chips, tight(r.body)))
+		headRow := container.NewBorder(nil, nil, nil, container.NewHBox(container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when)), container.New(shrinkable{}, tight(r.head)))
+		content = container.NewVBox(headRow, container.NewBorder(nil, nil, nil, r.chips, container.New(shrinkable{}, tight(r.body))))
 	}
 	r.root = container.NewStack(r.bg, container.New(layout.NewCustomPaddedLayout(3, 3, 2, 6), container.NewBorder(nil, nil, left, nil, content)))
 	r.ExtendBaseWidget(r)
@@ -127,11 +133,11 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 	r.head.Refresh()
 	r.when.TextStyle = fyne.TextStyle{Bold: t.IsUnread}
 	r.when.SetText(formatListDate(t.Date, time.Now()))
-	r.body.Segments = []widget.RichTextSegment{
-		&widget.TextSegment{Text: t.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: t.IsUnread}, ColorName: theme.ColorNameForeground, Inline: true}},
-		&widget.TextSegment{Text: " - " + t.Snippet, Style: widget.RichTextStyle{ColorName: theme.ColorNamePlaceHolder, Inline: true}},
-	}
-	r.body.Refresh()
+	r.subj.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: t.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: t.IsUnread}, ColorName: theme.ColorNameForeground}}}
+	r.snip.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: " - " + t.Snippet, Style: widget.RichTextStyle{ColorName: theme.ColorNamePlaceHolder}}}
+	r.subjW = fyne.MeasureText(t.Subject, theme.TextSize(), fyne.TextStyle{Bold: t.IsUnread}).Width + 2*theme.InnerPadding()
+	r.subj.Refresh()
+	r.snip.Refresh()
 	if t.HasAttachments {
 		r.clip.Show()
 	} else {

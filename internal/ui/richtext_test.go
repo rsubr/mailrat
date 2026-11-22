@@ -118,11 +118,12 @@ func TestMentionPickInsertsLinkAndRecipient(t *testing.T) {
 	a := test.NewTempApp(t)
 	w := a.NewWindow("t")
 	u := &UI{inline: true, be: &fakeBackend{}}
-	sg := &suggester{canvas: w.Canvas()}
+	host := newSuggestHost()
+	sg := &suggester{host: host}
 	body := newBodyEntry(sg)
-	to := u.recipientEntry(w, func() string { return "" }, "To")
-	cc := u.recipientEntry(w, func() string { return "" }, "Cc")
-	u.richEditor(w, body, to, cc, func() string { return "" })
+	to := u.recipientEntry(host, func() string { return "" }, "To")
+	cc := u.recipientEntry(host, func() string { return "" }, "Cc")
+	u.richEditor(w, body, host, to, cc, func() string { return "" })
 
 	body.SetText("hi @an")
 	body.CursorColumn = 6

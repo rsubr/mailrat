@@ -39,18 +39,19 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	})
 	from.SetSelected(selected)
 
-	to := u.recipientEntry(w, func() string { return accountID }, "To")
-	cc := u.recipientEntry(w, func() string { return accountID }, "Cc")
-	bcc := u.recipientEntry(w, func() string { return accountID }, "Bcc")
+	rcpt, mention := newSuggestHost(), newSuggestHost()
+	to := u.recipientEntry(rcpt, func() string { return accountID }, "To")
+	cc := u.recipientEntry(rcpt, func() string { return accountID }, "Cc")
+	bcc := u.recipientEntry(rcpt, func() string { return accountID }, "Bcc")
 	to.SetText(draft.To)
 	cc.SetText(draft.Cc)
 	bcc.SetText(draft.Bcc)
 	subject := widget.NewEntry()
 	subject.SetText(draft.Subject)
-	body := newBodyEntry(&suggester{canvas: w.Canvas()})
+	body := newBodyEntry(&suggester{host: mention})
 	body.SetText(draft.Body)
 	body.CursorRow, body.CursorColumn = 0, 0
-	editor := u.richEditor(w, body, to, cc, func() string { return accountID })
+	editor := u.richEditor(w, body, mention, to, cc, func() string { return accountID })
 
 	form := widget.NewForm(
 		widget.NewFormItem("From", from),
@@ -93,7 +94,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		})
 	}
 	buttons := container.NewHBox(discard, widget.NewLabel(""), send)
-	w.SetContent(container.NewBorder(container.NewPadded(form), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(editor)))
+	w.SetContent(container.NewBorder(container.NewVBox(container.NewPadded(form), rcpt.box), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(editor)))
 	w.Show()
 	if draft.To == "" {
 		w.Canvas().Focus(to)
@@ -123,8 +124,8 @@ func splitRecipient(text string) (head, token string) {
 }
 
 // recipientEntry is a text entry that suggests contacts for the address being typed.
-func (u *UI) recipientEntry(w fyne.Window, account func() string, name string) *suggestEntry {
-	sg := &suggester{canvas: w.Canvas()}
+func (u *UI) recipientEntry(host *suggestHost, account func() string, name string) *suggestEntry {
+	sg := &suggester{host: host}
 	e := newSuggestEntry(sg)
 	e.SetPlaceHolder(name)
 	sg.pick = func(c desktop.ContactItem) {
@@ -139,13 +140,13 @@ func (u *UI) recipientEntry(w fyne.Window, account func() string, name string) *
 			return
 		}
 		_, token := splitRecipient(text)
-		if len(token) < 2 {
+		if token == "" {
 			return
 		}
 		var found []desktop.ContactItem
 		u.bg(func() { found, _ = u.be.SearchContacts(account(), token, 8) }, func() {
 			if e.Text == text {
-				sg.show(e, found)
+				sg.show(found)
 			}
 		})
 	}

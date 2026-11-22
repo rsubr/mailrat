@@ -35,9 +35,16 @@ type Backend interface {
 	MarkThreadSpam(accountID, threadID string) error
 	MarkThreadNotSpam(accountID, threadID string) error
 	SetThreadLabel(accountID, threadID, labelID string, on bool) error
+	GetSyncConfigs(accountID string) ([]desktop.SyncConfigItem, error)
+	SetSyncConfig(accountID string, item desktop.SyncConfigItem) error
+	LoadOlder(accountID, labelID string) (int, error)
 	Sync(accountID string) error
 	DrainPendingOps()
 	SearchContacts(accountID, query string, limit int) ([]desktop.ContactItem, error)
+	ListContacts(accountID string) ([]desktop.ContactItem, error)
+	SaveContact(c desktop.ContactItem) (desktop.ContactItem, error)
+	DeleteContact(accountID, id string) error
+	FrequentAddresses(accountID string, limit int) ([]desktop.ContactItem, error)
 	GetLabels(accountID string) ([]desktop.LabelItem, error)
 	GetLabelUnreadCounts(accountID string) (map[string]int, error)
 	GetAPIErrors() []desktop.APIError

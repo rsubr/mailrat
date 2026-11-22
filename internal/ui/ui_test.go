@@ -28,6 +28,10 @@ type fakeBackend struct {
 	loginStarted      int
 	cancelled         int
 	submitted         string
+	found, book       []desktop.ContactItem // SearchContacts / ListContacts results
+	frequent          []desktop.ContactItem
+	savedContacts     []desktop.ContactItem
+	deletedContacts   []string
 }
 
 func ms(h int) int64 { return time.Now().Add(-time.Duration(h) * time.Hour).UnixMilli() }
@@ -111,8 +115,30 @@ func (f *fakeBackend) SetThreadLabel(_, id, label string, on bool) error {
 }
 func (f *fakeBackend) Sync(string) error { f.syncs++; return nil }
 func (f *fakeBackend) DrainPendingOps()  {}
+func (f *fakeBackend) GetSyncConfigs(string) ([]desktop.SyncConfigItem, error) {
+	return []desktop.SyncConfigItem{{LabelID: "INBOX", LabelName: "Inbox", Mode: desktop.SyncModeAll}}, nil
+}
+func (f *fakeBackend) SetSyncConfig(string, desktop.SyncConfigItem) error { return nil }
+func (f *fakeBackend) LoadOlder(string, string) (int, error)              { return 0, nil }
 func (f *fakeBackend) SearchContacts(_, _ string, _ int) ([]desktop.ContactItem, error) {
-	return nil, nil
+	return f.found, nil
+}
+func (f *fakeBackend) ListContacts(string) ([]desktop.ContactItem, error) {
+	return append([]desktop.ContactItem(nil), f.book...), nil
+}
+func (f *fakeBackend) SaveContact(c desktop.ContactItem) (desktop.ContactItem, error) {
+	if c.ID == "" {
+		c.ID = "new:" + c.Email
+	}
+	f.savedContacts = append(f.savedContacts, c)
+	return c, nil
+}
+func (f *fakeBackend) DeleteContact(_, id string) error {
+	f.deletedContacts = append(f.deletedContacts, id)
+	return nil
+}
+func (f *fakeBackend) FrequentAddresses(string, int) ([]desktop.ContactItem, error) {
+	return f.frequent, nil
 }
 func (f *fakeBackend) GetLabels(string) ([]desktop.LabelItem, error) {
 	return []desktop.LabelItem{

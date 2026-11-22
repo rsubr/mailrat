@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -150,7 +151,7 @@ func (u *UI) buildMiniSidebar(bg fyne.CanvasObject) fyne.CanvasObject {
 	for _, l := range favs {
 		nav = append(nav, u.miniNavRow(l))
 	}
-	footer := container.NewVBox(hline(), container.NewCenter(iconButton("settings", "Settings", u.openSettings)), container.NewCenter(iconButton("sync", "Check for new mail", u.syncNow)))
+	footer := container.NewVBox(hline(), container.NewCenter(iconButton("person", "Contacts", u.openContacts)), container.NewCenter(iconButton("settings", "Settings", u.openSettings)), container.NewCenter(u.darkToggle()), container.NewCenter(u.syncButton()))
 	body := container.NewBorder(head, footer, nil, nil, container.NewVScroll(container.NewVBox(nav...)))
 	return container.NewStack(bg, body)
 }
@@ -274,12 +275,44 @@ func (u *UI) sidebarFooter() fyne.CanvasObject {
 	status := canvas.NewText(u.syncStatus, subtle())
 	status.TextSize = 12
 	var items []fyne.CanvasObject
-	items = append(items, settings, status, layout.NewSpacer())
+	items = append(items, iconButton("person", "Contacts", u.openContacts), settings, u.darkToggle(), status, layout.NewSpacer())
 	if u.errCount > 0 {
 		warn := widget.NewButtonWithIcon(strconv.Itoa(u.errCount), icon("warning", color.NRGBA{0xff, 0x9f, 0x0a, 0xff}), u.showErrorLog)
 		warn.Importance = widget.LowImportance
 		items = append(items, warn)
 	}
-	items = append(items, iconButton("sync", "Check for new mail", u.syncNow))
+	items = append(items, u.syncButton())
 	return container.NewVBox(hline(), container.NewPadded(container.NewHBox(items...)))
+}
+
+// darkToggle shows the glyph for the mode a tap switches to.
+func (u *UI) darkToggle() fyne.CanvasObject {
+	glyph := "moon"
+	if isDark() {
+		glyph = "sun"
+	}
+	return iconButton(glyph, "Toggle dark/light mode", u.toggleDark)
+}
+
+// syncButton is the sync glyph; it spins while a sync is in progress.
+func (u *UI) syncButton() fyne.CanvasObject {
+	if u.syncAnim != nil {
+		u.syncAnim.Stop()
+		u.syncAnim = nil
+	}
+	b := iconButton("sync", "Check for new mail", u.syncNow)
+	if u.syncStatus != "" {
+		const frames = 12
+		last := -1
+		u.syncAnim = fyne.NewAnimation(time.Second, func(p float32) {
+			if f := int(p*frames) % frames; f != last {
+				last = f
+				b.SetIcon(iconRot("sync", fg(), f*360/frames))
+			}
+		})
+		u.syncAnim.RepeatCount = fyne.AnimationRepeatForever
+		u.syncAnim.Curve = fyne.AnimationLinear
+		u.syncAnim.Start()
+	}
+	return b
 }

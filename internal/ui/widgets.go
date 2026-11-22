@@ -18,6 +18,12 @@ func col(n fyne.ThemeColorName) color.Color {
 	return s.Theme().Color(n, s.ThemeVariant())
 }
 
+// isDark reports whether the active theme is rendering dark.
+func isDark() bool {
+	r, _, _, _ := col(theme.ColorNameBackground).RGBA()
+	return r < 0x8000
+}
+
 func fg() color.Color     { return col(theme.ColorNameForeground) }
 func subtle() color.Color { return col(colorSubtle) }
 
@@ -129,6 +135,39 @@ func (f fixedWidth) MinSize(o []fyne.CanvasObject) fyne.Size {
 func (f fixedWidth) Layout(o []fyne.CanvasObject, s fyne.Size) {
 	o[0].Move(fyne.NewPos(0, 0))
 	o[0].Resize(fyne.NewSize(f.w, s.Height))
+}
+
+// shrinkable lets its child be narrower than its natural width so truncating
+// text clips with an ellipsis instead of pushing neighbours out.
+type shrinkable struct{}
+
+func (shrinkable) MinSize(o []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(0, o[0].MinSize().Height)
+}
+func (shrinkable) Layout(o []fyne.CanvasObject, s fyne.Size) {
+	o[0].Move(fyne.NewPos(0, 0))
+	o[0].Resize(s)
+}
+
+// subjectLine places subject then snippet on one line: the subject keeps its
+// natural width up to the whole line, the snippet takes what is left.
+type subjectLine struct{ subjW *float32 }
+
+func (subjectLine) MinSize(o []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(0, max(o[0].MinSize().Height, o[1].MinSize().Height))
+}
+func (l subjectLine) Layout(o []fyne.CanvasObject, s fyne.Size) {
+	sw := min(*l.subjW, s.Width)
+	o[0].Move(fyne.NewPos(0, 0))
+	o[0].Resize(fyne.NewSize(sw, s.Height))
+	// A sliver too narrow for text would paint outside its box; drop it.
+	if s.Width-sw < 40 {
+		o[1].Hide()
+		return
+	}
+	o[1].Show()
+	o[1].Move(fyne.NewPos(sw, 0))
+	o[1].Resize(fyne.NewSize(s.Width-sw, s.Height))
 }
 
 func spacer(w, h float32) fyne.CanvasObject {

@@ -15,41 +15,56 @@ func contactLabel(c desktop.ContactItem) string {
 	return c.Email
 }
 
+// suggestHost is the inline strip of suggestions shown in the window layout. It is
+// deliberately not a popup/overlay: Fyne gives an overlay its own focus manager, so
+// the moment a PopUp opened the entry lost keyboard focus and typing stopped.
+type suggestHost struct {
+	box *fyne.Container
+	cur *suggester
+}
+
+func newSuggestHost() *suggestHost {
+	h := &suggestHost{box: container.NewVBox()}
+	h.box.Hide()
+	return h
+}
+
 // suggester is a contact dropdown with keyboard selection (Down/Up move, Enter or Tab
 // accept, Escape closes), shared by the recipient fields and @mentions in the body.
 type suggester struct {
-	canvas fyne.Canvas
-	pick   func(desktop.ContactItem)
-	items  []desktop.ContactItem
-	sel    int
-	popup  *widget.PopUp
+	host  *suggestHost
+	pick  func(desktop.ContactItem)
+	items []desktop.ContactItem
+	sel   int
 }
 
-func (s *suggester) active() bool { return s.popup != nil }
+func (s *suggester) active() bool { return len(s.items) > 0 }
 
 func (s *suggester) hide() {
-	if s.popup != nil {
-		s.popup.Hide()
-		s.popup = nil
+	if s.items != nil && s.host.cur == s {
+		s.host.box.Objects = nil
+		s.host.box.Hide()
+		s.host.cur = nil
 	}
 	s.items = nil
 }
 
-// show lists items in a dropdown under the anchor, with the first one selected.
-func (s *suggester) show(anchor fyne.CanvasObject, items []desktop.ContactItem) {
+// show lists items in the host strip, with the first one selected.
+func (s *suggester) show(items []desktop.ContactItem) {
 	s.hide()
 	if len(items) == 0 {
 		return
 	}
+	if c := s.host.cur; c != nil && c != s {
+		c.hide()
+	}
+	s.host.cur = s
 	s.items, s.sel = items, 0
-	s.render(anchor)
+	s.render()
 }
 
-func (s *suggester) render(anchor fyne.CanvasObject) {
-	if s.popup != nil {
-		s.popup.Hide()
-	}
-	list := container.NewVBox()
+func (s *suggester) render() {
+	s.host.box.Objects = nil
 	for i, c := range s.items {
 		c := c
 		b := widget.NewButton(contactLabel(c), func() { s.accept(c) })
@@ -58,12 +73,10 @@ func (s *suggester) render(anchor fyne.CanvasObject) {
 		if i == s.sel {
 			b.Importance = widget.MediumImportance
 		}
-		list.Add(b)
+		s.host.box.Add(b)
 	}
-	s.popup = widget.NewPopUp(list, s.canvas)
-	pos := fyne.CurrentApp().Driver().AbsolutePositionForObject(anchor)
-	s.popup.ShowAtPosition(pos.Add(fyne.NewPos(0, anchor.Size().Height)))
-	s.popup.Resize(fyne.NewSize(anchor.Size().Width, list.MinSize().Height))
+	s.host.box.Show()
+	s.host.box.Refresh()
 }
 
 func (s *suggester) accept(c desktop.ContactItem) {
@@ -72,7 +85,7 @@ func (s *suggester) accept(c desktop.ContactItem) {
 }
 
 // key handles a key press while the dropdown is open and reports whether it was consumed.
-func (s *suggester) key(k fyne.KeyName, anchor fyne.CanvasObject) bool {
+func (s *suggester) key(k fyne.KeyName) bool {
 	if !s.active() {
 		return false
 	}
@@ -90,7 +103,7 @@ func (s *suggester) key(k fyne.KeyName, anchor fyne.CanvasObject) bool {
 	default:
 		return false
 	}
-	s.render(anchor)
+	s.render()
 	return true
 }
 
@@ -116,7 +129,7 @@ func newSuggestEntry(sg *suggester) *suggestEntry {
 }
 
 func (e *suggestEntry) TypedKey(k *fyne.KeyEvent) {
-	if !e.sg.key(k.Name, e) {
+	if !e.sg.key(k.Name) {
 		e.Entry.TypedKey(k)
 	}
 }

@@ -15,8 +15,6 @@ import (
 type bodyEntry struct {
 	widget.Entry
 	sg *suggester
-	// anchor is the object the mention dropdown opens under (Fyne exposes no caret position).
-	anchor fyne.CanvasObject
 }
 
 func newBodyEntry(sg *suggester) *bodyEntry {
@@ -28,7 +26,7 @@ func newBodyEntry(sg *suggester) *bodyEntry {
 }
 
 func (e *bodyEntry) TypedKey(k *fyne.KeyEvent) {
-	if !e.sg.key(k.Name, e.anchor) {
+	if !e.sg.key(k.Name) {
 		e.Entry.TypedKey(k)
 	}
 }

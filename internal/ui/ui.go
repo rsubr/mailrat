@@ -57,6 +57,7 @@ type UI struct {
 	readTimer    *time.Timer
 	threadGen    int
 	syncStatus   string
+	syncAnim     *fyne.Animation // spins the sync icon while syncing
 	errCount     int
 
 	sidebar    *fyne.Container
@@ -77,12 +78,14 @@ type UI struct {
 	pendingKey  rune
 	pendingAt   time.Time
 	settingsWin fyne.Window
+	contactsWin fyne.Window
 	loginDlg    dialog.Dialog
 }
 
 const (
 	prefLabelsHidden = "sidebar.labelsHidden"
 	prefSidebarMini  = "sidebar.mini"
+	prefDarkMode     = "theme.mode" // "", "dark" or "light"; empty follows the OS
 
 	sidebarWidth     float32 = 240 // expanded: icons + text
 	sidebarMiniWidth float32 = 64  // minimal: icons only
@@ -90,7 +93,7 @@ const (
 
 // Run builds the main window and blocks until it is closed.
 func Run(a fyne.App, be Backend) {
-	a.Settings().SetTheme(mimeTheme{})
+	a.Settings().SetTheme(themeFor(a.Preferences().String(prefDarkMode)))
 	u := newUI(a, be)
 	be.SetEventHandler(u.handleEvent)
 	be.Start(context.Background())
@@ -126,6 +129,22 @@ func (u *UI) watchVariant() {
 			}
 		}
 	}()
+}
+
+func themeFor(mode string) mimeTheme {
+	return mimeTheme{forced: mode != "", dark: mode == "dark"}
+}
+
+// toggleDark flips between dark and light, persists the choice and rebuilds.
+func (u *UI) toggleDark() {
+	mode := "dark"
+	if isDark() {
+		mode = "light"
+	}
+	u.app.Preferences().SetString(prefDarkMode, mode)
+	u.app.Settings().SetTheme(themeFor(mode))
+	u.win.SetContent(u.build())
+	u.refreshAll()
 }
 
 func (u *UI) refreshAll() {
@@ -309,13 +328,26 @@ func (u *UI) loadMore() {
 	}
 	u.loadingMore = true
 	gen, offset := u.loadGen, len(u.threads)
+	acct, label, searching := u.activeAccount, u.activeLabel, u.query != ""
 	var more []desktop.ThreadItem
-	u.bg(func() { more, _ = u.fetchThreads(offset) }, func() {
+	exhausted := false
+	u.bg(func() {
+		more, _ = u.fetchThreads(offset)
+		if len(more) >= pageSize || searching {
+			return
+		}
+		// Past what is synced locally: pull older mail for this label from Gmail.
+		if n, err := u.be.LoadOlder(acct, label); err == nil && n > 0 {
+			more, _ = u.fetchThreads(offset)
+			return
+		}
+		exhausted = true
+	}, func() {
 		u.loadingMore = false
 		if gen != u.loadGen {
 			return
 		}
-		if len(more) < pageSize {
+		if searching || exhausted {
 			u.allLoaded = true
 		}
 		u.threads = append(u.threads, more...)

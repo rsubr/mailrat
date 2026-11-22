@@ -51,6 +51,7 @@ type htmlRenderer struct {
 	ordered bool
 	n       int
 	inList  bool
+	depth   int // list nesting level
 }
 
 var urlRe = regexp.MustCompile(`https?://[^\s<>"')]+[^\s<>"').,;:!?]`)
@@ -208,19 +209,22 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 		case "ul", "ol":
 			r.flush()
 			savedOrdered, savedN, savedIn := r.ordered, r.n, r.inList
+			r.depth++
 			r.ordered, r.n, r.inList = n.Data == "ol", 0, true
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				r.walk(c, st)
 			}
 			r.flush()
 			r.ordered, r.n, r.inList = savedOrdered, savedN, savedIn
+			r.depth--
 			return
 		case "li":
 			r.flush()
-			marker := "• "
+			indent := strings.Repeat("\u00a0\u00a0\u00a0\u00a0", max(r.depth, 1))
+			marker := indent + "• "
 			if r.ordered {
 				r.n++
-				marker = strconv.Itoa(r.n) + ". "
+				marker = indent + strconv.Itoa(r.n) + ". "
 			}
 			r.cur = append(r.cur, &widget.TextSegment{Text: marker, Style: widget.RichTextStyle{Inline: true, ColorName: theme.ColorNameForeground}})
 			for c := n.FirstChild; c != nil; c = c.NextSibling {

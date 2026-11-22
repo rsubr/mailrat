@@ -16,11 +16,20 @@ const (
 
 // mimeTheme mirrors Mimestream's macOS look: graphite panes in dark mode,
 // light grey sidebar in light mode, system-blue accent.
-type mimeTheme struct{}
+type mimeTheme struct {
+	forced bool // pin the variant instead of following the OS
+	dark   bool
+}
 
 func rgb(r, g, b uint8) color.Color { return color.NRGBA{r, g, b, 0xff} }
 
-func (mimeTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+func (t mimeTheme) Color(n fyne.ThemeColorName, v fyne.ThemeVariant) color.Color {
+	if t.forced {
+		v = theme.VariantLight
+		if t.dark {
+			v = theme.VariantDark
+		}
+	}
 	if c, ok := parseHexName(n); ok { // author colour from rendered mail
 		return c
 	}
