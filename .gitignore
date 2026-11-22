@@ -47,3 +47,6 @@ coverage.html
 mailrat.app/
 cmd/mailrat/mailrat.app/
 .playwright-mcp/
+
+# Agent worktrees
+.claude/worktrees/
