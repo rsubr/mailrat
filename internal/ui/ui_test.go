@@ -357,9 +357,9 @@ func TestGmailGoToAndMessageKeys(t *testing.T) {
 		t.Fatal("o should toggle the cursor message")
 	}
 
-	typeKeys(u, "u")
+	u.typedKey(fyne.KeyEscape)
 	if u.selected != nil {
-		t.Fatal("u should return to the list")
+		t.Fatal("Esc should return to the list")
 	}
 	typeKeys(u, "?") // help dialog builds without panic
 	if u.win.Canvas().Overlays().Top() == nil {
