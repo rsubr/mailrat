@@ -26,6 +26,9 @@ type renderOpts struct {
 type renderResult struct {
 	segments []widget.RichTextSegment
 	blocked  int // remote images not loaded
+	// quoted is the previous-conversation part (gmail_quote, blockquote,
+	// "On ... wrote:"), cut out of segments so the UI can fold it behind "…".
+	quoted []widget.RichTextSegment
 }
 
 // minContrast is the WCAG ratio below which an author-chosen text colour is
@@ -52,6 +55,9 @@ type htmlRenderer struct {
 	n       int
 	inList  bool
 	depth   int // list nesting level
+	// first quoted block: segments [foldFrom, foldTo) of out.segments; foldTo < 0 means to the end.
+	folded           bool
+	foldFrom, foldTo int
 }
 
 var urlRe = regexp.MustCompile(`https?://[^\s<>"')]+[^\s<>"').,;:!?]`)
@@ -64,6 +70,7 @@ func renderMail(src string, o renderOpts) renderResult {
 	r := &htmlRenderer{opts: o}
 	if !isHTML(src) {
 		r.plain(src)
+		r.fold()
 		return r.out
 	}
 	doc, err := html.Parse(strings.NewReader(src))
@@ -73,11 +80,57 @@ func renderMail(src string, o renderOpts) renderResult {
 	}
 	r.walk(doc, textStyle{})
 	r.flush()
+	r.fold()
 	return r.out
+}
+
+// fold moves the first quoted block out of the main segments. A message that
+// is quote from its first line is left alone.
+func (r *htmlRenderer) fold() {
+	segs := r.out.segments
+	if !r.folded || r.foldFrom <= 0 || r.foldFrom >= len(segs) {
+		return
+	}
+	to := r.foldTo
+	if to < 0 || to > len(segs) {
+		to = len(segs)
+	}
+	r.out.quoted = append([]widget.RichTextSegment(nil), segs[r.foldFrom:to]...)
+	r.out.segments = append(segs[:r.foldFrom:r.foldFrom], segs[to:]...)
+}
+
+// quoteStart is the plain-text start of a quoted reply: an "On ... wrote:"
+// attribution line or the first ">" line.
+var quoteStart = regexp.MustCompile(`(?m)^On (?:[^\n]*\n)?[^\n]*wrote:[ \t]*$|^>`)
+
+// quoteKind reports whether n opens a quoted reply, and whether the quote then
+// runs to the end of the message (Outlook puts the header and body as siblings).
+func quoteKind(n *html.Node) (toEnd, ok bool) {
+	if n.Data == "blockquote" {
+		return false, true
+	}
+	cls := attr(n, "class")
+	switch id := attr(n, "id"); {
+	case id == "divRplyFwdMsg" || id == "appendonsend":
+		return true, true
+	case strings.Contains(cls, "gmail_quote") || strings.Contains(cls, "yahoo_quoted") || strings.Contains(cls, "moz-cite-prefix"):
+		return false, true
+	}
+	return false, false
 }
 
 func (r *htmlRenderer) plain(s string) {
 	s = strings.TrimSpace(strings.ReplaceAll(s, "\r\n", "\n"))
+	if m := quoteStart.FindStringIndex(s); m != nil && strings.TrimSpace(s[:m[0]]) != "" {
+		r.plain(s[:m[0]])
+		r.folded, r.foldFrom, r.foldTo = true, len(r.out.segments), -1
+		r.emitPlain(s[m[0]:])
+		return
+	}
+	r.emitPlain(s)
+}
+
+func (r *htmlRenderer) emitPlain(s string) {
 	for _, para := range strings.Split(s, "\n\n") {
 		last := 0
 		for _, m := range urlRe.FindAllStringIndex(para, -1) {
@@ -195,6 +248,19 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 		if skipElement(n) {
 			return
 		}
+		if !r.folded {
+			if toEnd, ok := quoteKind(n); ok {
+				r.flush()
+				r.folded, r.foldFrom = true, len(r.out.segments)
+				defer func() {
+					r.flush()
+					r.foldTo = len(r.out.segments)
+					if toEnd {
+						r.foldTo = -1
+					}
+				}()
+			}
+		}
 		st = r.styleFor(n, st)
 		switch n.Data {
 		case "br":
@@ -218,6 +284,10 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 			r.ordered, r.n, r.inList = savedOrdered, savedN, savedIn
 			r.depth--
 			return
+		case "table":
+			if r.table(n, st) {
+				return
+			}
 		case "tr":
 			r.walkRow(n, st)
 			return

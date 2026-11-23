@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,6 +128,18 @@ func (u *UI) typedRune(r rune) {
 	}
 }
 
+// ifChecked picks the bulk action when list rows are ticked, else the
+// open-thread one.
+func (u *UI) ifChecked(bulk, single func()) func() {
+	return func() {
+		if len(u.checkedThreads()) > 0 {
+			bulk()
+		} else {
+			single()
+		}
+	}
+}
+
 func (u *UI) singleKeys() map[rune]func() {
 	reply := func() { u.reply(false) }
 	replyAll := func() { u.reply(true) }
@@ -137,14 +151,16 @@ func (u *UI) singleKeys() map[rune]func() {
 		'j': func() { u.moveCursor(+1) },
 		'k': func() { u.moveCursor(-1) },
 		'o': u.openOrToggle,
+		'x': u.toggleCheckCursor,
 		'u': u.syncNow,
 		'n': func() { u.moveMessage(+1) },
 		'p': func() { u.moveMessage(-1) },
-		'e': u.archive,
+		'e': u.ifChecked(u.bulkArchive, u.archive),
 		'y': u.removeFromView,
-		'#': u.trash,
-		'!': u.spam,
+		'#': u.ifChecked(u.bulkTrash, u.trash),
+		'!': u.ifChecked(u.bulkSpam, u.spam),
 		's': u.toggleStar,
+		'l': u.labelPicker,
 		'+': func() { u.setThreadLabel("IMPORTANT", true) },
 		'=': func() { u.setThreadLabel("IMPORTANT", true) },
 		'-': func() { u.setThreadLabel("IMPORTANT", false) },
@@ -213,11 +229,146 @@ func (u *UI) goToLabel() {
 	u.win.Canvas().Focus(entry)
 }
 
+// labelPicker is Gmail's "Label as" popup: filter, toggle checkboxes, Apply,
+// or create a new label. Enter applies; Esc closes (dialog default).
+func (u *UI) labelPicker() {
+	targets := u.checkedThreads()
+	if len(targets) == 0 {
+		if u.selected == nil {
+			return
+		}
+		targets = []mailrat.ThreadItem{*u.selected}
+	}
+	acct := targets[0].AccountID
+	have := map[string]bool{} // labels carried by every target
+	for _, id := range targets[0].LabelIDs {
+		have[id] = !slices.ContainsFunc(targets, func(t mailrat.ThreadItem) bool { return !slices.Contains(t.LabelIDs, id) })
+	}
+	var all []mailrat.LabelItem
+	var err error
+	u.bg(func() { all, err = u.be.GetLabels(acct) }, func() {
+		if err != nil {
+			u.showError(err)
+			return
+		}
+		var user []mailrat.LabelItem
+		for _, l := range all {
+			if l.Type == "user" {
+				user = append(user, l)
+			}
+		}
+		sort.SliceStable(user, func(i, j int) bool { return strings.ToLower(user[i].Name) < strings.ToLower(user[j].Name) })
+		u.showLabelPicker(acct, targets, user, have)
+	})
+}
+
+func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels []mailrat.LabelItem, have map[string]bool) {
+	want := map[string]bool{}
+	for id := range have {
+		want[id] = true
+	}
+	entry := widget.NewEntry()
+	entry.SetPlaceHolder("Label as…")
+	list := container.NewVBox()
+	var d dialog.Dialog
+	var refill func(string)
+	refill = func(q string) {
+		q = strings.ToLower(strings.TrimSpace(q))
+		list.Objects = nil
+		exact := false
+		for _, l := range labels {
+			exact = exact || strings.ToLower(l.Name) == q
+			if !strings.Contains(strings.ToLower(l.Name), q) {
+				continue
+			}
+			list.Add(widget.NewCheck(l.Name, func(on bool) { want[l.ID] = on }))
+			list.Objects[len(list.Objects)-1].(*widget.Check).SetChecked(want[l.ID])
+		}
+		if name := strings.TrimSpace(entry.Text); name != "" && !exact {
+			b := widget.NewButton("Create \""+name+"\"", func() {
+				var l mailrat.LabelItem
+				var err error
+				u.bg(func() { l, err = u.be.CreateLabel(acct, name) }, func() {
+					if err != nil {
+						u.showError(err)
+						return
+					}
+					labels = append(labels, l)
+					want[l.ID] = true
+					entry.SetText("")
+					refill("")
+				})
+			})
+			b.Alignment = widget.ButtonAlignLeading
+			b.Importance = widget.LowImportance
+			list.Add(b)
+		}
+		list.Refresh()
+	}
+	apply := func() {
+		d.Hide()
+		var err error
+		u.bg(func() {
+			for _, t := range targets {
+				for _, l := range labels {
+					if want[l.ID] != have[l.ID] {
+						if e := u.be.SetThreadLabel(t.AccountID, t.ID, l.ID, want[l.ID]); e != nil {
+							err = e
+						}
+					}
+				}
+			}
+		}, func() {
+			if err != nil {
+				u.showError(err)
+				return
+			}
+			for _, t := range targets {
+				u.patchThread(t.ID, t.AccountID, func(t *mailrat.ThreadItem) {
+					ids := t.LabelIDs[:0:0]
+					for _, x := range t.LabelIDs {
+						if _, user := want[x]; !user {
+							ids = append(ids, x)
+						}
+					}
+					for id, on := range want {
+						if on {
+							ids = append(ids, id)
+						}
+					}
+					t.LabelIDs = ids
+				})
+			}
+			if !want[u.activeLabel] && have[u.activeLabel] {
+				if len(u.checkedThreads()) > 0 {
+					u.removeThreads(targets)
+				} else {
+					u.removeSelected()
+				}
+			}
+		})
+	}
+	entry.OnChanged = refill
+	entry.OnSubmitted = func(string) { apply() }
+	refill("")
+	d = dialog.NewCustomConfirm("Label as", "Apply", "Cancel",
+		container.NewBorder(entry, nil, nil, nil, container.NewVScroll(list)),
+		func(ok bool) {
+			if ok {
+				apply()
+			}
+		}, u.win)
+	d.Resize(fyne.NewSize(360, 420))
+	d.Show()
+	u.win.Canvas().Focus(entry)
+}
+
 // ── list and conversation cursors ───────────────────────────────────────────
 
 // resetCursor forgets the list position when the mailbox changes.
 func (u *UI) resetCursor() {
 	u.cursor, u.cursorNext = -1, true
+	u.checked = nil
 }
 
 // moveCursor opens the next (+1, older) or previous (-1, newer) conversation.
@@ -359,10 +510,11 @@ var shortcutHelp = []helpSection{
 		{"Esc", "Back to conversation list"}, {"j", "Next (older) conversation"}, {"k", "Previous (newer) conversation"},
 		{"o  or  Enter", "Open conversation / expand message"},
 		{"n", "Next message"}, {"p", "Previous message"},
+		{"x", "Select conversation"},
 	}},
 	{"Actions", [][2]string{
 		{"c  or  d", "Compose"}, {"/", "Search"}, {"e  or  y", "Archive / remove from view"},
-		{"#", "Move to Trash"}, {"!", "Report spam"}, {"s", "Star / unstar"},
+		{"#", "Move to Trash"}, {"!", "Report spam"}, {"s", "Star / unstar"}, {"l", "Label as…"},
 		{"+  or  =", "Mark important"}, {"-", "Mark not important"},
 		{"r  or  Shift+r", "Reply"}, {"a  or  Shift+a", "Reply all"}, {"f  or  Shift+f", "Forward"},
 		{"Shift+i", "Mark as read"}, {"Shift+u  or  _", "Mark as unread"},

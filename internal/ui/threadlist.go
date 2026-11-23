@@ -20,7 +20,9 @@ func (u *UI) listHeader() fyne.CanvasObject {
 	img.FillMode = canvas.ImageFillContain
 	img.SetMinSize(fyne.NewSize(26, 26))
 	row := container.NewBorder(nil, nil, nil, container.NewCenter(img), u.listTitle)
-	return container.NewVBox(container.NewPadded(row), hline())
+	u.listBar = container.NewStack()
+	u.refreshListBar()
+	return container.NewVBox(container.NewPadded(row), u.listBar, hline())
 }
 
 func (u *UI) refreshListHeader() {
@@ -54,6 +56,7 @@ type threadRow struct {
 	widget.BaseWidget
 	bg      *canvas.Rectangle
 	dotFill *canvas.Circle
+	check   *widget.Check
 	head    *widget.RichText // sender names; truncates
 	count   *widget.RichText // message count, always fully shown
 	when    *widget.Label
@@ -73,6 +76,7 @@ func newThreadRow(wide bool) *threadRow {
 	r := &threadRow{
 		bg:      canvas.NewRectangle(color.Transparent),
 		dotFill: canvas.NewCircle(color.Transparent),
+		check:   widget.NewCheck("", nil),
 		head:    widget.NewRichText(),
 		count:   widget.NewRichText(),
 		when:    widget.NewLabel(""),
@@ -93,7 +97,7 @@ func newThreadRow(wide bool) *threadRow {
 	r.clip.SetMinSize(fyne.NewSize(14, 14))
 
 	gutter := container.NewGridWrap(fyne.NewSize(10, 10), r.dotFill)
-	left := container.NewVBox(spacer(0, 11), gutter)
+	left := container.NewHBox(r.check, container.NewVBox(spacer(0, 11), gutter))
 	var content fyne.CanvasObject
 	if wide {
 		right := container.NewHBox(r.chips, container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when))
@@ -110,6 +114,9 @@ func newThreadRow(wide bool) *threadRow {
 func (r *threadRow) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimpleRenderer(r.root) }
 
 func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
+	r.check.OnChanged = nil
+	r.check.SetChecked(u.checked[threadKey(t)])
+	r.check.OnChanged = func(on bool) { u.setChecked(t, on) }
 	if t.IsUnread {
 		r.dotFill.FillColor = col(theme.ColorNamePrimary)
 		r.bg.FillColor = color.Transparent
@@ -118,6 +125,9 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 		c := color.NRGBAModel.Convert(col(colorChip)).(color.NRGBA)
 		c.A = 0x70
 		r.bg.FillColor = c
+	}
+	if u.checked[threadKey(t)] {
+		r.bg.FillColor = col(theme.ColorNameSelection)
 	}
 	r.dotFill.Refresh()
 	r.bg.Refresh()
@@ -196,29 +206,91 @@ func displayParticipants(s string) string {
 	return joinComma(out)
 }
 
+// listCell is one list slot: a thread row, or (past the last thread) the
+// footer with its Fetch more button, loading bar and end-of-list label.
+type listCell struct {
+	widget.BaseWidget
+	row   *threadRow
+	foot  *fyne.Container
+	text  *widget.Label
+	btn   *widget.Button
+	bar   *widget.ProgressBarInfinite
+	stack *fyne.Container
+}
+
+func (u *UI) newListCell() *listCell {
+	c := &listCell{row: newThreadRow(u.sidebarMini), text: widget.NewLabel(""), bar: widget.NewProgressBarInfinite()}
+	c.text.Alignment = fyne.TextAlignCenter
+	c.btn = widget.NewButton("Fetch more", func() {
+		u.olderFailed = false
+		u.loadMore()
+	})
+	c.foot = container.NewVBox(c.text, c.bar, c.btn)
+	c.stack = container.NewStack(c.row, c.foot)
+	c.ExtendBaseWidget(c)
+	return c
+}
+
+func (c *listCell) CreateRenderer() fyne.WidgetRenderer { return widget.NewSimpleRenderer(c.stack) }
+
+// showFooter switches the cell to the footer for the current load state.
+func (u *UI) showFooter(c *listCell) {
+	c.row.Hide()
+	c.foot.Show()
+	c.text.Hide()
+	c.bar.Hide()
+	c.btn.Hide()
+	switch {
+	case u.loadingMore:
+		c.text.SetText("Loading older emails…")
+		c.text.Show()
+		c.bar.Show()
+	case u.allLoaded:
+		c.text.SetText("No more emails")
+		c.text.Show()
+	default:
+		if u.olderFailed {
+			c.text.SetText("Could not fetch older emails")
+			c.text.Show()
+		}
+		c.btn.Show()
+	}
+}
+
 func (u *UI) newThreadList() *keyList {
 	l := &keyList{u: u}
-	l.Length = func() int { return len(u.threads) }
-	l.CreateItem = func() fyne.CanvasObject { return newThreadRow(u.sidebarMini) }
+	l.Length = func() int {
+		if len(u.threads) == 0 {
+			return 0
+		}
+		return len(u.threads) + 1 // footer
+	}
+	l.CreateItem = func() fyne.CanvasObject { return u.newListCell() }
 	l.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
+		c := o.(*listCell)
 		if i >= len(u.threads) {
+			u.showFooter(c)
 			return
 		}
-		u.setRow(o.(*threadRow), u.threads[i])
-		if i >= len(u.threads)-5 {
+		c.foot.Hide()
+		c.row.Show()
+		u.setRow(c.row, u.threads[i])
+		if i >= len(u.threads)-5 && !u.olderFailed {
 			u.loadMore()
 		}
 	}
 	l.ExtendBaseWidget(l)
 	l.OnSelected = func(i widget.ListItemID) {
-		if i < len(u.threads) {
-			u.cursor, u.cursorNext = i, false
-			t := u.threads[i]
-			if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
-				return
-			}
-			u.openThread(t)
+		if i >= len(u.threads) {
+			l.Unselect(i)
+			return
 		}
+		u.cursor, u.cursorNext = i, false
+		t := u.threads[i]
+		if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
+			return
+		}
+		u.openThread(t)
 	}
 	return l
 }

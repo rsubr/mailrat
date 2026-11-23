@@ -7,6 +7,7 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
@@ -122,7 +123,14 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}
 	}
 	w.SetOnClosed(func() { finish(false) })
-	discard := widget.NewButton("Discard", func() { finish(true); w.Close() })
+	discard := widget.NewButton("Discard", func() {
+		dialog.ShowConfirm("Discard draft?", "This draft will be deleted.", func(ok bool) {
+			if ok {
+				finish(true)
+				w.Close()
+			}
+		}, w)
+	})
 	send.OnTapped = func() {
 		if strings.TrimSpace(to.Text) == "" {
 			u.showErrorIn(w, errNoRecipient)

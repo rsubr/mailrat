@@ -34,6 +34,7 @@ func texts(res renderResult) (out [][2]string) {
 		}
 	}
 	walk(res.segments)
+	walk(res.quoted)
 	return
 }
 
@@ -227,11 +228,10 @@ func plainTexts(res renderResult) string {
 
 func TestRenderTableKeepsRowsTogether(t *testing.T) {
 	src := `<table><tr><th>Item</th><th>Qty</th></tr><tr><td>Apple</td><td>3</td></tr></table>`
-	got := plainTexts(renderMail(src, renderOpts{bg: lightBG, fg: lightFG}))
-	for _, want := range []string{"Item │ Qty", "Apple │ 3"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("missing %q in %q", want, got)
-		}
+	res := renderMail(src, renderOpts{bg: lightBG, fg: lightFG})
+	tab, ok := res.segments[0].(*tableSegment)
+	if !ok || tab.cols != 2 || len(tab.rows) != 2 || !strings.Contains(tab.Textual(), "Apple 3") {
+		t.Errorf("want 2x2 grid, got %#v", res.segments)
 	}
 }
 
@@ -243,5 +243,16 @@ func TestRenderPlainTextWithAngleBrackets(t *testing.T) {
 	got := plainTexts(renderMail(src, renderOpts{bg: lightBG, fg: lightFG}))
 	if !strings.Contains(got, "Hi Bob,\nsee <") || !strings.Contains(got, "al@example.com>\nthanks") {
 		t.Errorf("line breaks lost: %q", got)
+	}
+}
+
+func TestQuotedReplyFolded(t *testing.T) {
+	html := renderMail(`<div>Thanks!</div><div class="gmail_quote">On Mon, A wrote:<blockquote>old</blockquote></div>`, renderOpts{bg: lightBG, fg: lightFG})
+	if len(html.quoted) == 0 || strings.Contains(renderedAll(renderResult{segments: html.segments}), "old") {
+		t.Fatalf("html: segs=%q quoted=%d", renderedAll(renderResult{segments: html.segments}), len(html.quoted))
+	}
+	plain := renderMail("Thanks!\n\nOn Mon, Jan 1, A <a@x> wrote:\n> old", renderOpts{bg: lightBG, fg: lightFG})
+	if len(plain.quoted) == 0 || strings.Contains(renderedAll(renderResult{segments: plain.segments}), "old") {
+		t.Fatalf("plain: quoted=%d", len(plain.quoted))
 	}
 }

@@ -51,6 +51,7 @@ type Backend interface {
 	DeleteContact(accountID, id string) error
 	FrequentAddresses(accountID string, limit int) ([]desktop.ContactItem, error)
 	GetLabels(accountID string) ([]desktop.LabelItem, error)
+	CreateLabel(accountID, name string) (desktop.LabelItem, error)
 	GetLabelUnreadCounts(accountID string) (map[string]int, error)
 	GetAPIErrors() []desktop.APIError
 	ClearAPIErrors()
