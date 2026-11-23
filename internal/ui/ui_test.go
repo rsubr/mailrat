@@ -161,6 +161,9 @@ func (f *fakeBackend) DeleteContact(_, id string) error {
 func (f *fakeBackend) FrequentAddresses(string, int) ([]desktop.ContactItem, error) {
 	return f.frequent, nil
 }
+func (f *fakeBackend) CreateLabel(_, name string) (desktop.LabelItem, error) {
+	return desktop.LabelItem{ID: "new-" + name, Name: name, Type: "user"}, nil
+}
 func (f *fakeBackend) GetLabels(string) ([]desktop.LabelItem, error) {
 	return []desktop.LabelItem{
 		{ID: "INBOX", Name: "Inbox", Type: "system"},
@@ -207,7 +210,7 @@ func TestThreadFlowAndActions(t *testing.T) {
 		t.Fatalf("open thread: %+v", u.selected)
 	}
 	u.archive()
-	if len(fb.archived) != 1 || fb.archived[0] != "t3" || len(u.threads) != 4 || u.selected != nil {
+	if len(fb.archived) != 1 || fb.archived[0] != "t3" || len(u.threads) != 4 || u.selected == nil || u.selected.ID != "t4" {
 		t.Fatalf("archive: %v threads=%d", fb.archived, len(u.threads))
 	}
 	u.list.Select(0)
@@ -348,12 +351,8 @@ func TestGmailShortcuts(t *testing.T) {
 	}
 
 	typeKeys(u, "e") // archive t2, cursor lands on next row
-	if len(fb.archived) != 1 || fb.archived[0] != "t2" || u.selected != nil {
-		t.Fatalf("e: %v", fb.archived)
-	}
-	typeKeys(u, "j")
-	if u.selected == nil || u.selected.ID != "t3" {
-		t.Fatalf("j after archive should open the next row, got %+v", u.selected)
+	if len(fb.archived) != 1 || fb.archived[0] != "t2" || u.selected == nil || u.selected.ID != "t3" {
+		t.Fatalf("e should open the next row: %v %+v", fb.archived, u.selected)
 	}
 	typeKeys(u, "#")
 	if len(fb.trashed) != 1 || fb.trashed[0] != "t3" {

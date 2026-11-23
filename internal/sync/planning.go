@@ -10,6 +10,10 @@ import (
 // AllMailDefaultDays is how much All Mail syncs until the user picks a scope.
 const AllMailDefaultDays = 30
 
+// OlderBatch is how many emails (metadata and body, no attachment bytes) one
+// "load older" step fetches; initial sync also pulls one batch past the window.
+const OlderBatch = 100
+
 type labelQueryPlan struct {
 	config storage.SyncConfig
 	query  string
@@ -55,8 +59,8 @@ func initialSyncQuery(maxDays int) string {
 
 func defaultBackfillConfigs(accountID string) []storage.SyncConfig {
 	return []storage.SyncConfig{
-		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: 0},
-		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: 0},
+		{LabelID: "INBOX", LabelName: "INBOX", AccountID: accountID, DaysToSync: AllMailDefaultDays},
+		{LabelID: "STARRED", LabelName: "STARRED", AccountID: accountID, DaysToSync: AllMailDefaultDays},
 		{LabelID: storage.AllMailLabelID, LabelName: "All Mail", AccountID: accountID, DaysToSync: AllMailDefaultDays},
 	}
 }

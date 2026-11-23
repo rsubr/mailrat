@@ -80,6 +80,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 	a.store = store
 	a.attachments = mail.NewAttachmentCache(store)
+	// Only the last 30 days of mail get attachments cached in the background;
+	// older ones download on open.
+	a.attachments.Window = time.Duration(mailsync.AllMailDefaultDays) * 24 * time.Hour
 	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)
 	a.trash = mail.NewDelayed(mail.UndoWindow)
 	go a.queue.Run(ctx)
@@ -95,13 +98,28 @@ func (a *App) startup(ctx context.Context) {
 	go a.syncLoop(ctx)
 }
 
+// syncLoop syncs every syncEvery and right after the machine wakes from sleep.
+// Wake is detected as a wall-clock jump between ticks (the monotonic clock may
+// not advance while suspended); idle connections are dropped first because
+// they went stale during the sleep.
 func (a *App) syncLoop(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	const syncEvery, tick = 5 * time.Minute, 10 * time.Second
+	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
+	last, lastSync := time.Now().Round(0), time.Now().Round(0)
 	for {
 		select {
 		case <-ticker.C:
-			_ = a.Sync("unified")
+			now := time.Now().Round(0)
+			woke := now.Sub(last) > 3*tick
+			last = now
+			if woke {
+				accounts.CloseIdleConnections()
+			}
+			if woke || now.Sub(lastSync) >= syncEvery {
+				lastSync = now
+				go func() { _ = a.Sync("unified") }() // never stall the loop on a slow sync
+			}
 		case <-ctx.Done():
 			return
 		}
@@ -834,7 +852,7 @@ func (a *App) initialSync(mgr *mailsync.Manager, acc storage.Account) {
 }
 
 // olderBatch is how many older messages one scroll-to-load-more request fetches.
-const olderBatch = 100
+const olderBatch = mailsync.OlderBatch
 
 // LoadOlder fetches mail older than what is stored locally for a label and
 // returns how many messages were added. Pass accountID="unified" or "" for all accounts.
@@ -896,10 +914,7 @@ func (a *App) GetSyncConfigs(accountID string) ([]SyncConfigItem, error) {
 		c, ok := byID[l.ID]
 		if !ok {
 			c = storage.SyncConfig{DaysToSync: defaultDays}
-			if l.ID == "INBOX" || l.ID == "STARRED" {
-				c.DaysToSync = 0
-			}
-			if l.ID == storage.AllMailLabelID {
+			if l.ID == "INBOX" || l.ID == "STARRED" || l.ID == storage.AllMailLabelID {
 				c.DaysToSync = mailsync.AllMailDefaultDays
 			}
 		}
@@ -1013,6 +1028,25 @@ func (a *App) GetLabels(accountID string) ([]LabelItem, error) {
 		return nil, err
 	}
 	return labelsToItems(labels), nil
+}
+
+// CreateLabel creates a user label in Gmail and stores it locally.
+func (a *App) CreateLabel(accountID, name string) (LabelItem, error) {
+	if a.accounts == nil || a.store == nil {
+		return LabelItem{}, fmt.Errorf("no accounts configured")
+	}
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return LabelItem{}, err
+	}
+	l, err := client.CreateLabel(a.ctx, name)
+	if err != nil {
+		return LabelItem{}, err
+	}
+	if err := a.store.UpsertLabel(storage.Label{ID: l.ID, AccountID: accountID, Name: l.Name, LabelType: "user"}); err != nil {
+		return LabelItem{}, err
+	}
+	return LabelItem{ID: l.ID, Name: l.Name, Type: "user"}, nil
 }
 
 // GetLabelUnreadCounts returns unread thread counts per label for an account.

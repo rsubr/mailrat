@@ -192,6 +192,21 @@ func (c *Client) ListLabels(ctx context.Context) ([]Label, error) {
 	return out, nil
 }
 
+// CreateLabel creates a user label and returns it.
+func (c *Client) CreateLabel(ctx context.Context, name string) (Label, error) {
+	l, err := withRetry(ctx, func() (*gmailv1.Label, error) {
+		return c.svc.Users.Labels.Create("me", &gmailv1.Label{
+			Name:                  name,
+			LabelListVisibility:   "labelShow",
+			MessageListVisibility: "show",
+		}).Context(ctx).Do()
+	})
+	if err != nil {
+		return Label{}, fmt.Errorf("create label: %w", err)
+	}
+	return Label{ID: l.Id, Name: l.Name, LabelType: "user"}, nil
+}
+
 // ModifyLabels adds and removes labels on a message.
 func (c *Client) ModifyLabels(ctx context.Context, msgID string, add, remove []string) error {
 	_, err := withRetry(ctx, func() (*gmailv1.Message, error) {

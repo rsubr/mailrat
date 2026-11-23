@@ -186,8 +186,8 @@ func sectionHeader(text string) fyne.CanvasObject {
 }
 
 // iconButton is a borderless toolbar glyph.
-func iconButton(name string, tip string, fn func()) *widget.Button {
-	b := widget.NewButtonWithIcon("", icon(name, fg()), fn)
+func iconButton(name string, tip string, fn func()) *tooltipButton {
+	b := newTooltipButton(icon(name, fg()), tip, fn)
 	b.Importance = widget.LowImportance
 	return b
 }

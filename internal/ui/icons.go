@@ -41,6 +41,8 @@ var iconPaths = map[string]string{
 	"close":       `<path d="M6 6l12 12M18 6L6 18"/>`,
 	"warning":     `<path d="M12 3l10 18H2z"/><path d="M12 10v5M12 17.8v.2"/>`,
 	"image":       `<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="M21 16l-5-5-8 8"/>`,
+	"read":        `<path d="M3 10l9-6 9 6v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3.5 10.5L12 16l8.5-5.5"/>`,
+	"move":        `<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>`,
 	"more":        `<circle cx="12" cy="12" r="9"/><path d="M8 12h.01M12 12h.01M16 12h.01" stroke-width="2.6"/>`,
 }
 

@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,7 +34,7 @@ func (u *UI) buildReader() fyne.CanvasObject {
 // toolbar mirrors Mimestream's: archive, trash, mark unread, | spam —
 // with the search field pinned right.
 func (u *UI) toolbar() fyne.CanvasObject {
-	var buttons []*widget.Button
+	var buttons []*tooltipButton
 	btn := func(name, tip string, fn func()) fyne.CanvasObject {
 		b := iconButton(name, tip, fn)
 		buttons = append(buttons, b)
@@ -74,35 +75,103 @@ func (u *UI) conversation() fyne.CanvasObject {
 		t.TextStyle = fyne.TextStyle{Bold: true}
 		return container.NewCenter(t)
 	}
-	title := widget.NewRichText(&widget.TextSegment{
-		Text: u.selected.Subject,
-		Style: widget.RichTextStyle{
-			SizeName: theme.SizeNameHeadingText, TextStyle: fyne.TextStyle{Bold: true},
-			ColorName: theme.ColorNameForeground, Inline: false,
-		},
-	})
-	title.Wrapping = fyne.TextWrapWord
-	head := []fyne.CanvasObject{title}
+	var chips []fyne.CanvasObject
 	for _, id := range u.selected.LabelIDs {
+		id := id
 		if l, ok := u.findLabel(id); ok && (l.Type == "user" || id == "INBOX") {
-			head = append(head, chip(l.Name, col(colorChip), fg()))
+			bg, fgc := labelColors(l.BackgroundColor, l.TextColor)
+			chips = append(chips, labelChip(l.Name, bg, fgc, func() { u.selectLabel(id) }, func() { u.removeLabel(id) }))
 		}
 	}
-	titleRow := container.NewBorder(nil, nil, nil, container.NewHBox(head[1:]...), head[0])
+	wrapW := u.reader.Size().Width - 16
+	if wrapW <= 16 {
+		wrapW = 600
+	}
+	titleRow := subjectFlow(u.selected.Subject, 24, chips, wrapW)
 
 	cards := []fyne.CanvasObject{container.New(layout.NewCustomPaddedLayout(8, 8, 8, 8), titleRow)}
 	if u.threadLoading {
 		cards = append(cards, widget.NewProgressBarInfinite())
 	}
 	u.msgCards = nil
+	// Gmail folds a long thread: first and the last two stay, the middle hides
+	// behind a count bar until clicked.
+	n := len(u.messages)
+	hideFrom, hideTo := 1, n-2
+	if n <= 3 || u.collapsed[allKey] {
+		hideFrom, hideTo = 0, 0
+	}
 	for i, m := range u.messages {
-		card := u.messageCard(m, i == len(u.messages)-1, len(u.messages) > 1 && i == u.msgCursor)
+		if i >= hideFrom && i < hideTo {
+			if i == hideFrom {
+				cards = append(cards, u.hiddenBar(hideTo-hideFrom))
+			}
+			u.msgCards = append(u.msgCards, cards[len(cards)-1])
+			continue
+		}
+		card := u.messageCard(m, i == n-1, n > 1 && i == u.msgCursor)
 		u.msgCards = append(u.msgCards, card)
 		cards = append(cards, card)
 	}
 	cards = append(cards, u.replyBar())
-	u.convScroll = container.NewVScroll(container.NewVBox(cards...))
-	return u.convScroll
+	// Wide content (tables, images, attachments) scrolls inside the pane; the
+	// scroll reports no minimum width so it can never push the split wider.
+	u.convScroll = container.NewScroll(container.NewVBox(cards...))
+	return container.New(shrinkable{}, u.convScroll)
+}
+
+// allKey in u.collapsed records that the user expanded a thread's hidden middle.
+const allKey = "*all"
+
+// hiddenBar is the count badge and rule standing in for hidden messages.
+func (u *UI) hiddenBar(n int) fyne.CanvasObject {
+	r := canvas.NewRectangle(col(colorChip))
+	r.CornerRadius = 12
+	t := canvas.NewText(strconv.Itoa(n), fg())
+	t.TextSize, t.TextStyle = 13, fyne.TextStyle{Bold: true}
+	badge := container.NewStack(r, container.New(layout.NewCustomPaddedLayout(2, 2, 9, 9), t))
+	row := container.NewBorder(nil, nil, container.New(layout.NewCustomPaddedLayout(6, 6, 8, 12), container.NewCenter(badge)), nil, container.NewCenter(hline()))
+	tap := newTapRow(row, false, func() {
+		u.collapsed[allKey] = true
+		u.refreshReader()
+	})
+	tap.radius = 0
+	return tap
+}
+
+// removeLabel takes a label off the open thread.
+func (u *UI) removeLabel(id string) {
+	if u.selected == nil {
+		return
+	}
+	acct, tid := u.selected.AccountID, u.selected.ID
+	var err error
+	u.bg(func() { err = u.be.SetThreadLabel(acct, tid, id, false) }, func() {
+		if err != nil {
+			u.showError(err)
+			return
+		}
+		drop := func(ids []string) []string {
+			out := ids[:0:0]
+			for _, x := range ids {
+				if x != id {
+					out = append(out, x)
+				}
+			}
+			return out
+		}
+		for i := range u.threads {
+			if u.threads[i].ID == tid && u.threads[i].AccountID == acct {
+				u.threads[i].LabelIDs = drop(u.threads[i].LabelIDs)
+			}
+		}
+		if u.selected != nil && u.selected.ID == tid && u.selected.AccountID == acct {
+			u.selected.LabelIDs = drop(u.selected.LabelIDs)
+		}
+		u.list.Refresh()
+		u.refreshReader()
+		u.reloadLabels()
+	})
 }
 
 // replyBar is Gmail's Reply / Reply all / Forward row under the conversation.
@@ -215,6 +284,19 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 		items = append(items, container.New(layout.NewCustomPaddedLayout(2, 2, 52, 8), container.NewHBox(load)))
 	}
 	items = append(items, container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), body))
+	if len(res.quoted) > 0 {
+		key := "q:" + m.ID
+		more := widget.NewButton("…", func() {
+			u.collapsed[key] = !u.collapsed[key]
+			u.refreshReader()
+		})
+		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 4, 52, 8), container.NewHBox(more)))
+		if u.collapsed[key] {
+			q := widget.NewRichText(res.quoted...)
+			q.Wrapping = fyne.TextWrapWord
+			items = append(items, container.New(layout.NewCustomPaddedLayout(0, 8, 52, 8), q))
+		}
+	}
 	if len(m.Attachments) > 0 {
 		var cards []fyne.CanvasObject
 		for _, a := range m.Attachments {

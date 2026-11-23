@@ -49,6 +49,9 @@ type UI struct {
 	threads     []desktop.ThreadItem
 	allLoaded   bool
 	loadingMore bool
+	olderFailed bool            // last fetch of older mail failed; stops auto-retry
+	checked     map[string]bool // ticked rows, by threadKey
+	listBar     *fyne.Container // list toolbar, rebuilt as the selection changes
 	// threadLoading is true from click until the open thread's messages arrive.
 	threadLoading bool
 	loadGen       int
@@ -335,6 +338,7 @@ func (u *UI) reloadThreads() {
 		}
 		u.threads = ts
 		u.allLoaded = u.query != "" || len(ts) < pageSize
+		u.olderFailed = false
 		u.listErr = ""
 		if err != nil {
 			u.listErr = err.Error()
@@ -366,23 +370,31 @@ func (u *UI) loadMore() {
 	gen, offset := u.loadGen, len(u.threads)
 	acct, label, searching := u.activeAccount, u.activeLabel, u.query != ""
 	var more []desktop.ThreadItem
-	exhausted := false
+	exhausted, failed := false, false
+	if !u.inline {
+		fyne.Do(u.list.Refresh) // show the loading indicator (may be called mid-render)
+	}
 	u.bg(func() {
 		more, _ = u.fetchThreads(offset)
 		if len(more) >= pageSize || searching {
 			return
 		}
 		// Past what is synced locally: pull older mail for this label from Gmail.
-		if n, err := u.be.LoadOlder(acct, label); err == nil && n > 0 {
+		n, err := u.be.LoadOlder(acct, label)
+		switch {
+		case err != nil:
+			failed = true
+		case n > 0:
 			more, _ = u.fetchThreads(offset)
-			return
+		default:
+			exhausted = true
 		}
-		exhausted = true
 	}, func() {
 		u.loadingMore = false
 		if gen != u.loadGen {
 			return
 		}
+		u.olderFailed = failed
 		if searching || exhausted {
 			u.allLoaded = true
 		}
@@ -479,9 +491,11 @@ func (u *UI) removeSelected() {
 	}
 	id, acct := u.selected.ID, u.selected.AccountID
 	kept := u.threads[:0:0]
+	at := -1
 	for i, t := range u.threads {
 		if t.ID == id && t.AccountID == acct {
 			u.cursor, u.cursorNext = i-1, true // next row slides under the cursor
+			at = i
 			continue
 		}
 		kept = append(kept, t)
@@ -489,6 +503,11 @@ func (u *UI) removeSelected() {
 	u.threads = kept
 	u.clearSelection()
 	u.list.Refresh()
+	if at >= 0 && len(kept) > 0 { // Gmail: open the next conversation, else the previous
+		next := min(at, len(kept)-1)
+		u.list.Select(next)
+		u.list.ScrollTo(next)
+	}
 	u.reloadLabels()
 }
 
