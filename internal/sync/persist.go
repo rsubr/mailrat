@@ -82,6 +82,18 @@ func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEve
 	return stats, nil
 }
 
+// applyDeletions removes messages Gmail reports as permanently deleted. Held
+// threads are not skipped: the history cursor moves on, so the delete would be
+// lost, and a pending trash or undo is a no-op on missing messages.
+func (m *Manager) applyDeletions(accountID string, ids []string) error {
+	for _, id := range ids {
+		if err := m.store.DeleteMessage(accountID, id); err != nil {
+			return fmt.Errorf("delete message %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
 func (m *Manager) applyAddedLabels(accountID, messageID string, labelIDs []string) error {
 	existing, err := m.store.GetMessageLabelIDs(accountID, messageID)
 	if err != nil {

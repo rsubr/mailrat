@@ -10,6 +10,7 @@ import (
 	"math"
 	"mime"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -365,9 +366,15 @@ func (c *Client) GetHistoryList(ctx context.Context, startHistoryID uint64) (*Hi
 	for _, id := range resp.AddedIDs {
 		if _, gone := deleted[id]; !gone {
 			kept = append(kept, id)
+		} else {
+			delete(deleted, id)
 		}
 	}
 	resp.AddedIDs = kept
+	for id := range deleted {
+		resp.DeletedIDs = append(resp.DeletedIDs, id)
+	}
+	sort.Strings(resp.DeletedIDs)
 	return resp, nil
 }
 

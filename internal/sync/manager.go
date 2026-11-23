@@ -136,6 +136,10 @@ func (m *Manager) IncrementalSync(ctx context.Context, accountID string) error {
 	}
 	stats.added = fetched
 
+	if err := m.applyDeletions(accountID, resp.DeletedIDs); err != nil {
+		return err
+	}
+
 	if resp.HistoryID > 0 {
 		if err := m.updateHistoryID(accountID, resp.HistoryID); err != nil {
 			return err

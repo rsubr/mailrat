@@ -1,6 +1,9 @@
 package storage
 
-import "database/sql"
+import (
+	"database/sql"
+	"errors"
+)
 
 type Label struct {
 	ID              string
@@ -205,6 +208,34 @@ func (s *Store) HasMessage(accountID, messageID string) bool {
 	var n int
 	err := s.db.QueryRow(`SELECT 1 FROM messages WHERE id = ? AND account_id = ?`, messageID, accountID).Scan(&n)
 	return err == nil
+}
+
+// DeleteMessage removes a stored message; its labels and attachments cascade.
+// The thread row goes too when no messages remain. Deleting a message that is
+// not stored is a no-op.
+func (s *Store) DeleteMessage(accountID, messageID string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var threadID string
+	if err := tx.QueryRow(`SELECT thread_id FROM messages WHERE id = ? AND account_id = ?`, messageID, accountID).Scan(&threadID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM messages WHERE id = ? AND account_id = ?`, messageID, accountID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM threads WHERE id = ? AND account_id = ?
+		AND NOT EXISTS (SELECT 1 FROM messages WHERE thread_id = ? AND account_id = ?)`,
+		threadID, accountID, threadID, accountID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // MessageIDsWithLabel returns the IDs of a thread's messages that carry labelID.
