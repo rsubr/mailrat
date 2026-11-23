@@ -267,20 +267,24 @@ func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels [
 	for id := range have {
 		want[id] = true
 	}
-	entry := widget.NewEntry()
+	var d dialog.Dialog
+	entry := &escEntry{close: func() { d.Hide() }}
+	entry.ExtendBaseWidget(entry)
 	entry.SetPlaceHolder("Label as…")
 	list := container.NewVBox()
-	var d dialog.Dialog
+	var shown []mailrat.LabelItem
 	var refill func(string)
 	refill = func(q string) {
 		q = strings.ToLower(strings.TrimSpace(q))
 		list.Objects = nil
+		shown = nil
 		exact := false
 		for _, l := range labels {
 			exact = exact || strings.ToLower(l.Name) == q
 			if !strings.Contains(strings.ToLower(l.Name), q) {
 				continue
 			}
+			shown = append(shown, l)
 			list.Add(widget.NewCheck(l.Name, func(on bool) { want[l.ID] = on }))
 			list.Objects[len(list.Objects)-1].(*widget.Check).SetChecked(want[l.ID])
 		}
@@ -349,7 +353,12 @@ func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels [
 		})
 	}
 	entry.OnChanged = refill
-	entry.OnSubmitted = func(string) { apply() }
+	entry.OnSubmitted = func(string) {
+		if len(shown) == 1 {
+			want[shown[0].ID] = true
+		}
+		apply()
+	}
 	refill("")
 	d = dialog.NewCustomConfirm("Label as", "Apply", "Cancel",
 		container.NewBorder(entry, nil, nil, nil, container.NewVScroll(list)),
