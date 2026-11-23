@@ -83,6 +83,11 @@ func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays
 		}
 	}
 
+	// The previous batch of Inbox mail beyond the window, without attachments.
+	if _, err := m.LoadOlder(ctx, accountID, "INBOX", OlderBatch); err != nil {
+		m.reporter.Warnf("fetch older inbox mail: %v\n", err)
+	}
+
 	if err := m.fetchConfiguredBodies(ctx, accountID, configs); err != nil {
 		m.reporter.Warnf("fetch bodies for labels: %v\n", err)
 	}

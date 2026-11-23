@@ -105,8 +105,9 @@ type MissingAttachment struct {
 }
 
 // ListMissingAttachmentRows returns attachment rows (data IS NULL) for body-cached messages
-// of the account, regardless of label. Results are capped at limit.
-func (s *Store) ListMissingAttachmentRows(accountID string, limit int) ([]MissingAttachment, error) {
+// of the account, regardless of label, dated at or after sinceMs (epoch ms).
+// Results are capped at limit.
+func (s *Store) ListMissingAttachmentRows(accountID string, sinceMs int64, limit int) ([]MissingAttachment, error) {
 	const query = `
 		SELECT a.message_id, a.attachment_id, a.mime_type, a.name
 		FROM attachments a
@@ -116,9 +117,10 @@ func (s *Store) ListMissingAttachmentRows(accountID string, limit int) ([]Missin
 		  AND a.attachment_id != ''
 		  AND NOT SUBSTR(a.attachment_id, 1, 5) = 'name:'
 		  AND m.cache_state != 'metadata_only'
+		  AND m.internal_date >= ?
 		LIMIT ?`
 
-	rows, err := s.db.Query(query, accountID, limit)
+	rows, err := s.db.Query(query, accountID, sinceMs, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -4,13 +4,39 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"golang.org/x/oauth2"
 
 	"github.com/mailrat/mailrat/internal/storage"
 )
+
+// requestTimeout bounds one API call end to end. Without it a connection that
+// died while the machine slept blocks its request (and the sync holding the
+// sync lock) until the OS gives up, which can take many minutes or never.
+const requestTimeout = 2 * time.Minute
+
+// transport fails fast on dead connections and drops idle ones quickly, so a
+// pooled connection that went stale during sleep is not reused after wake.
+var transport = &http.Transport{
+	Proxy: http.ProxyFromEnvironment,
+	DialContext: (&net.Dialer{
+		Timeout:   15 * time.Second,
+		KeepAlive: 15 * time.Second,
+	}).DialContext,
+	ForceAttemptHTTP2:     true,
+	TLSHandshakeTimeout:   15 * time.Second,
+	ResponseHeaderTimeout: 60 * time.Second,
+	IdleConnTimeout:       30 * time.Second,
+	MaxIdleConnsPerHost:   10,
+}
+
+// CloseIdleConnections discards pooled connections; call it after the system
+// resumes from sleep.
+func CloseIdleConnections() { transport.CloseIdleConnections() }
 
 // Manager handles OAuth accounts.
 type Manager struct {
@@ -88,7 +114,12 @@ func (m *Manager) GetClient(ctx context.Context, accountID string) (*http.Client
 		accountID: accountID,
 	}
 
-	return oauth2.NewClient(ctx, src), nil
+	// The oauth2 client built from this context uses our transport for both
+	// API calls and token refreshes; it does not inherit a Timeout, so set it.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, &http.Client{Transport: transport, Timeout: requestTimeout})
+	c := oauth2.NewClient(ctx, src)
+	c.Timeout = requestTimeout
+	return c, nil
 }
 
 // savingTokenSource persists refreshed tokens back to storage.

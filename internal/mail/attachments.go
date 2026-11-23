@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mailrat/mailrat/internal/storage"
 )
@@ -34,6 +35,8 @@ type attachmentCall struct {
 // single download.
 type AttachmentCache struct {
 	store *storage.Store
+	// Window limits PrefetchSynced to mail newer than this; 0 = no limit.
+	Window time.Duration
 
 	mu       sync.Mutex
 	inflight map[string]*attachmentCall
@@ -143,7 +146,11 @@ func (c *AttachmentCache) Prefetch(ctx context.Context, src AttachmentSource, ac
 // touch what is missing. It blocks until done or ctx is cancelled; callers run
 // it in a goroutine.
 func (c *AttachmentCache) PrefetchSynced(ctx context.Context, src AttachmentSource, accountID string, limit int, onErr func(error)) error {
-	jobs, err := c.store.ListMissingAttachmentRows(accountID, limit)
+	var since int64
+	if c.Window > 0 {
+		since = time.Now().Add(-c.Window).UnixMilli()
+	}
+	jobs, err := c.store.ListMissingAttachmentRows(accountID, since, limit)
 	if err != nil {
 		return err
 	}
