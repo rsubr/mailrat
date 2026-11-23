@@ -26,8 +26,6 @@ var (
 	fontValueRe  = regexp.MustCompile(`^[A-Za-z0-9 -]{1,40}$`)
 	colorValueRe = regexp.MustCompile(`^(#[0-9a-fA-F]{3}|#[0-9a-fA-F]{6})$`)
 	numItemRe    = regexp.MustCompile(`^\d+\. `)
-	// stripMarkupRe matches every tag markupToHTML understands, for "remove formatting".
-	stripMarkupRe = regexp.MustCompile(`\[/?(b|i|u|font|size|color|align|indent|quote|url)(=[^\]]*)?\]`)
 )
 
 var sizePx = map[string]string{"small": "10px", "normal": "13px", "large": "18px", "huge": "32px"}
@@ -207,6 +205,3 @@ func lastOpen(stack []mtag, name string) int {
 	}
 	return -1
 }
-
-// stripMarkup removes all formatting tags, leaving the text.
-func stripMarkup(s string) string { return stripMarkupRe.ReplaceAllString(s, "") }

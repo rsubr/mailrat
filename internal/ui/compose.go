@@ -36,16 +36,20 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 			selected = a.Email
 		}
 	}
+	var onFrom func() // set once the editor exists; swaps the signature
 	from := widget.NewSelect(emails, func(e string) {
 		for _, a := range u.accounts {
 			if a.Email == e {
 				accountID = a.ID
 			}
 		}
+		if onFrom != nil {
+			onFrom()
+		}
 	})
 	from.SetSelected(selected)
 
-	rcpt, mention := newSuggestHost(), newSuggestHost()
+	rcpt := newSuggestHost()
 	to := u.recipientEntry(rcpt, func() string { return accountID }, "To")
 	cc := u.recipientEntry(rcpt, func() string { return accountID }, "Cc")
 	bcc := u.recipientEntry(rcpt, func() string { return accountID }, "Bcc")
@@ -54,10 +58,22 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	bcc.SetText(draft.Bcc)
 	subject := widget.NewEntry()
 	subject.SetText(draft.Subject)
-	body := newBodyEntry(&suggester{host: mention})
-	body.SetText(draft.Body)
-	body.CursorRow, body.CursorColumn = 0, 0
-	editor := u.richEditor(w, body, mention, to, cc, func() string { return accountID })
+	body := NewWysiwyg(w)
+	// A new message or fresh reply/forward gets the signature; a reopened draft
+	// already holds its own, in the editor's HTML or in the older markup.
+	var sig string // signature block currently in the document
+	quoteTail := 0
+	fresh := draft.DraftID == "" && (strings.TrimSpace(draft.Body) == "" || strings.HasPrefix(draft.Body, quoteOpen))
+	switch {
+	case fresh:
+		quoteTail = quoteParas(draft.Body)
+		body.SetHTML(composeHTML("", draft.Body))
+	case isHTML(draft.Body):
+		body.SetHTML(draft.Body)
+	default:
+		body.SetHTML(markupToHTML(draft.Body))
+	}
+	editor := container.NewBorder(container.NewHScroll(NewWysiwygToolbar(body)), nil, nil, nil, body)
 
 	form := widget.NewForm(
 		widget.NewFormItem("From", from),
@@ -70,15 +86,34 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 	send := widget.NewButtonWithIcon("Send", icon("send", fgOnPrimary), nil)
 	send.Importance = widget.HighImportance
 	// Autosave: every draftInterval, save to local Drafts only if content changed.
-	draftID := ""
+	draftID := draft.DraftID // set when reopening a saved draft
 	var closed atomic.Bool // set on close; read by autosave callbacks
 	current := func() desktop.OutboundMsg {
 		return desktop.OutboundMsg{
 			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
-			Subject: subject.Text, Body: markupToHTML(body.Text), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
+			Subject: subject.Text, Body: body.HTML(), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
 		}
 	}
 	lastSaved := current()
+	if fresh {
+		onFrom = func() {
+			acc, email := accountID, from.Selected
+			var s string
+			u.bg(func() { s = u.be.Signature(acc, email) }, func() {
+				if closed.Load() || acc != accountID {
+					return
+				}
+				unchanged := current() == lastSaved
+				if body.replaceSignature(sig, s, quoteTail) {
+					sig = s
+					if unchanged { // inserting the signature is not a user edit
+						lastSaved = current()
+					}
+				}
+			})
+		}
+		onFrom()
+	}
 	stop := make(chan struct{})
 	interval := draftInterval // read before the goroutine starts
 	go func() {

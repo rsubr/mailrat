@@ -61,7 +61,8 @@ type LabelChange struct {
 
 // HistoryResponse is the result of a history.list call.
 type HistoryResponse struct {
-	AddedIDs  []string // new messages; fetch their metadata separately
-	Events    []HistoryEvent
-	HistoryID uint64
+	AddedIDs   []string // new messages; fetch their metadata separately
+	DeletedIDs []string // messages deleted in the window (excluding ones added in it)
+	Events     []HistoryEvent
+	HistoryID  uint64
 }

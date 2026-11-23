@@ -103,3 +103,32 @@ func TestSyncSkipsLabelsOfHeldThread(t *testing.T) {
 		t.Fatalf("labels not reconciled: %v", got)
 	}
 }
+
+func TestApplyDeletions(t *testing.T) {
+	s := heldStore(t, []string{"INBOX"})
+	m := &Manager{store: s}
+	if err := m.applyDeletions("a1", []string{"unknown", "m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.HasMessage("a1", "m1") {
+		t.Fatal("deleted message still stored")
+	}
+	if got, _ := s.GetMessageLabelIDs("a1", "m1"); len(got) != 0 {
+		t.Fatalf("labels not cleaned up: %v", got)
+	}
+}
+
+func TestApplyDeletionsHeldThread(t *testing.T) {
+	s := heldStore(t, []string{"TRASH"})
+	m := &Manager{store: s, held: func(a, th string) bool { return th == "t1" }}
+	if err := m.applyDeletions("a1", []string{"m1"}); err != nil {
+		t.Fatal(err)
+	}
+	if s.HasMessage("a1", "m1") {
+		t.Fatal("held message not deleted")
+	}
+	// A pending trash/undo on the now-empty thread must not fail.
+	if err := s.ModifyLabels("a1", "t1", true, nil, []string{"TRASH"}); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -50,3 +50,38 @@ func TestLocalDraftSaveAndDiscard(t *testing.T) {
 		t.Fatalf("%+v %v", d, err)
 	}
 }
+
+func TestLinkRemoteDraftReusesLocalDraft(t *testing.T) {
+	s, err := storage.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := s.UpsertAccount(storage.Account{ID: "a", Email: "a@x.com", TokenJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	msg := OutboundMessage{From: "a@x.com", To: "b@x.com", Body: "v1"}
+	id, err := LinkRemoteDraft(s, "a", "r1", msg)
+	if err != nil || id == "" {
+		t.Fatalf("link: %q %v", id, err)
+	}
+	if again, _ := LinkRemoteDraft(s, "a", "r1", msg); again != id {
+		t.Fatalf("second open made %q, want %q", again, id)
+	}
+	if ops, _ := s.ListPendingOps(); len(ops) != 0 {
+		t.Fatalf("opening queued ops: %+v", ops)
+	}
+	// Autosave updates the same local row, and discarding deletes the Gmail draft.
+	if err := SaveLocalDraft(s, id, "a", msg); err != nil {
+		t.Fatal(err)
+	}
+	if d, _ := s.GetDraft("a", id); d.RemoteID != "r1" {
+		t.Fatalf("remote id lost: %+v", d)
+	}
+	if err := DiscardLocalDraft(s, "a", id); err != nil {
+		t.Fatal(err)
+	}
+	if ops, _ := s.ListPendingOps(); ops[len(ops)-1].OpType != storage.OpDeleteDraft {
+		t.Fatalf("ops: %+v", ops)
+	}
+}

@@ -410,6 +410,10 @@ func (u *UI) openOrToggle() {
 		u.list.ScrollTo(i)
 		return
 	}
+	if u.isDraftThread() {
+		u.editDraft()
+		return
+	}
 	if u.msgCursor >= 0 && u.msgCursor < len(u.messages) {
 		m := u.messages[u.msgCursor]
 		u.collapsed[m.ID] = !u.collapsed[m.ID]

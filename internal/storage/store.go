@@ -86,6 +86,7 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE pending_ops ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE sync_config ADD COLUMN max_emails INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE drafts ADD COLUMN remote_id TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE IF NOT EXISTS send_as (account_id TEXT NOT NULL, email TEXT NOT NULL, display_name TEXT NOT NULL DEFAULT '', signature_html TEXT NOT NULL DEFAULT '', is_primary INTEGER NOT NULL DEFAULT 0, is_default INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (account_id, email), FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE)`,
 		// The download-attachments setting was removed: syncing always fetches them.
 		`ALTER TABLE sync_config DROP COLUMN fetch_attachments`,
 		`ALTER TABLE account_settings DROP COLUMN fetch_attachments`,

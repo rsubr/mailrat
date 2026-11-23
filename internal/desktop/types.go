@@ -124,6 +124,16 @@ type OutboundMsg struct {
 	Body      string
 	InReplyTo string
 	ThreadID  string
+	DraftID   string // local draft to keep updating; set when a saved draft is reopened
+}
+
+// draftOutbound builds the compose prefill for a saved draft message. The body is
+// kept as stored: it already holds the signature and any quote.
+func draftOutbound(m MessageItem, draftID, inReplyTo string) OutboundMsg {
+	return OutboundMsg{
+		AccountID: m.AccountID, To: m.ToAddr, Cc: m.CcAddr, Bcc: m.BccAddr,
+		Subject: m.Subject, Body: m.Body, InReplyTo: inReplyTo, ThreadID: m.ThreadID, DraftID: draftID,
+	}
 }
 
 func threadSummaryToItem(t storage.ThreadSummary) ThreadItem {
