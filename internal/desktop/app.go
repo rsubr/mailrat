@@ -587,6 +587,36 @@ func (a *App) SaveDraft(localID string, msg OutboundMsg) (string, error) {
 	})
 }
 
+// OpenDraft prepares a synced Gmail draft message for editing. It finds the
+// Gmail draft behind the message and links it to a local draft, so later
+// autosaves update that same draft instead of creating a new one.
+func (a *App) OpenDraft(accountID, messageID string) (OutboundMsg, error) {
+	m, err := a.GetMessage(accountID, messageID)
+	if err != nil {
+		return OutboundMsg{}, err
+	}
+	acc, err := a.store.GetAccount(accountID)
+	if err != nil {
+		return OutboundMsg{}, err
+	}
+	client, err := a.gmailClient(accountID)
+	if err != nil {
+		return OutboundMsg{}, err
+	}
+	remoteID, inReplyTo, err := client.FindDraft(a.ctx, messageID)
+	if err != nil {
+		return OutboundMsg{}, err
+	}
+	localID, err := mail.LinkRemoteDraft(a.store, accountID, remoteID, mail.OutboundMessage{
+		From: acc.Email, To: m.ToAddr, Cc: m.CcAddr, Bcc: m.BccAddr, Subject: m.Subject,
+		Body: m.Body, InReplyTo: inReplyTo, ThreadID: m.ThreadID,
+	})
+	if err != nil {
+		return OutboundMsg{}, err
+	}
+	return draftOutbound(m, localID, inReplyTo), nil
+}
+
 // DiscardDraft deletes an autosaved draft (after sending or discarding).
 func (a *App) DiscardDraft(accountID, localID string) error {
 	return mail.DiscardLocalDraft(a.store, accountID, localID)
@@ -770,6 +800,7 @@ func (a *App) syncAccount(acc storage.Account) {
 		return
 	}
 	a.emitEvent("sync:progress", map[string]string{"account": acc.Email})
+	go a.refreshSendAs(acc, client)
 	mgr := mailsync.NewManager(a.store, client)
 	mgr.SetHeld(a.trashHeld)
 	stored, _ := a.store.GetAccount(acc.ID)
