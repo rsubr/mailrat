@@ -174,12 +174,46 @@ func (u *UI) removeLabel(id string) {
 	})
 }
 
+// isDraftThread reports whether the open conversation is a saved draft.
+func (u *UI) isDraftThread() bool {
+	if u.selected == nil {
+		return false
+	}
+	for _, l := range u.selected.LabelIDs {
+		if l == "DRAFT" {
+			return true
+		}
+	}
+	return false
+}
+
+// editDraft reopens the conversation's last message (the draft) in a compose window.
+func (u *UI) editDraft() {
+	m, ok := u.lastMessage()
+	if !ok || !u.isDraftThread() {
+		return
+	}
+	var d desktop.OutboundMsg
+	var err error
+	u.bg(func() { d, err = u.be.OpenDraft(m.AccountID, m.ID) }, func() {
+		if err != nil {
+			u.showError(err)
+			return
+		}
+		u.compose(d)
+	})
+}
+
 // replyBar is Gmail's Reply / Reply all / Forward row under the conversation.
 func (u *UI) replyBar() fyne.CanvasObject {
 	btn := func(label, ic string, fn func()) *widget.Button {
 		b := widget.NewButtonWithIcon(label, icon(ic, fg()), fn)
 		b.Importance = widget.MediumImportance
 		return b
+	}
+	if u.isDraftThread() {
+		return container.New(layout.NewCustomPaddedLayout(12, 16, 52, 8),
+			container.NewHBox(btn("Edit draft", "compose", u.editDraft)))
 	}
 	row := container.NewHBox(
 		btn("Reply", "reply", func() { u.reply(false) }),

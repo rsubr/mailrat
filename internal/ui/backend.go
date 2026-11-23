@@ -31,6 +31,7 @@ type Backend interface {
 	GetAttachmentData(accountID, messageID, attachmentID string) (desktop.AttachmentDataItem, error)
 	SendMessage(msg desktop.OutboundMsg) error
 	SaveDraft(localID string, msg desktop.OutboundMsg) (string, error)
+	OpenDraft(accountID, messageID string) (desktop.OutboundMsg, error)
 	DiscardDraft(accountID, localID string) error
 	MarkMessageRead(accountID, messageID string) error
 	MarkMessageUnread(accountID, messageID string) error
@@ -45,6 +46,7 @@ type Backend interface {
 	LoadOlder(accountID, labelID string) (int, error)
 	Sync(accountID string) error
 	DrainPendingOps()
+	Signature(accountID, fromEmail string) string
 	SearchContacts(accountID, query string, limit int) ([]desktop.ContactItem, error)
 	ListContacts(accountID string) ([]desktop.ContactItem, error)
 	SaveContact(c desktop.ContactItem) (desktop.ContactItem, error)

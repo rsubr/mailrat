@@ -26,7 +26,11 @@ type fakeBackend struct {
 	sent              []desktop.OutboundMsg
 	drafts            []desktop.OutboundMsg
 	discarded         []string
+	opened            []string
+	savedIDs          []string
+	draftMsg          desktop.OutboundMsg // OpenDraft result
 	noCreds           bool
+	sig               string
 	imported          string
 	loginStarted      int
 	cancelled         int
@@ -108,7 +112,12 @@ func (f *fakeBackend) SendMessage(m desktop.OutboundMsg) error {
 }
 func (f *fakeBackend) SaveDraft(id string, m desktop.OutboundMsg) (string, error) {
 	f.drafts = append(f.drafts, m)
+	f.savedIDs = append(f.savedIDs, id)
 	return "d1", nil
+}
+func (f *fakeBackend) OpenDraft(_, id string) (desktop.OutboundMsg, error) {
+	f.opened = append(f.opened, id)
+	return f.draftMsg, nil
 }
 func (f *fakeBackend) DiscardDraft(_, id string) error {
 	f.discarded = append(f.discarded, id)
@@ -141,6 +150,7 @@ func (f *fakeBackend) GetSyncConfigs(string) ([]desktop.SyncConfigItem, error) {
 }
 func (f *fakeBackend) SetSyncConfig(string, desktop.SyncConfigItem) error { return nil }
 func (f *fakeBackend) LoadOlder(string, string) (int, error)              { return 0, nil }
+func (f *fakeBackend) Signature(_, _ string) string                       { return f.sig }
 func (f *fakeBackend) SearchContacts(_, _ string, _ int) ([]desktop.ContactItem, error) {
 	return f.found, nil
 }
@@ -269,7 +279,7 @@ func TestReplyDraft(t *testing.T) {
 	if d.Subject != "Re: Lunch this Friday?" || d.InReplyTo != "m3" || d.To != "Ben Johnson <ben@x.com>" {
 		t.Fatalf("%+v", d)
 	}
-	if want := "> 12PM at Delarosa sounds great to me!"; !contains(d.Body, want) {
+	if want := "12PM at Delarosa sounds great to me!"; !contains(d.Body, want) || !contains(d.Body, `<div class="gmail_quote">`) || !contains(d.Body, "<blockquote>") {
 		t.Fatalf("quote missing in %q", d.Body)
 	}
 }

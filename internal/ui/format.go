@@ -2,12 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"html"
 	"image/color"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/mailrat/mailrat/internal/desktop"
+	"github.com/mailrat/mailrat/internal/mail"
 )
 
 var tagRe = regexp.MustCompile(`<[^>]+>`)
@@ -131,21 +133,46 @@ func prefixed(subject, prefix string) string {
 	return prefix + subject
 }
 
-// quoteText builds the plain-text quoted original used by reply and forward.
-func quoteText(m desktop.MessageItem) string {
-	body := htmlToText(m.Body)
-	if strings.TrimSpace(body) == "" {
+// quotedBody is the original message as sanitized HTML; plain text is escaped.
+func quotedBody(m desktop.MessageItem) string {
+	if isHTML(m.Body) {
+		return mail.SanitizeHTML(m.Body)
+	}
+	body := strings.TrimSpace(m.Body)
+	if body == "" {
 		body = m.Snippet
 	}
-	attr := m.FromAddr + " wrote:"
+	return strings.ReplaceAll(html.EscapeString(body), "\n", "<br>")
+}
+
+func quoteDate(m desktop.MessageItem) string {
+	return time.UnixMilli(m.Date).Format("Mon, Jan 2, 2006 at 3:04 PM")
+}
+
+// quoteHTML builds the Gmail-style quoted original used by reply.
+func quoteHTML(m desktop.MessageItem) string {
+	attr := html.EscapeString(m.FromAddr) + " wrote:"
 	if m.Date != 0 {
-		attr = "On " + time.UnixMilli(m.Date).Format("Mon, Jan 2, 2006 at 3:04 PM") + ", " + attr
+		attr = "On " + quoteDate(m) + ", " + attr
 	}
-	lines := strings.Split(strings.TrimSpace(body), "\n")
-	for i, l := range lines {
-		lines[i] = "> " + l
+	return quoteOpen + `<div class="gmail_attr">` + attr + `</div><blockquote>` + quotedBody(m) + `</blockquote></div>`
+}
+
+// forwardHTML builds the "Forwarded message" block used by forward.
+func forwardHTML(m desktop.MessageItem) string {
+	var b strings.Builder
+	b.WriteString(quoteOpen + `<div class="gmail_attr">---------- Forwarded message ---------<br>`)
+	b.WriteString("From: " + html.EscapeString(m.FromAddr) + "<br>")
+	if m.Date != 0 {
+		b.WriteString("Date: " + quoteDate(m) + "<br>")
 	}
-	return "\n\n" + attr + "\n" + strings.Join(lines, "\n")
+	b.WriteString("Subject: " + html.EscapeString(m.Subject) + "<br>")
+	b.WriteString("To: " + html.EscapeString(m.ToAddr))
+	if m.CcAddr != "" {
+		b.WriteString("<br>Cc: " + html.EscapeString(m.CcAddr))
+	}
+	b.WriteString(`</div><br>` + quotedBody(m) + `</div>`)
+	return b.String()
 }
 
 func replyDraft(m desktop.MessageItem, all bool) desktop.OutboundMsg {
@@ -153,7 +180,7 @@ func replyDraft(m desktop.MessageItem, all bool) desktop.OutboundMsg {
 		AccountID: m.AccountID,
 		To:        m.FromAddr,
 		Subject:   prefixed(m.Subject, "Re: "),
-		Body:      quoteText(m),
+		Body:      quoteHTML(m),
 		InReplyTo: m.ID,
 		ThreadID:  m.ThreadID,
 	}
@@ -167,7 +194,7 @@ func forwardDraft(m desktop.MessageItem) desktop.OutboundMsg {
 	return desktop.OutboundMsg{
 		AccountID: m.AccountID,
 		Subject:   prefixed(m.Subject, "Fwd: "),
-		Body:      quoteText(m),
+		Body:      forwardHTML(m),
 	}
 }
 
