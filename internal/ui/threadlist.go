@@ -97,7 +97,7 @@ func newThreadRow(wide bool) *threadRow {
 	r.clip.SetMinSize(fyne.NewSize(14, 14))
 
 	gutter := container.NewGridWrap(fyne.NewSize(10, 10), r.dotFill)
-	left := container.NewHBox(r.check, container.NewVBox(spacer(0, 11), gutter))
+	left := container.NewHBox(container.NewCenter(container.NewGridWrap(fyne.NewSize(18, 18), r.check)), container.NewVBox(spacer(0, 11), gutter))
 	var content fyne.CanvasObject
 	if wide {
 		right := container.NewHBox(r.chips, container.NewCenter(r.star), container.NewCenter(r.clip), tight(r.when))
@@ -226,6 +226,7 @@ func (u *UI) newListCell() *listCell {
 		u.loadMore()
 	})
 	c.foot = container.NewVBox(c.text, c.bar, c.btn)
+	c.foot.Hide() // list sizes rows from this template; the footer must not set the height
 	c.stack = container.NewStack(c.row, c.foot)
 	c.ExtendBaseWidget(c)
 	return c
