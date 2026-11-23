@@ -44,6 +44,19 @@ func (s *Store) DeleteDraft(accountID, draftID string) error {
 	return err
 }
 
+// FindDraftByRemoteID returns the local draft synced to a Gmail draft, or
+// ErrDraftNotFound.
+func (s *Store) FindDraftByRemoteID(accountID, remoteID string) (Draft, error) {
+	var d Draft
+	err := s.db.QueryRow(`
+		SELECT id, account_id, content, updated_at, remote_id FROM drafts WHERE remote_id = ? AND account_id = ?
+	`, remoteID, accountID).Scan(&d.ID, &d.AccountID, &d.Content, &d.UpdatedAt, &d.RemoteID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Draft{}, fmt.Errorf("remote draft %q: %w", remoteID, ErrDraftNotFound)
+	}
+	return d, err
+}
+
 // SetDraftRemoteID records the Gmail draft ID a local draft was synced to.
 func (s *Store) SetDraftRemoteID(accountID, draftID, remoteID string) error {
 	_, err := s.db.Exec(`UPDATE drafts SET remote_id = ? WHERE id = ? AND account_id = ?`, remoteID, draftID, accountID)

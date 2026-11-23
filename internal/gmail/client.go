@@ -193,6 +193,41 @@ func (c *Client) ListLabels(ctx context.Context) ([]Label, error) {
 	return out, nil
 }
 
+// SendAs is a send-as alias with its signature.
+type SendAs struct {
+	Email         string
+	DisplayName   string
+	SignatureHTML string
+	IsPrimary     bool
+	IsDefault     bool
+}
+
+// ListSendAs returns the account's send-as aliases and their signatures.
+// Needs gmail.readonly (or modify/settings.basic), all already granted.
+func (c *Client) ListSendAs(ctx context.Context) ([]SendAs, error) {
+	resp, err := withRetry(ctx, func() (*gmailv1.ListSendAsResponse, error) {
+		return c.svc.Users.Settings.SendAs.List("me").Context(ctx).Do()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list send-as: %w", err)
+	}
+	return mapSendAs(resp.SendAs), nil
+}
+
+func mapSendAs(in []*gmailv1.SendAs) []SendAs {
+	var out []SendAs
+	for _, s := range in {
+		out = append(out, SendAs{
+			Email:         s.SendAsEmail,
+			DisplayName:   s.DisplayName,
+			SignatureHTML: s.Signature,
+			IsPrimary:     s.IsPrimary,
+			IsDefault:     s.IsDefault,
+		})
+	}
+	return out
+}
+
 // CreateLabel creates a user label and returns it.
 func (c *Client) CreateLabel(ctx context.Context, name string) (Label, error) {
 	l, err := withRetry(ctx, func() (*gmailv1.Label, error) {
@@ -273,6 +308,55 @@ func (c *Client) CreateDraft(ctx context.Context, rawBase64 string) (string, err
 		return "", fmt.Errorf("create draft: %w", err)
 	}
 	return draft.Id, nil
+}
+
+// FindDraft returns the Gmail draft ID behind a draft message, plus the
+// message's In-Reply-To header.
+func (c *Client) FindDraft(ctx context.Context, messageID string) (draftID, inReplyTo string, err error) {
+	page := ""
+	for draftID == "" {
+		resp, e := withRetry(ctx, func() (*gmailv1.ListDraftsResponse, error) {
+			return c.svc.Users.Drafts.List("me").PageToken(page).Context(ctx).Do()
+		})
+		if e != nil {
+			return "", "", fmt.Errorf("list drafts: %w", e)
+		}
+		draftID = matchDraft(resp.Drafts, messageID)
+		if page = resp.NextPageToken; page == "" {
+			break
+		}
+	}
+	if draftID == "" {
+		return "", "", fmt.Errorf("no draft for message %s", messageID)
+	}
+	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
+		return c.svc.Users.Messages.Get("me", messageID).Format("metadata").
+			MetadataHeaders("In-Reply-To").Context(ctx).Do()
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("get draft message %s: %w", messageID, err)
+	}
+	return draftID, headerValue(msg, "In-Reply-To"), nil
+}
+
+func matchDraft(drafts []*gmailv1.Draft, messageID string) string {
+	for _, d := range drafts {
+		if d.Message != nil && d.Message.Id == messageID {
+			return d.Id
+		}
+	}
+	return ""
+}
+
+func headerValue(m *gmailv1.Message, name string) string {
+	if m.Payload != nil {
+		for _, h := range m.Payload.Headers {
+			if h.Name == name {
+				return h.Value
+			}
+		}
+	}
+	return ""
 }
 
 // UpdateDraft updates an existing draft.

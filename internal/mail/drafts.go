@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/mailrat/mailrat/internal/gmail"
@@ -17,6 +18,24 @@ func SaveLocalDraft(store *storage.Store, localID, accountID string, msg Outboun
 		return err
 	}
 	return store.AddPendingOp(storage.OpSyncDraft, accountID, localID)
+}
+
+// LinkRemoteDraft returns the local draft for a Gmail draft, creating one
+// (without queueing a sync) when the draft was made elsewhere. Saving it later
+// then updates the Gmail draft rather than creating another.
+func LinkRemoteDraft(store *storage.Store, accountID, remoteID string, msg OutboundMessage) (string, error) {
+	d, err := store.FindDraftByRemoteID(accountID, remoteID)
+	if err == nil {
+		return d.ID, nil
+	}
+	if !errors.Is(err, storage.ErrDraftNotFound) {
+		return "", err
+	}
+	id := fmt.Sprintf("local-%d", time.Now().UnixNano())
+	if err := store.UpsertDraft(storage.Draft{ID: id, AccountID: accountID, Content: buildRaw(msg), UpdatedAt: time.Now().UnixMilli()}); err != nil {
+		return "", err
+	}
+	return id, store.SetDraftRemoteID(accountID, id, remoteID)
 }
 
 // DiscardLocalDraft removes a local draft, and its Gmail copy if it was synced.

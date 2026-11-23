@@ -119,6 +119,17 @@ CREATE TABLE IF NOT EXISTS account_settings (
     FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS send_as (
+    account_id     TEXT NOT NULL,
+    email          TEXT NOT NULL,
+    display_name   TEXT NOT NULL DEFAULT '',
+    signature_html TEXT NOT NULL DEFAULT '',
+    is_primary     INTEGER NOT NULL DEFAULT 0,
+    is_default     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (account_id, email),
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL DEFAULT ''
