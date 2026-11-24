@@ -56,6 +56,9 @@ type UI struct {
 	threadLoading bool
 	loadGen       int
 	listErr       string
+	threadsScope  listScope         // what u.threads was loaded for
+	filters       map[string]string // list filter per mailbox view (filterKey), this session only
+	filterBtn     *tooltipButton
 
 	selected     *desktop.ThreadItem
 	messages     []desktop.MessageItem
@@ -69,13 +72,17 @@ type UI struct {
 	syncStatus   string
 	syncAnim     *fyne.Animation // spins the sync icon while syncing
 	errCount     int
+	loadErrs     []string    // load failures shown in the error log beside backend API errors
+	loadErrAt    []time.Time // when each of loadErrs happened, for ordering the log
 
 	sidebar    *fyne.Container
 	listTitle  *widget.RichText
+	listErrLbl *widget.Label
 	list       *keyList
 	listHolder *fyne.Container
 	reader     *fyne.Container
 	search     *searchEntry
+	starBtn    *tooltipButton // reader toolbar star toggle; mirrors u.selected.IsStarred
 	convScroll *container.Scroll
 	msgCards   []fyne.CanvasObject
 
@@ -90,7 +97,11 @@ type UI struct {
 	settingsWin fyne.Window
 	contactsWin fyne.Window
 	loginDlg    dialog.Dialog
-	undoPop     *widget.PopUp // "moved to Trash" bar with Undo
+	mailMode    string          // "", "light" or "dark": the mail view's own mode; empty follows the app theme
+	undoPop     *undoBar        // "moved to Trash" bar with Undo
+	undoHolder  *fyne.Container // overlay-free slot the bar is drawn in
+	listLoading bool            // first page of the current list is in flight
+	emptyLbl    *widget.Label   // "No conversations" / "Loading…" over an empty list
 }
 
 const (
@@ -100,6 +111,7 @@ const (
 
 	sidebarWidth     float32 = 240 // expanded: icons + text
 	sidebarMiniWidth float32 = 64  // minimal: icons only
+	listMinWidth     float32 = 200 // thread list pane; below this rows cannot fit star, clip and date
 )
 
 // Run builds the main window and blocks until it is closed.
@@ -180,6 +192,7 @@ func newUI(a fyne.App, be Backend) *UI {
 	return &UI{
 		labelsHidden:  a.Preferences().Bool(prefLabelsHidden),
 		sidebarMini:   a.Preferences().Bool(prefSidebarMini),
+		mailMode:      a.Preferences().String(prefMailMode),
 		app:           a,
 		be:            be,
 		activeAccount: unified,
@@ -233,11 +246,19 @@ func (u *UI) build() fyne.CanvasObject {
 	u.reader = container.NewStack()
 	u.search = newSearchEntry(u)
 	u.list = u.newThreadList()
+	u.emptyLbl = widget.NewLabel("")
+	u.emptyLbl.Alignment = fyne.TextAlignCenter
+	u.emptyLbl.Importance = widget.LowImportance
+	u.undoHolder = container.NewVBox()
+	u.showUndoBar()
 	u.refreshSidebar()
 	u.refreshListHeader()
 	u.refreshReader()
+	if u.query != "" {
+		u.search.SetText(u.query) // a rebuild must not leave an active search with an empty field
+	}
 
-	listPane := container.NewBorder(u.listHeader(), nil, nil, nil, u.list)
+	listPane := container.New(minWidth{listMinWidth}, container.NewBorder(u.listHeader(), nil, nil, nil, container.NewStack(u.list, container.NewVBox(spacer(1, 40), u.emptyLbl))))
 	right := container.NewHSplit(listPane, u.reader)
 	w := sidebarWidth
 	right.SetOffset(0.34)
@@ -246,7 +267,7 @@ func (u *UI) build() fyne.CanvasObject {
 		w = sidebarMiniWidth
 		right.SetOffset(0.5)
 	}
-	return container.NewBorder(nil, nil, container.New(fixedWidth{w}, u.sidebar), nil, right)
+	return container.NewStack(container.NewBorder(nil, nil, container.New(fixedWidth{w}, u.sidebar), nil, right), u.undoHolder)
 }
 
 // toggleSidebar flips between expanded and icon-only sidebar. The list rows
@@ -276,9 +297,12 @@ func (u *UI) reloadAll() {
 
 func (u *UI) reloadAccounts() {
 	var accs []desktop.AccountItem
-	u.bg(func() { accs, _ = u.be.GetAccounts() }, func() {
+	var err error
+	u.bg(func() { accs, err = u.be.GetAccounts() }, func() {
 		u.accounts = accs
+		u.noteLoadErr("accounts", err)
 		u.refreshSidebar()
+		u.refreshReader()
 		if u.settingsWin != nil { // reload is async; rebuild so Settings shows the new list
 			u.settingsWin.SetContent(u.buildSettings())
 		}
@@ -303,11 +327,14 @@ func (u *UI) reloadLabels() {
 	scope := u.activeAccount
 	var labels []desktop.LabelItem
 	var counts map[string]int
+	var labelsErr, countsErr error
 	u.bg(func() {
-		labels, _ = u.be.GetLabels(id)
-		counts, _ = u.be.GetLabelUnreadCounts(scope)
+		labels, labelsErr = u.be.GetLabels(id)
+		counts, countsErr = u.be.GetLabelUnreadCounts(scope)
 	}, func() {
 		u.labels = labels
+		u.noteLoadErr("labels", labelsErr)
+		u.noteLoadErr("unread counts", countsErr)
 		if counts == nil {
 			counts = map[string]int{}
 		}
@@ -317,35 +344,105 @@ func (u *UI) reloadLabels() {
 	})
 }
 
-func (u *UI) fetchThreads(offset int) ([]desktop.ThreadItem, error) {
-	if u.query != "" {
-		return u.be.SearchInbox(u.query, searchLimit)
+// noteLoadErr records a failed background load in the error log and sidebar badge.
+func (u *UI) noteLoadErr(what string, err error) {
+	if err == nil {
+		return
 	}
-	if u.activeLabel == "INBOX" {
-		return u.be.GetInbox(u.activeAccount, pageSize, offset)
+	u.noteErr("could not load "+what, err)
+}
+
+// noteErr records a failure in the error log and sidebar badge.
+func (u *UI) noteErr(what string, err error) {
+	if err == nil {
+		return
 	}
-	return u.be.GetLabelThreads(u.activeAccount, u.activeLabel, pageSize, offset)
+	now := time.Now()
+	u.loadErrs = append(u.loadErrs, now.Format(errLogTime)+"  "+what+": "+err.Error())
+	u.loadErrAt = append(u.loadErrAt, now)
+	u.errCount++
+}
+
+const errLogTime = "Jan 2 15:04:05"
+
+// listScope is what the list shows; fetches get a copy because they run off
+// the UI goroutine while the fields change.
+type listScope struct{ query, account, label, filter string }
+
+func (u *UI) scope() listScope {
+	return listScope{u.query, u.activeAccount, u.activeLabel, u.filter()}
+}
+
+func (u *UI) fetchThreads(sc listScope, limit, offset int) ([]desktop.ThreadItem, error) {
+	if sc.filter != "" {
+		return u.be.FilterThreads(sc.filter, sc.account, sc.label, sc.query, limit, offset)
+	}
+	if sc.query != "" {
+		return u.be.SearchInbox(sc.query, searchLimit)
+	}
+	if sc.label == "INBOX" {
+		return u.be.GetInbox(sc.account, limit, offset)
+	}
+	return u.be.GetLabelThreads(sc.account, sc.label, limit, offset)
 }
 
 func (u *UI) reloadThreads() {
 	u.loadGen++
 	gen := u.loadGen
+	sc := u.scope()
+	// A background refresh of the same list keeps every page already loaded.
+	limit := pageSize
+	if sc == u.threadsScope {
+		limit = max(pageSize, len(u.threads))
+	}
+	u.listLoading = len(u.threads) == 0
+	u.refreshEmpty()
 	var ts []desktop.ThreadItem
 	var err error
-	u.bg(func() { ts, err = u.fetchThreads(0) }, func() {
+	u.bg(func() { ts, err = u.fetchThreads(sc, limit, 0) }, func() {
 		if gen != u.loadGen {
 			return
 		}
-		u.threads = ts
-		u.allLoaded = u.query != "" || len(ts) < pageSize
+		u.listLoading = false
+		u.threads, u.threadsScope = ts, sc
+		u.allLoaded = sc.query != "" || len(ts) < limit
 		u.olderFailed = false
 		u.listErr = ""
 		if err != nil {
 			u.listErr = err.Error()
 		}
+		u.refreshListHeader()
+		u.refreshListBar()
 		u.list.Refresh()
 		u.keepSelectionVisible()
 	})
+}
+
+// refreshEmpty shows why the list is blank: loading, no results, or no mail.
+func (u *UI) refreshEmpty() {
+	if u.emptyLbl == nil {
+		return
+	}
+	text := ""
+	if len(u.threads) == 0 && len(u.accounts) > 0 && u.listErr == "" {
+		switch {
+		case u.listLoading && u.query != "":
+			text = "Searching…"
+		case u.listLoading:
+			text = "Loading…"
+		case u.query != "" && u.filter() != "":
+			text = "No " + filterNoun(u.filter()) + " results for “" + u.query + "”"
+		case u.query != "":
+			text = "No results for “" + u.query + "”"
+		case u.filter() != "":
+			text = "No " + filterNoun(u.filter()) + " conversations"
+		case u.activeLabel == "DRAFT":
+			text = "No drafts"
+		default:
+			text = "No conversations"
+		}
+	}
+	u.emptyLbl.SetText(text)
 }
 
 // keepSelectionVisible re-highlights the open thread after the list reloads.
@@ -368,24 +465,27 @@ func (u *UI) loadMore() {
 	}
 	u.loadingMore = true
 	gen, offset := u.loadGen, len(u.threads)
-	acct, label, searching := u.activeAccount, u.activeLabel, u.query != ""
+	sc := u.scope()
+	acct, label, searching := sc.account, sc.label, sc.query != ""
 	var more []desktop.ThreadItem
 	exhausted, failed := false, false
+	var moreErr, olderErr error
 	if !u.inline {
 		fyne.Do(u.list.Refresh) // show the loading indicator (may be called mid-render)
 	}
 	u.bg(func() {
-		more, _ = u.fetchThreads(offset)
-		if len(more) >= pageSize || searching {
+		more, moreErr = u.fetchThreads(sc, pageSize, offset)
+		if moreErr != nil || len(more) >= pageSize || searching {
 			return
 		}
 		// Past what is synced locally: pull older mail for this label from Gmail.
 		n, err := u.be.LoadOlder(acct, label)
 		switch {
 		case err != nil:
-			failed = true
+			failed, olderErr = true, err
 		case n > 0:
-			more, _ = u.fetchThreads(offset)
+			more, moreErr = u.fetchThreads(sc, pageSize, offset)
+			exhausted = moreErr == nil && len(more) == 0 // nothing new to show: stop asking
 		default:
 			exhausted = true
 		}
@@ -394,7 +494,10 @@ func (u *UI) loadMore() {
 		if gen != u.loadGen {
 			return
 		}
-		u.olderFailed = failed
+		u.olderFailed = failed || moreErr != nil
+		u.noteLoadErr("more threads", moreErr)
+		u.noteLoadErr("older mail", olderErr)
+		u.refreshSidebar()
 		if searching || exhausted {
 			u.allLoaded = true
 		}
@@ -486,24 +589,38 @@ func (u *UI) accountName(id string) string {
 // ── thread actions ──────────────────────────────────────────────────────────
 
 func (u *UI) removeSelected() {
-	if u.selected == nil {
-		return
+	if u.selected != nil {
+		u.removeThread(u.selected.AccountID, u.selected.ID)
 	}
-	id, acct := u.selected.ID, u.selected.AccountID
+}
+
+// removeThread drops one thread from the list. When it is the open one, the
+// next conversation opens; a thread the user has since moved away from only
+// disappears from the list.
+func (u *UI) removeThread(acct, id string) {
+	wasOpen := u.selected != nil && u.selected.ID == id && u.selected.AccountID == acct
 	kept := u.threads[:0:0]
 	at := -1
 	for i, t := range u.threads {
 		if t.ID == id && t.AccountID == acct {
-			u.cursor, u.cursorNext = i-1, true // next row slides under the cursor
 			at = i
 			continue
 		}
 		kept = append(kept, t)
 	}
+	delete(u.checked, acct+"/"+id)
 	u.threads = kept
-	u.clearSelection()
+	switch {
+	case wasOpen:
+		u.cursor, u.cursorNext = at-1, true // next row slides under the cursor
+		u.clearSelection()
+	case at >= 0 && at <= u.cursor:
+		u.cursor--
+	}
 	u.list.Refresh()
-	if at >= 0 && len(kept) > 0 { // Gmail: open the next conversation, else the previous
+	u.refreshEmpty()
+	u.refreshListBar()
+	if wasOpen && at >= 0 && len(kept) > 0 { // Gmail: open the next conversation, else the previous
 		next := min(at, len(kept)-1)
 		u.list.Select(next)
 		u.list.ScrollTo(next)
@@ -511,50 +628,45 @@ func (u *UI) removeSelected() {
 	u.reloadLabels()
 }
 
-// threadAction runs a mutating backend call on the open thread, then removes it from view.
-func (u *UI) threadAction(call func(accountID, threadID string) error) {
+// threadAction runs a mutating backend call on the open thread, then removes
+// that thread from view (not whatever is open by the time the call returns)
+// and lets then offer an undo.
+func (u *UI) threadAction(call func(accountID, threadID string) error, then func([]desktop.ThreadItem)) {
 	if u.selected == nil {
 		return
 	}
-	acct, id := u.selected.AccountID, u.selected.ID
+	t := *u.selected
 	var err error
-	u.bg(func() { err = call(acct, id) }, func() {
+	u.bg(func() { err = call(t.AccountID, t.ID) }, func() {
 		if err != nil {
 			u.showError(err)
 			return
 		}
-		u.removeSelected()
+		u.removeThread(t.AccountID, t.ID)
+		if then != nil {
+			then([]desktop.ThreadItem{t})
+		}
 	})
 }
 
-func (u *UI) archive() { u.threadAction(u.be.ArchiveThread) }
-func (u *UI) trash() {
-	if u.selected == nil {
-		return
-	}
-	acct, id := u.selected.AccountID, u.selected.ID
-	var err error
-	u.bg(func() { err = u.be.TrashThread(acct, id) }, func() {
-		if err != nil {
-			u.showError(err)
-			return
-		}
-		u.removeSelected()
-		u.showUndoTrash(acct, id)
-	})
-}
+func (u *UI) archive() { u.threadAction(u.be.ArchiveThread, u.undoArchive) }
+func (u *UI) trash()   { u.threadAction(u.be.TrashThread, u.undoTrash) }
 func (u *UI) spam() {
 	if u.activeLabel == "SPAM" {
-		u.threadAction(u.be.MarkThreadNotSpam)
+		u.threadAction(u.be.MarkThreadNotSpam, nil)
 		return
 	}
-	u.threadAction(u.be.MarkThreadSpam)
+	u.threadAction(u.be.MarkThreadSpam, u.undoSpam)
 }
 
 func (u *UI) markUnread() {
 	if u.selected == nil || len(u.messages) == 0 {
 		return
 	}
+	if u.readTimer != nil {
+		u.readTimer.Stop() // else the pending auto-read undoes this
+	}
+	t := *u.selected
 	last := u.messages[len(u.messages)-1]
 	var err error
 	u.bg(func() { err = u.be.MarkMessageUnread(last.AccountID, last.ID) }, func() {
@@ -562,8 +674,10 @@ func (u *UI) markUnread() {
 			u.showError(err)
 			return
 		}
-		u.setThreadUnread(u.selected.ID, u.selected.AccountID, true)
-		u.messages[len(u.messages)-1].IsUnread = true
+		u.setThreadUnread(t.ID, t.AccountID, true)
+		if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID && len(u.messages) > 0 {
+			u.messages[len(u.messages)-1].IsUnread = true
+		}
 		u.reloadLabels()
 	})
 }
@@ -574,7 +688,7 @@ func (u *UI) setThreadUnread(id, acct string, unread bool) {
 			u.threads[i].IsUnread = unread
 		}
 	}
-	if u.selected != nil && u.selected.ID == id {
+	if u.selected != nil && u.selected.ID == id && u.selected.AccountID == acct {
 		u.selected.IsUnread = unread
 	}
 	u.list.Refresh()
@@ -589,14 +703,32 @@ func (u *UI) lastMessage() (desktop.MessageItem, bool) {
 
 func (u *UI) reply(all bool) {
 	if m, ok := u.lastMessage(); ok {
-		u.compose(replyDraft(m, all))
+		u.compose(replyDraft(m, all, u.ownAddrs()...))
 	}
 }
 
 func (u *UI) forward() {
-	if m, ok := u.lastMessage(); ok {
-		u.compose(forwardDraft(m))
+	m, ok := u.lastMessage()
+	if !ok {
+		return
 	}
+	d := forwardDraft(m)
+	var err error
+	u.bg(func() { // the original's attachments travel with the forward
+		for _, a := range m.Attachments {
+			var data desktop.AttachmentDataItem
+			if data, err = u.be.GetAttachmentData(m.AccountID, m.ID, a.AttachmentID); err != nil {
+				return
+			}
+			d.Attachments = append(d.Attachments, desktop.OutAttachment{Filename: a.Name, MIMEType: a.MimeType, Size: int64(len(data.Data)), Data: data.Data})
+		}
+	}, func() {
+		if err != nil {
+			u.showError(err)
+			return
+		}
+		u.compose(d)
+	})
 }
 
 // ── sync & events ───────────────────────────────────────────────────────────
@@ -608,10 +740,18 @@ func (u *UI) syncNow() {
 	u.syncStatus = "Syncing…"
 	u.refreshSidebar()
 	scope := u.activeAccount
+	var err error
 	u.bg(func() {
-		_ = u.be.Sync(scope)
+		err = u.be.Sync(scope)
 		u.be.DrainPendingOps()
-	}, nil)
+	}, func() {
+		if err == nil {
+			return // sync:complete clears the status
+		}
+		u.syncStatus = ""
+		u.noteErr("sync failed", err)
+		u.refreshSidebar()
+	})
 }
 
 // handleEvent is the backend's event sink; it may run on any goroutine.
@@ -635,6 +775,8 @@ func (u *UI) handleEvent(name string, data any) {
 			u.reloadAll()
 			u.openSettings()
 			u.syncNow()
+		case "account:add:retry": // a code was rejected; the sign-in dialog stays open for another try
+			u.showErrorIn(u.parentWindow(), fmt.Errorf("%v", data))
 		case "account:add:error":
 			u.closeLogin()
 			if msg := fmt.Sprint(data); msg != "" {
@@ -654,14 +796,25 @@ func (u *UI) showError(err error) {
 }
 
 func (u *UI) showErrorLog() {
-	errs := u.be.GetAPIErrors()
-	lines := make([]string, 0, len(errs))
-	for _, e := range errs {
-		lines = append(lines, time.UnixMilli(e.Timestamp).Format("Jan 2 15:04:05")+"  "+e.Message)
+	type entry struct {
+		at   time.Time
+		line string
+	}
+	var log []entry
+	for _, e := range u.be.GetAPIErrors() {
+		at := time.UnixMilli(e.Timestamp)
+		log = append(log, entry{at, at.Format(errLogTime) + "  " + e.Message})
+	}
+	for i, line := range u.loadErrs {
+		log = append(log, entry{u.loadErrAt[i], line})
 	}
 	text := "No errors."
-	if len(lines) > 0 {
-		sort.Sort(sort.Reverse(sort.StringSlice(lines)))
+	if len(log) > 0 { // newest first
+		sort.SliceStable(log, func(i, j int) bool { return log[i].at.After(log[j].at) })
+		lines := make([]string, len(log))
+		for i, e := range log {
+			lines[i] = e.line
+		}
 		text = strings.Join(lines, "\n")
 	}
 	l := widget.NewLabel(text)
@@ -669,7 +822,7 @@ func (u *UI) showErrorLog() {
 	d := dialog.NewCustomConfirm("Error Log", "Clear", "Close", container.NewVScroll(l), func(clear bool) {
 		if clear {
 			u.be.ClearAPIErrors()
-			u.errCount = 0
+			u.errCount, u.loadErrs, u.loadErrAt = 0, nil, nil
 			u.refreshSidebar()
 		}
 	}, u.win)

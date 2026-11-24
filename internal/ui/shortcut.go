@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -78,18 +79,40 @@ func (u *UI) installShortcuts() {
 	add(fyne.KeyComma, false, u.openSettings)
 }
 
-// modalOpen reports whether an overlay other than the passive undo bar is showing.
+// modalOpen reports whether a dialog or menu is showing. A tooltip is an
+// overlay too, but it is passive and must not disable the keyboard.
 func (u *UI) modalOpen() bool {
-	n := len(u.win.Canvas().Overlays().List())
-	if u.undoPop != nil {
-		n-- // the undo bar is itself an overlay
+	return u.topModal() != nil
+}
+
+// topModal is the topmost overlay that is not a tooltip.
+func (u *UI) topModal() fyne.CanvasObject {
+	ovs := u.win.Canvas().Overlays().List()
+	for i := len(ovs) - 1; i >= 0; i-- {
+		if _, tip := ovs[i].(*tipOverlay); !tip {
+			return ovs[i]
+		}
 	}
-	return n > 0
+	return nil
+}
+
+// closeModal is Esc on a dialog or menu: close the topmost one.
+func (u *UI) closeModal() {
+	switch o := u.topModal().(type) {
+	case *widget.PopUp:
+		o.Hide()
+	case fyne.CanvasObject:
+		u.win.Canvas().Overlays().Remove(o)
+	}
 }
 
 // typedKey handles the non-character keys; it reports whether it consumed e.
 func (u *UI) typedKey(name fyne.KeyName) bool {
 	if u.modalOpen() {
+		if name == fyne.KeyEscape {
+			u.closeModal()
+			return true
+		}
 		return false
 	}
 	switch name {
@@ -112,7 +135,7 @@ func (u *UI) typedRune(r rune) {
 		return
 	}
 	if u.pendingKey != 0 {
-		fresh := time.Since(u.pendingAt) < sequenceWait
+		fresh := now().Sub(u.pendingAt) < sequenceWait
 		u.pendingKey = 0
 		if fresh {
 			u.goTo(r)
@@ -120,7 +143,7 @@ func (u *UI) typedRune(r rune) {
 		}
 	}
 	if r == 'g' {
-		u.pendingKey, u.pendingAt = r, time.Now()
+		u.pendingKey, u.pendingAt = r, now()
 		return
 	}
 	if fn := u.singleKeys()[r]; fn != nil {
@@ -170,6 +193,7 @@ func (u *UI) singleKeys() map[rune]func() {
 		'I': u.markRead,
 		'U': u.markUnread, '_': u.markUnread,
 		'N': u.syncNow,
+		'v': u.toggleMailMode,
 	}
 }
 
@@ -191,11 +215,12 @@ func (u *UI) goToLabel() {
 	all := append([]mailrat.LabelItem{{ID: "INBOX", Name: u.labelName("INBOX")}}, fav...)
 	all = append(all, user...)
 
-	entry := widget.NewEntry()
+	var d dialog.Dialog
+	entry := &escEntry{close: func() { d.Hide() }}
+	entry.ExtendBaseWidget(entry)
 	entry.SetPlaceHolder("Go to label…")
 	list := container.NewVBox()
 	var matches []mailrat.LabelItem
-	var d dialog.Dialog
 	pick := func(l mailrat.LabelItem) {
 		d.Hide()
 		u.selectLabel(l.ID)
@@ -239,6 +264,9 @@ func (u *UI) labelPicker() {
 		}
 		targets = []mailrat.ThreadItem{*u.selected}
 	}
+	if !u.oneAccount(targets) {
+		return
+	}
 	acct := targets[0].AccountID
 	have := map[string]bool{} // labels carried by every target
 	for _, id := range targets[0].LabelIDs {
@@ -264,8 +292,8 @@ func (u *UI) labelPicker() {
 
 func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels []mailrat.LabelItem, have map[string]bool) {
 	want := map[string]bool{}
-	for id := range have {
-		want[id] = true
+	for id, all := range have {
+		want[id] = all // a label only some targets carry starts unticked and untouched
 	}
 	var d dialog.Dialog
 	entry := &escEntry{close: func() { d.Hide() }}
@@ -311,37 +339,41 @@ func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels [
 	}
 	apply := func() {
 		d.Hide()
-		var err error
+		var first error
+		changed := map[string][]string{} // thread -> labels that were really changed
 		u.bg(func() {
 			for _, t := range targets {
 				for _, l := range labels {
-					if want[l.ID] != have[l.ID] {
-						if e := u.be.SetThreadLabel(t.AccountID, t.ID, l.ID, want[l.ID]); e != nil {
-							err = e
-						}
+					if want[l.ID] == have[l.ID] {
+						continue
 					}
+					if e := u.be.SetThreadLabel(t.AccountID, t.ID, l.ID, want[l.ID]); e != nil {
+						if first == nil {
+							first = e
+						}
+						continue
+					}
+					changed[threadKey(t)] = append(changed[threadKey(t)], l.ID)
 				}
 			}
 		}, func() {
-			if err != nil {
-				u.showError(err)
-				return
-			}
 			for _, t := range targets {
+				ids := changed[threadKey(t)]
+				if len(ids) == 0 {
+					continue
+				}
 				u.patchThread(t.ID, t.AccountID, func(t *mailrat.ThreadItem) {
-					ids := t.LabelIDs[:0:0]
-					for _, x := range t.LabelIDs {
-						if _, user := want[x]; !user {
-							ids = append(ids, x)
+					kept := slices.DeleteFunc(slices.Clone(t.LabelIDs), func(x string) bool { return slices.Contains(ids, x) })
+					for _, id := range ids {
+						if want[id] {
+							kept = append(kept, id)
 						}
 					}
-					for id, on := range want {
-						if on {
-							ids = append(ids, id)
-						}
-					}
-					t.LabelIDs = ids
+					t.LabelIDs = kept
 				})
+			}
+			if first != nil {
+				u.showError(first)
 			}
 			if !want[u.activeLabel] && have[u.activeLabel] {
 				if len(u.checkedThreads()) > 0 {
@@ -378,6 +410,7 @@ func (u *UI) showLabelPicker(acct string, targets []mailrat.ThreadItem, labels [
 func (u *UI) resetCursor() {
 	u.cursor, u.cursorNext = -1, true
 	u.checked = nil
+	u.refreshListBar()
 }
 
 // moveCursor opens the next (+1, older) or previous (-1, newer) conversation.
@@ -428,6 +461,9 @@ func (u *UI) moveMessage(dir int) {
 		return
 	}
 	i := max(0, min(u.msgCursor+dir, len(u.messages)-1))
+	if n := len(u.messages); n > 3 && i >= 1 && i < n-2 {
+		u.collapsed[allKey] = true // the message is in the folded middle: unfold it
+	}
 	u.msgCursor = i
 	m := u.messages[i]
 	def := i == len(u.messages)-1 || m.IsUnread
@@ -469,12 +505,7 @@ func (u *UI) setThreadLabel(id string, on bool) {
 		return
 	}
 	acct, tid := u.selected.AccountID, u.selected.ID
-	var err error
-	u.bg(func() { err = u.be.SetThreadLabel(acct, tid, id, on) }, func() {
-		if err != nil {
-			u.showError(err)
-			return
-		}
+	set := func(on bool) {
 		u.patchThread(tid, acct, func(t *mailrat.ThreadItem) {
 			if id == "STARRED" {
 				t.IsStarred = on
@@ -490,6 +521,25 @@ func (u *UI) setThreadLabel(id string, on bool) {
 			}
 			t.LabelIDs = ids
 		})
+		if id == "STARRED" {
+			u.syncStarButton()
+		}
+	}
+	if id == "STARRED" {
+		set(on) // optimistic: the star flips at once and is put back if the call fails
+	}
+	var err error
+	u.bg(func() { err = u.be.SetThreadLabel(acct, tid, id, on) }, func() {
+		if err != nil {
+			if id == "STARRED" {
+				set(!on)
+			}
+			u.showErrorIn(u.win, err)
+			return
+		}
+		if id != "STARRED" {
+			set(on)
+		}
 		if !on && u.activeLabel == id {
 			u.removeSelected()
 		}
@@ -517,7 +567,7 @@ type helpSection struct {
 }
 
 var shortcutHelp = []helpSection{
-	{"Jumping", [][2]string{
+	{"Navigation", [][2]string{
 		{"g then i", "Go to Inbox"}, {"g then s", "Go to Starred"}, {"g then t", "Go to Sent Mail"},
 		{"g then d", "Go to Drafts"}, {"g then a", "Go to All Mail"}, {"g then l", "Go to label…"},
 		{"Esc", "Back to conversation list"}, {"j", "Next (older) conversation"}, {"k", "Previous (newer) conversation"},
@@ -532,16 +582,28 @@ var shortcutHelp = []helpSection{
 		{"r  or  Shift+r", "Reply"}, {"a  or  Shift+a", "Reply all"}, {"f  or  Shift+f", "Forward"},
 		{"Shift+i", "Mark as read"}, {"Shift+u  or  _", "Mark as unread"},
 		{"u", "Check for new mail"}, {"Shift+n", "Check for new mail"},
-		{"⌘Enter", "Send (in a message window)"}, {"?", "Show this list"},
+		{"⌘Enter", "Send (in a message window)"}, {"⌘Shift+a", "Attach files (in a message window)"},
+		{"v", "Switch mail between light and dark"},
+		{"⌘r  /  ⌘Shift+r", "Reply  /  reply all"}, {"⌘Shift+f", "Forward"},
+		{"⌘Backspace", "Move to Trash"}, {"⌘,", "Settings"},
+		{"?", "Show this list"},
 	}},
 }
+
+// cmdLabel is how the command key is written in help: ⌘ on macOS, Ctrl+ elsewhere.
+var cmdLabel = func() string {
+	if runtime.GOOS == "darwin" {
+		return "⌘"
+	}
+	return "Ctrl+"
+}()
 
 func (u *UI) showShortcutHelp() {
 	body := container.NewVBox()
 	for _, s := range shortcutHelp {
 		body.Add(bold(s.title))
 		for _, r := range s.rows {
-			k := widget.NewLabel(r[0])
+			k := widget.NewLabel(strings.ReplaceAll(r[0], "⌘", cmdLabel))
 			k.TextStyle = fyne.TextStyle{Monospace: true}
 			body.Add(container.NewGridWithColumns(2, k, widget.NewLabel(r[1])))
 		}

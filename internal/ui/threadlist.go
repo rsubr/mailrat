@@ -14,21 +14,29 @@ import (
 	"github.com/mailrat/mailrat/internal/desktop"
 )
 
+// now is the clock for relative dates and key-sequence timeouts; tests freeze it.
+var now = time.Now
+
 // listHeader is the bold mailbox title with the filter glyph on the right.
 func (u *UI) listHeader() fyne.CanvasObject {
-	img := canvas.NewImageFromResource(icon("filter", subtle()))
-	img.FillMode = canvas.ImageFillContain
-	img.SetMinSize(fyne.NewSize(26, 26))
-	row := container.NewBorder(nil, nil, nil, container.NewCenter(img), u.listTitle)
+	u.filterBtn = newTooltipButton(nil, "Filter conversations", func() { u.popMenu(u.filterBtn, u.filterItems()...) })
+	u.filterBtn.Importance = widget.LowImportance
+	u.refreshFilterBtn()
+	row := container.NewBorder(nil, nil, nil, container.NewCenter(u.filterBtn), u.listTitle)
 	u.listBar = container.NewStack()
 	u.refreshListBar()
-	return container.NewVBox(container.NewPadded(row), u.listBar, hline())
+	u.listErrLbl = widget.NewLabel("")
+	u.listErrLbl.Wrapping = fyne.TextWrapWord
+	u.listErrLbl.Hide()
+	return container.NewVBox(container.NewPadded(row), u.listBar, u.listErrLbl, hline())
 }
 
 func (u *UI) refreshListHeader() {
 	if u.listTitle == nil {
 		return
 	}
+	u.refreshEmpty()
+	u.refreshFilterBtn()
 	title := u.labelName(u.activeLabel)
 	switch {
 	case u.query != "":
@@ -46,6 +54,15 @@ func (u *UI) refreshListHeader() {
 	}}
 	u.listTitle.Truncation = fyne.TextTruncateEllipsis
 	u.listTitle.Refresh()
+	if u.listErrLbl == nil {
+		return
+	}
+	if u.listErr != "" {
+		u.listErrLbl.SetText("Could not load mail: " + u.listErr)
+		u.listErrLbl.Show()
+	} else {
+		u.listErrLbl.Hide()
+	}
 }
 
 // threadRow is one cell of the list, shaped like Gmail's. With the sidebar
@@ -146,7 +163,7 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 	}
 	r.count.Refresh()
 	r.when.TextStyle = fyne.TextStyle{Bold: t.IsUnread}
-	r.when.SetText(formatListDate(t.Date, time.Now()))
+	r.when.SetText(formatListDate(t.Date, now()))
 	r.subj.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: t.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: t.IsUnread}, ColorName: theme.ColorNameForeground}}}
 	r.snip.Segments = []widget.RichTextSegment{&widget.TextSegment{Text: " - " + t.Snippet, Style: widget.RichTextStyle{ColorName: theme.ColorNamePlaceHolder}}}
 	r.subjW = fyne.MeasureText(t.Subject, theme.TextSize(), fyne.TextStyle{Bold: t.IsUnread}).Width + 2*theme.InnerPadding()
@@ -182,6 +199,7 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 		shown++
 	}
 	r.chips.Refresh()
+	r.root.Refresh() // re-run the row layout: new text changes the right side's width
 }
 
 func (u *UI) findLabel(id string) (desktop.LabelItem, bool) {

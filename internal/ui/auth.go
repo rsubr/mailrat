@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image/color"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -77,7 +78,9 @@ func (u *UI) chooseCredentials() {
 			if u.settingsWin != nil {
 				u.settingsWin.SetContent(u.buildSettings())
 			}
-			u.addAccount()
+			if len(u.accounts) == 0 { // replacing the file from Settings must not start a sign-in
+				u.addAccount()
+			}
 		})
 	})
 }
@@ -85,21 +88,29 @@ func (u *UI) chooseCredentials() {
 // showLogin waits for the browser sign-in, with a paste fallback for machines
 // where the browser cannot reach this app's local callback.
 func (u *UI) showLogin(authURL string) {
+	u.closeLogin() // a dialog from an attempt this one supersedes
 	status := widget.NewLabel("Finish signing in with Google in your browser. This window closes when you're done.")
 	status.Wrapping = fyne.TextWrapWord
 
-	open := widget.NewButton("Open Browser", func() { u.be.OpenLoginBrowser() })
-	copyLink := widget.NewButton("Copy Link", func() {
+	open := widget.NewButton("Open Browser", func() {
+		if !u.be.OpenLoginBrowser() {
+			status.SetText("Could not open a browser. Use Copy Link and open it yourself.")
+		}
+	})
+	var copyLink *widget.Button
+	copyLink = widget.NewButton("Copy Link", func() {
 		u.app.Clipboard().SetContent(authURL)
+		copyLink.SetText("Copied")
 	})
 
 	paste := widget.NewEntry()
 	paste.SetPlaceHolder("Paste the address from the browser after sign-in")
 	submit := widget.NewButton("Continue", func() {
-		if err := u.be.SubmitLoginCode(paste.Text); err != nil {
-			u.showError(err)
+		if err := u.be.SubmitLoginCode(strings.TrimSpace(paste.Text)); err != nil {
+			u.showErrorIn(u.parentWindow(), err)
 		}
 	})
+	paste.OnSubmitted = func(string) { submit.OnTapped() }
 	hint := widget.NewLabel("Browser on another device? After approving, copy the full address from its address bar (the page may fail to load) and paste it here.")
 	hint.Wrapping = fyne.TextWrapWord
 	hint.Importance = widget.LowImportance

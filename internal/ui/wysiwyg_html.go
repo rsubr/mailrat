@@ -20,6 +20,7 @@ import (
 var (
 	hexColorRe = regexp.MustCompile(`^#([0-9a-f]{3}|[0-9a-f]{6})$`)
 	rgbColorRe = regexp.MustCompile(`^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*[\d.]+\s*)?\)$`)
+	hostPortRe = regexp.MustCompile(`^(?:localhost|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+):\d{1,5}(?:[/?#].*)?$`)
 	pxSizeRe   = regexp.MustCompile(`^(\d+(?:\.\d+)?)(px|pt)$`)
 )
 
@@ -71,9 +72,13 @@ func cleanLink(raw string) (string, bool) {
 		strings.HasPrefix(l, "https://") && len(raw) > 8,
 		strings.HasPrefix(l, "mailto:") && len(raw) > 7:
 		return raw, true
+	case hostPortRe.MatchString(raw):
+		return "https://" + raw, true
 	case strings.Contains(raw, ":"):
 		return "", false
-	case strings.Contains(raw, "@") && !strings.Contains(raw, "/"):
+	case strings.Contains(raw, "@") && strings.Contains(raw, "/"):
+		return "", false // "user@host/path" would become a userinfo URL
+	case strings.Contains(raw, "@"):
 		return "mailto:" + raw, true
 	case strings.Contains(raw, "."):
 		return "https://" + raw, true
@@ -89,6 +94,11 @@ type wyParser struct {
 	lists   []wyKind // open ul/ol, innermost last
 	quote   int
 	started bool
+	fold    bool // a gmail_quote block opened: its first paragraph starts the folded quote
+	folded  bool // the doc already has its fold; later quote blocks are plain content
+	sig     bool // a gmail_signature block opened: its first paragraph is marked
+	sigSeen bool
+	pre     bool // inside <pre>: line breaks and spaces are kept
 }
 
 func (p *wyParser) kind() wyKind {
@@ -114,6 +124,18 @@ func (p *wyParser) push() {
 		runs[i].Text = strings.ReplaceAll(runs[i].Text, " ", " ")
 	}
 	p.cur.Runs = normRuns(runs)
+	if p.fold {
+		if len(p.doc.Paras) == 0 { // the editor keeps a visible paragraph above the quote
+			p.doc.Paras = append(p.doc.Paras, wyParagraph{})
+		}
+		p.cur.Fold, p.fold, p.folded = true, false, true
+	}
+	if p.sig {
+		p.cur.Sig, p.sig = true, false
+		if p.cur.text() == strings.TrimSpace(sigMarker) { // the separator keeps its trailing space
+			p.cur.Runs = []wyRun{{Text: sigMarker}}
+		}
+	}
 	p.doc.Paras = append(p.doc.Paras, *p.cur)
 	p.cur = nil
 }
@@ -126,6 +148,19 @@ func (p *wyParser) open() *wyParagraph {
 }
 
 func (p *wyParser) text(s string, st wyStyle) {
+	if p.pre {
+		for i, line := range strings.Split(strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n"), "\n") {
+			if i > 0 {
+				p.open()
+				p.push()
+			}
+			if line != "" {
+				cur := p.open()
+				cur.Runs = append(cur.Runs, wyRun{Text: strings.ReplaceAll(line, "\t", "    "), wyStyle: st})
+			}
+		}
+		return
+	}
 	s = strings.Map(func(r rune) rune {
 		if r == '\t' || r == '\n' || r == '\r' || r == '\f' {
 			return ' '
@@ -265,7 +300,34 @@ func (p *wyParser) walk(n *xhtml.Node, st wyStyle) {
 			p.children(n, inline(n, st))
 			p.push()
 			return
-		case atom.Div, atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.Pre, atom.Table, atom.Tr:
+		case atom.Div:
+			p.push()
+			opens := !p.fold && !p.folded && wyAttr(n, "class") == "gmail_quote"
+			p.fold = p.fold || opens
+			sig := !p.sigSeen && wyAttr(n, "class") == "gmail_signature"
+			p.sig, p.sigSeen = p.sig || sig, p.sigSeen || sig
+			p.children(n, inline(n, st))
+			p.push()
+			if opens { // an empty quote block folds nothing
+				p.fold = false
+			}
+			if sig {
+				p.sig = false
+			}
+			return
+		case atom.Pre:
+			p.push()
+			was := p.pre
+			p.pre = true
+			p.children(n, inline(n, st))
+			p.push()
+			p.pre = was
+			return
+		case atom.Td, atom.Th:
+			p.children(n, inline(n, st))
+			p.text(" ", st) // cells would otherwise run together
+			return
+		case atom.H1, atom.H2, atom.H3, atom.H4, atom.H5, atom.H6, atom.Table, atom.Tr:
 			p.push()
 			p.children(n, inline(n, st))
 			p.push()
@@ -336,6 +398,9 @@ func runHTML(r wyRun, text string) string {
 
 // paraInner renders the runs of p; spaces that HTML would collapse become &nbsp;.
 func paraInner(p wyParagraph) string {
+	if p.text() == sigMarker { // keep the separator's trailing space, as Gmail does
+		return sigMarker
+	}
 	total := p.length()
 	if total == 0 {
 		return "<br>"
@@ -363,6 +428,32 @@ func paraInner(p wyParagraph) string {
 
 // toHTML serialises d as clean HTML; the result also passes mail.SanitizeHTML.
 func (d wyDoc) toHTML() string {
+	f := d.foldAt()
+	if f < 0 {
+		return mail.SanitizeHTML(sigHTML(d.Paras))
+	}
+	// The first quoted paragraph is the "On ... wrote:" line: Gmail wants it as gmail_attr.
+	q := d.Paras[f:]
+	attr := ""
+	if q[0].Kind == wyPara {
+		attr, q = `<div class="gmail_attr">`+paraInner(q[0])+"</div>", q[1:]
+	}
+	return mail.SanitizeHTML(sigHTML(d.Paras[:f]) + quoteOpen + attr + parasHTML(q) + "</div>")
+}
+
+// sigHTML renders paras, wrapping the signature (from its "-- " line) in gmail_signature.
+func sigHTML(paras []wyParagraph) string {
+	for i, p := range paras {
+		if p.Sig {
+			return parasHTML(paras[:i]) + `<div class="gmail_signature">` + parasHTML(paras[i:]) + "</div>"
+		}
+	}
+	return parasHTML(paras)
+}
+
+// parasHTML renders consecutive paragraphs, grouping lists and quotes.
+func parasHTML(paras []wyParagraph) string {
+	d := wyDoc{Paras: paras}
 	var b strings.Builder
 	for i := 0; i < len(d.Paras); {
 		k := d.Paras[i].Kind
@@ -391,7 +482,7 @@ func (d wyDoc) toHTML() string {
 		}
 		i = j
 	}
-	return mail.SanitizeHTML(b.String())
+	return b.String()
 }
 
 // plainText renders d with "- ", "1. " and "> " line prefixes for lists and quotes.

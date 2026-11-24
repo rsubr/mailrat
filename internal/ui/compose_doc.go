@@ -42,11 +42,15 @@ func sigParas(sig string) []wyParagraph {
 // new one goes just above them. It reports false (doc unchanged) when oldSig is
 // set but no longer found intact, e.g. because the user edited it.
 func swapSignature(d wyDoc, oldSig, newSig string, tail int) (wyDoc, bool) {
+	out, _, _, ok := swapSig(d, oldSig, newSig, tail)
+	return out, ok
+}
+
+// swapSig is swapSignature that also reports where the block sits (at) and how
+// many paragraphs the document grew by, so positions below it can follow.
+func swapSig(d wyDoc, oldSig, newSig string, tail int) (out wyDoc, at, delta int, ok bool) {
 	oldP, newP := sigParas(oldSig), sigParas(newSig)
-	at := len(d.Paras) - tail
-	if at < 0 {
-		at = 0
-	}
+	at = max(len(d.Paras)-tail, 0)
 	end := at
 	if len(oldP) > 0 {
 		at = -1
@@ -57,14 +61,14 @@ func swapSignature(d wyDoc, oldSig, newSig string, tail int) (wyDoc, bool) {
 			}
 		}
 		if at < 0 {
-			return d, false
+			return d, 0, 0, false
 		}
 		end = at + len(oldP)
 	}
 	paras := append([]wyParagraph(nil), d.Paras[:at]...)
 	paras = append(paras, newP...)
 	paras = append(paras, d.Paras[end:]...)
-	return wyDoc{Paras: paras}, true
+	return wyDoc{Paras: paras}, at, len(newP) - len(oldP), true
 }
 
 // quoteParas counts the paragraphs the quote block becomes in the editor.
@@ -72,26 +76,39 @@ func quoteParas(quote string) int {
 	if quote == "" {
 		return 0
 	}
-	return len(parseHTML(quote).Paras)
+	return len(parseHTML(composeHTML("", quote)).Paras) - 1 // minus the user's own line
 }
 
-// replaceSignature swaps the signature block in the editor, keeping the caret
-// (clamped) and the content around it. It reports whether the swap happened.
+// replaceSignature swaps the signature block in the editor. It arrives
+// asynchronously, so it must not cost the user what they already did: the caret
+// follows its paragraph and the undo history is kept (updated to match). It
+// reports whether the swap happened.
 func (w *Wysiwyg) replaceSignature(oldSig, newSig string, tail int) bool {
-	d, ok := swapSignature(w.ed.doc, oldSig, newSig, tail)
+	d, at, delta, ok := swapSig(w.ed.doc, oldSig, newSig, tail)
 	if !ok {
 		return false
 	}
-	clamp := func(p wyPos) wyPos {
-		if p.P >= len(d.Paras) {
-			p = wyPos{P: len(d.Paras) - 1}
-			p.Off = d.Paras[p.P].length()
+	oldLen := len(sigParas(oldSig))
+	shift := func(p wyPos, at, delta int) wyPos {
+		switch {
+		case p.P >= at+oldLen:
+			p.P += delta
+		case p.P >= at && oldLen > 0:
+			p = wyPos{at, 0}
 		}
 		return p
 	}
-	a, c := clamp(w.ed.anchor), clamp(w.ed.caret)
-	w.ed.setDoc(d)
-	w.ed.anchor, w.ed.caret = a, c
+	e := w.ed
+	e.anchor, e.caret = shift(e.anchor, at, delta), shift(e.caret, at, delta)
+	e.doc = d
+	for _, stack := range [][]wySnap{e.undo, e.redo} {
+		for i, sn := range stack {
+			if sd, a, dl, ok := swapSig(sn.doc, oldSig, newSig, tail); ok {
+				stack[i] = wySnap{sd, shift(sn.anchor, a, dl), shift(sn.caret, a, dl)}
+			}
+		}
+	}
+	e.anchor, e.caret = e.clamp(e.anchor), e.clamp(e.caret)
 	w.rebuild()
 	w.notifyCursor()
 	return true

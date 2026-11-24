@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html"
 	"image/color"
+	netmail "net/mail"
 	"regexp"
 	"strings"
 	"time"
@@ -175,19 +176,63 @@ func forwardHTML(m desktop.MessageItem) string {
 	return b.String()
 }
 
-func replyDraft(m desktop.MessageItem, all bool) desktop.OutboundMsg {
+// replyDraft prefills a reply. own are the user's addresses (accounts and
+// send-as aliases): they are never replied to, and replying to a message the
+// user sent goes to its original recipients. With all, the other recipients
+// of the original (To and Cc) are copied. The reply goes to the message's
+// Reply-To when it has a usable one, else to its sender, and carries the
+// thread's References chain.
+func replyDraft(m desktop.MessageItem, all bool, own ...string) desktop.OutboundMsg {
 	d := desktop.OutboundMsg{
 		AccountID: m.AccountID,
 		To:        m.FromAddr,
 		Subject:   prefixed(m.Subject, "Re: "),
 		Body:      quoteHTML(m),
-		InReplyTo: m.ID,
+		InReplyTo: m.MessageID, // the RFC Message-ID, not Gmail's internal id; Gmail still threads by ThreadID
 		ThreadID:  m.ThreadID,
 	}
+	d.References = strings.Join(mail.ReferencesFor(m.References, m.InReplyTo, m.MessageID), " ")
+	mine := map[string]bool{}
+	for _, o := range own {
+		mine[addrKey(o)] = true
+	}
+	others := func(lists ...string) (out []string) {
+		seen := map[string]bool{}
+		for _, l := range lists {
+			for _, a := range splitAddrs(l) {
+				if k := addrKey(a); !mine[k] && !seen[k] {
+					seen[k] = true
+					out = append(out, a)
+				}
+			}
+		}
+		return out
+	}
+	cc := m.ToAddr + "," + m.CcAddr
+	if sentByMe := len(others(m.FromAddr)) == 0; sentByMe {
+		d.To = joinComma(others(m.ToAddr))
+		cc = m.CcAddr
+		if d.To == "" { // a message to myself
+			d.To = m.ToAddr
+		}
+	} else if rt := others(mail.ParseAddressList(m.ReplyTo)...); len(rt) > 0 {
+		d.To = joinComma(rt) // a missing, malformed or all-mine Reply-To falls back to From
+	}
 	if all {
-		d.Cc = m.ToAddr
+		for _, a := range others(d.To) {
+			mine[addrKey(a)] = true // already addressed in To
+		}
+		d.Cc = joinComma(others(cc))
 	}
 	return d
+}
+
+// addrKey is the lower-cased bare address of a header address.
+func addrKey(a string) string {
+	if p, err := netmail.ParseAddress(a); err == nil {
+		return strings.ToLower(p.Address)
+	}
+	return strings.ToLower(strings.TrimSpace(a))
 }
 
 func forwardDraft(m desktop.MessageItem) desktop.OutboundMsg {

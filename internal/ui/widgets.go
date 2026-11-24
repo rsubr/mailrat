@@ -146,6 +146,24 @@ func (shrinkable) MinSize(o []fyne.CanvasObject) fyne.Size {
 	return fyne.NewSize(0, o[0].MinSize().Height)
 }
 func (shrinkable) Layout(o []fyne.CanvasObject, s fyne.Size) {
+	// Too narrow for even an ellipsis, truncating text paints outside its box; drop it.
+	o[0].Move(fyne.NewPos(0, 0))
+	o[0].Resize(s)
+	if s.Width < 24 {
+		o[0].Hide()
+	} else {
+		o[0].Show()
+	}
+}
+
+// minWidth keeps its single child at least w wide, however narrow its parent
+// split is dragged, so rows never lay out below their fixed parts.
+type minWidth struct{ w float32 }
+
+func (m minWidth) MinSize(o []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(max(m.w, o[0].MinSize().Width), o[0].MinSize().Height)
+}
+func (minWidth) Layout(o []fyne.CanvasObject, s fyne.Size) {
 	o[0].Move(fyne.NewPos(0, 0))
 	o[0].Resize(s)
 }
@@ -204,4 +222,25 @@ func bold(text string) *widget.Label {
 // tight trims a Label's generous built-in padding so list rows stay compact.
 func tight(o fyne.CanvasObject) fyne.CanvasObject {
 	return container.New(layout.NewCustomPaddedLayout(-5, -5, -2, -2), o)
+}
+
+// escEntry is an Entry whose Escape key runs close instead of being swallowed.
+type escEntry struct {
+	widget.Entry
+	close func()
+}
+
+func (e *escEntry) TypedKey(k *fyne.KeyEvent) {
+	if k.Name == fyne.KeyEscape {
+		e.close()
+		return
+	}
+	e.Entry.TypedKey(k)
+}
+
+// newEscEntry is an Entry that closes via close on Escape instead of swallowing it.
+func newEscEntry(close func()) *escEntry {
+	e := &escEntry{close: close}
+	e.ExtendBaseWidget(e)
+	return e
 }

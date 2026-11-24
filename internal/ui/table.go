@@ -122,7 +122,7 @@ func (r *htmlRenderer) table(n *html.Node, st textStyle) bool {
 			if hasBlock(c) {
 				return false
 			}
-			sub := &htmlRenderer{opts: r.opts}
+			sub := &htmlRenderer{opts: r.opts, flat: true, inQuote: r.inQuote}
 			cs := sub.styleFor(c, st)
 			for cc := c.FirstChild; cc != nil; cc = cc.NextSibling {
 				sub.walk(cc, cs)

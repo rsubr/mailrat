@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"strings"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
@@ -13,6 +15,20 @@ func contactLabel(c desktop.ContactItem) string {
 		return c.Name + " <" + c.Email + ">"
 	}
 	return c.Email
+}
+
+// contactInsert is what is typed into a recipient field for c: like the label,
+// but with a display name that contains address specials (a comma, say) quoted
+// so the field still parses as one address.
+func contactInsert(c desktop.ContactItem) string {
+	if c.Name == "" {
+		return c.Email
+	}
+	name := c.Name
+	if strings.ContainsAny(name, `()<>[]:;@\,"`) {
+		name = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name) + `"`
+	}
+	return name + " <" + c.Email + ">"
 }
 
 // suggestHost is the inline strip of suggestions shown in the window layout. It is

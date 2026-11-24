@@ -15,4 +15,10 @@ var (
 
 var fgOnPrimary color.Color = color.White
 
-func (u *UI) showErrorIn(w fyne.Window, err error) { dialog.ShowError(err, w) }
+func (u *UI) showErrorIn(w fyne.Window, err error) {
+	if w == nil {
+		u.showError(err)
+		return
+	}
+	dialog.ShowError(err, w)
+}

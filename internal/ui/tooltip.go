@@ -86,6 +86,7 @@ func newTipOverlay(b *tooltipButton, c fyne.Canvas, pos fyne.Position) *tipOverl
 	t := canvas.NewText(b.tip, fg())
 	t.TextSize = 12
 	box := &tipBox{bg: bg, text: t}
+	box.ExtendBaseWidget(box) // MinSize is empty until the widget knows itself; Layout needs it
 	o := &tipOverlay{btn: b, canvas: c, box: box, pos: pos}
 	o.ExtendBaseWidget(o)
 	o.Resize(c.Size())
@@ -122,7 +123,11 @@ func (r *tipOverlayRenderer) Layout(size fyne.Size) {
 	m := r.o.box.MinSize()
 	x := min(r.o.pos.X, max(size.Width-m.Width, 0))
 	r.o.box.Resize(m)
-	r.o.box.Move(fyne.NewPos(x, r.o.pos.Y+r.o.btn.Size().Height+4))
+	y := r.o.pos.Y + r.o.btn.Size().Height + 4
+	if y+m.Height > size.Height { // no room below (footer buttons): show above
+		y = max(r.o.pos.Y-m.Height-4, 0)
+	}
+	r.o.box.Move(fyne.NewPos(x, y))
 }
 func (r *tipOverlayRenderer) MinSize() fyne.Size           { return fyne.NewSize(0, 0) }
 func (r *tipOverlayRenderer) Refresh()                     {}

@@ -5,7 +5,9 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	mailrat "github.com/mailrat/mailrat/internal/desktop"
 )
@@ -112,16 +114,21 @@ func (u *UI) buildListBar() fyne.CanvasObject {
 			spamTip = "Not spam"
 		}
 		var move, labels *tooltipButton
-		move = iconButton("move", "Move to", func() { u.popMenu(move, u.moveToItems()...) })
-		labels = iconButton("tag", "Labels", func() { u.popMenu(labels, u.labelItems(sel)...) })
+		move = iconButton("move", "Move to", func() {
+			if u.oneAccount(sel) {
+				u.popMenu(move, u.moveToItems()...)
+			}
+		})
+		labels = iconButton("tag", "Labels", func() {
+			if u.oneAccount(sel) {
+				u.popMenu(labels, u.labelItems(sel)...)
+			}
+		})
 		items = append(items, spacer(10, 1),
 			iconButton("archive", "Archive", u.bulkArchive),
 			iconButton("spam", spamTip, u.bulkSpam),
 			iconButton("trash", "Delete", u.bulkTrash),
-			spacer(10, 1),
-			iconButton("read", "Mark as read", func() { u.bulkRead(true) }),
-			iconButton("unread", "Mark as unread", func() { u.bulkRead(false) }),
-			spacer(10, 1), move, labels,
+			spacer(10, 1), move, labels, // mark read/unread live in More, which keeps the bar within the list pane
 		)
 	}
 	var more *tooltipButton
@@ -142,22 +149,36 @@ func (u *UI) buildListBar() fyne.CanvasObject {
 		)
 	})
 	items = append(items, more)
-	return container.New(layout.NewCustomPaddedLayout(0, 2, 4, 4), container.NewHBox(items...))
+	// Scrolls instead of widening: the bar's minimum width would otherwise push
+	// the list/reader divider whenever rows are ticked.
+	return container.New(layout.NewCustomPaddedLayout(0, 2, 4, 4), container.NewHScroll(container.NewHBox(items...)))
 }
 
 func (u *UI) moveToItems() []*fyne.MenuItem {
-	out := []*fyne.MenuItem{
-		fyne.NewMenuItem("Inbox", func() { u.bulkLabel("INBOX", true) }),
-		fyne.NewMenuItem("Spam", u.bulkSpam),
-		fyne.NewMenuItem("Trash", u.bulkTrash),
-		fyne.NewMenuItemSeparator(),
+	out := []*fyne.MenuItem{fyne.NewMenuItem("Inbox", func() { u.bulkLabel("INBOX", true) })}
+	if u.activeLabel != "SPAM" {
+		out = append(out, fyne.NewMenuItem("Spam", func() { u.bulkSetSpam(true) }))
 	}
+	if u.activeLabel != "TRASH" {
+		out = append(out, fyne.NewMenuItem("Trash", u.bulkTrash))
+	}
+	out = append(out, fyne.NewMenuItemSeparator())
 	for _, l := range u.labels {
 		if l.Type == "user" {
 			out = append(out, fyne.NewMenuItem(l.Name, func() { u.bulkMoveTo(l.ID) }))
 		}
 	}
 	return out
+}
+
+// oneAccount reports whether ts all belong to one account; label IDs are
+// per account, so label pickers refuse a mixed selection.
+func (u *UI) oneAccount(ts []mailrat.ThreadItem) bool {
+	if slices.ContainsFunc(ts, func(t mailrat.ThreadItem) bool { return t.AccountID != ts[0].AccountID }) {
+		dialog.ShowInformation("Labels", "Select conversations from a single account to move or label them.", u.win)
+		return false
+	}
+	return true
 }
 
 // labelItems lists user labels, ticked when every selected thread has them.
@@ -228,27 +249,37 @@ func (u *UI) removeThreads(ts []mailrat.ThreadItem) {
 		u.clearSelection()
 	}
 	u.list.Refresh()
+	u.refreshEmpty()
 	u.refreshListBar()
 }
 
 func (u *UI) bulkArchive() {
-	u.bulk(func(t mailrat.ThreadItem) error { return u.be.ArchiveThread(t.AccountID, t.ID) }, u.removeThreads)
+	u.bulk(func(t mailrat.ThreadItem) error { return u.be.ArchiveThread(t.AccountID, t.ID) }, func(ok []mailrat.ThreadItem) {
+		u.removeThreads(ok)
+		u.undoArchive(ok)
+	})
 }
 
-func (u *UI) bulkSpam() {
-	spam := u.be.MarkThreadSpam
-	if u.activeLabel == "SPAM" {
-		spam = u.be.MarkThreadNotSpam
+// bulkSpam reports spam, or in the Spam folder restores to the Inbox.
+func (u *UI) bulkSpam() { u.bulkSetSpam(u.activeLabel != "SPAM") }
+
+func (u *UI) bulkSetSpam(spam bool) {
+	call := u.be.MarkThreadSpam
+	if !spam {
+		call = u.be.MarkThreadNotSpam
 	}
-	u.bulk(func(t mailrat.ThreadItem) error { return spam(t.AccountID, t.ID) }, u.removeThreads)
+	u.bulk(func(t mailrat.ThreadItem) error { return call(t.AccountID, t.ID) }, func(ok []mailrat.ThreadItem) {
+		u.removeThreads(ok)
+		if spam {
+			u.undoSpam(ok)
+		}
+	})
 }
 
 func (u *UI) bulkTrash() {
 	u.bulk(func(t mailrat.ThreadItem) error { return u.be.TrashThread(t.AccountID, t.ID) }, func(ok []mailrat.ThreadItem) {
 		u.removeThreads(ok)
-		if len(ok) == 1 {
-			u.showUndoTrash(ok[0].AccountID, ok[0].ID)
-		}
+		u.undoTrash(ok)
 	})
 }
 
@@ -316,4 +347,68 @@ func (u *UI) patchLabel(ts []mailrat.ThreadItem, id string, on bool) {
 		})
 	}
 	u.refreshListBar()
+}
+
+// List filter: one of All (""), Unread, Starred or With attachments narrows the
+// list in the store query, so pages stay full. It is remembered per mailbox
+// view (account + label) for the session only; a search uses the filter of the
+// view it was started from.
+var filterOptions = []struct{ id, name, noun string }{
+	{"", "All", ""},
+	{"unread", "Unread", "unread"},
+	{"starred", "Starred", "starred"},
+	{"attachments", "With attachments", "attachment"},
+}
+
+func (u *UI) filterKey() string { return u.activeAccount + "/" + u.activeLabel }
+
+func (u *UI) filter() string { return u.filters[u.filterKey()] }
+
+// filterNoun is the adjective used in the empty-list text ("No unread conversations").
+func filterNoun(id string) string {
+	for _, o := range filterOptions {
+		if o.id == id {
+			return o.noun
+		}
+	}
+	return id
+}
+
+func (u *UI) setFilter(id string) {
+	if id == u.filter() {
+		return
+	}
+	if u.filters == nil {
+		u.filters = map[string]string{}
+	}
+	if id == "" {
+		delete(u.filters, u.filterKey())
+	} else {
+		u.filters[u.filterKey()] = id
+	}
+	u.resetCursor()
+	u.refreshListHeader()
+	u.reloadThreads()
+}
+
+func (u *UI) filterItems() []*fyne.MenuItem {
+	var items []*fyne.MenuItem
+	for _, o := range filterOptions {
+		it := fyne.NewMenuItem(o.name, func() { u.setFilter(o.id) })
+		it.Checked = o.id == u.filter()
+		items = append(items, it)
+	}
+	return items
+}
+
+// refreshFilterBtn tints the header glyph with the accent colour while a filter is on.
+func (u *UI) refreshFilterBtn() {
+	if u.filterBtn == nil {
+		return
+	}
+	c := subtle()
+	if u.filter() != "" {
+		c = col(theme.ColorNamePrimary)
+	}
+	u.filterBtn.SetIcon(icon("filter", c))
 }

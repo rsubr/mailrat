@@ -20,6 +20,7 @@ import (
 type renderOpts struct {
 	bg, fg color.Color // pane background / default text colour, for contrast repair
 	images bool        // fetch remote images
+	link   color.Color // hyperlink colour of the pane, to repair on painted backgrounds
 }
 
 // renderResult is the rendered body plus what was held back.
@@ -29,6 +30,8 @@ type renderResult struct {
 	// quoted is the previous-conversation part (gmail_quote, blockquote,
 	// "On ... wrote:"), cut out of segments so the UI can fold it behind "…".
 	quoted []widget.RichTextSegment
+	// bands are the painted author backgrounds, outer before inner.
+	bands []mailBand
 }
 
 // minContrast is the WCAG ratio below which an author-chosen text colour is
@@ -36,12 +39,16 @@ type renderResult struct {
 // black / white on white.
 const minContrast = 3.5
 
+// linkContrast is what a link on a painted band must reach.
+const linkContrast = 4.5
+
 type textStyle struct {
 	bold, italic, underline, mono, pre bool
 	col                                color.Color
 	size                               fyne.ThemeSizeName
 	link                               *url.URL
 	quote                              int
+	bg                                 color.Color // painted background behind this text; nil = the pane
 }
 
 type htmlRenderer struct {
@@ -58,6 +65,13 @@ type htmlRenderer struct {
 	// first quoted block: segments [foldFrom, foldTo) of out.segments; foldTo < 0 means to the end.
 	folded           bool
 	foldFrom, foldTo int
+	// bands being built (segment ranges), their count and nesting depth.
+	bands  []mailBand
+	nbands int
+	bdepth int
+	// flat stops new bands (grid cells, quoted text); inQuote also makes the
+	// pane the effective background, because folded quotes are drawn unpainted.
+	flat, inQuote bool
 }
 
 var urlRe = regexp.MustCompile(`https?://[^\s<>"')]+[^\s<>"').,;:!?]`)
@@ -65,7 +79,7 @@ var urlRe = regexp.MustCompile(`https?://[^\s<>"')]+[^\s<>"').,;:!?]`)
 // renderMail renders an email body (HTML or plain text) as styled rich text.
 // Author colours are kept only when readable on the current pane background,
 // so mail that ignores dark mode never ends up black-on-black. Author
-// backgrounds are dropped for the same reason.
+// backgrounds are reported as bands (see band.go) for the body widget to paint.
 func renderMail(src string, o renderOpts) renderResult {
 	r := &htmlRenderer{opts: o}
 	if !isHTML(src) {
@@ -81,6 +95,7 @@ func renderMail(src string, o renderOpts) renderResult {
 	r.walk(doc, textStyle{})
 	r.flush()
 	r.fold()
+	r.out.bands = cleanBands(r.bands)
 	return r.out
 }
 
@@ -97,6 +112,18 @@ func (r *htmlRenderer) fold() {
 	}
 	r.out.quoted = append([]widget.RichTextSegment(nil), segs[r.foldFrom:to]...)
 	r.out.segments = append(segs[:r.foldFrom:r.foldFrom], segs[to:]...)
+	shift := func(x int) int {
+		switch {
+		case x >= to:
+			return x - (to - r.foldFrom)
+		case x > r.foldFrom:
+			return r.foldFrom
+		}
+		return x
+	}
+	for i := range r.bands {
+		r.bands[i].from, r.bands[i].to = shift(r.bands[i].from), shift(r.bands[i].to)
+	}
 }
 
 // quoteStart is the plain-text start of a quoted reply: an "On ... wrote:"
@@ -197,7 +224,12 @@ func (r *htmlRenderer) text(s string, st textStyle) {
 		return
 	}
 	if st.link != nil {
-		r.cur = append(r.cur, &widget.HyperlinkSegment{Text: s, URL: st.link})
+		seg := &widget.HyperlinkSegment{Text: s, URL: st.link}
+		if cn := r.linkColor(st); cn != "" {
+			r.cur = append(r.cur, &colLink{seg, cn})
+		} else {
+			r.cur = append(r.cur, seg)
+		}
 		return
 	}
 	ts := &widget.TextSegment{Text: s, Style: widget.RichTextStyle{
@@ -205,7 +237,7 @@ func (r *htmlRenderer) text(s string, st textStyle) {
 		TextStyle:    fyne.TextStyle{Bold: st.bold || st.size != "", Italic: st.italic, Underline: st.underline, Monospace: st.mono},
 		SizeName:     st.size,
 		QuotingDepth: st.quote,
-		ColorName:    r.colorName(st.col),
+		ColorName:    r.colorName(st.col, r.effBg(st)),
 	}}
 	r.cur = append(r.cur, ts)
 }
@@ -217,12 +249,57 @@ func (r *htmlRenderer) curText() string {
 	return r.cur[len(r.cur)-1].Textual()
 }
 
-// colorName maps an author colour to a theme colour name, repairing contrast.
-func (r *htmlRenderer) colorName(c color.Color) fyne.ThemeColorName {
-	if c == nil {
-		return theme.ColorNameForeground
+// colorName maps an author colour to a theme colour name, repairing contrast
+// against bg, the painted background behind the text (nil: the pane).
+func (r *htmlRenderer) colorName(c, bg color.Color) fyne.ThemeColorName {
+	if bg == nil {
+		bg = r.opts.bg
 	}
-	return hexName(readable(c, r.opts.bg, r.opts.fg))
+	if c == nil {
+		if bg == r.opts.bg || contrast(r.opts.fg, bg) >= minContrast {
+			return theme.ColorNameForeground
+		}
+		c = r.opts.fg
+	}
+	fallback := blackOrWhite(bg)
+	if bg == r.opts.bg {
+		fallback = r.opts.fg
+	}
+	return hexName(readable(c, bg, fallback))
+}
+
+// effBg is the background the text of st sits on.
+func (r *htmlRenderer) effBg(st textStyle) color.Color {
+	if r.inQuote {
+		return nil
+	}
+	return st.bg
+}
+
+// colLink is a link whose colour is repaired for the band it sits on.
+type colLink struct {
+	*widget.HyperlinkSegment
+	col fyne.ThemeColorName
+}
+
+// linkColor is "" while the theme's link colour reads (4.5:1) on the
+// background, else the author's colour if that reads, else black or white.
+func (r *htmlRenderer) linkColor(st textStyle) fyne.ThemeColorName {
+	bg := r.effBg(st)
+	if bg == nil || r.opts.link == nil || contrast(r.opts.link, bg) >= linkContrast {
+		return ""
+	}
+	if st.col != nil && contrast(st.col, bg) >= linkContrast {
+		return hexName(st.col)
+	}
+	return hexName(blackOrWhite(bg))
+}
+
+func blackOrWhite(bg color.Color) color.Color {
+	if contrast(color.White, bg) >= contrast(color.Black, bg) {
+		return color.White
+	}
+	return color.Black
 }
 
 func hexName(c color.Color) fyne.ThemeColorName {
@@ -252,16 +329,23 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 			if toEnd, ok := quoteKind(n); ok {
 				r.flush()
 				r.folded, r.foldFrom = true, len(r.out.segments)
+				r.flat, r.inQuote = true, true
 				defer func() {
 					r.flush()
 					r.foldTo = len(r.out.segments)
 					if toEnd {
 						r.foldTo = -1
+					} else {
+						r.flat, r.inQuote = false, false
 					}
 				}()
 			}
 		}
 		st = r.styleFor(n, st)
+		var closeBand func()
+		if st, closeBand = r.band(n, st); closeBand != nil {
+			defer closeBand()
+		}
 		switch n.Data {
 		case "br":
 			r.text("\n", textStyle{pre: true, quote: st.quote})
@@ -299,7 +383,7 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 				r.n++
 				marker = indent + strconv.Itoa(r.n) + ". "
 			}
-			r.cur = append(r.cur, &widget.TextSegment{Text: marker, Style: widget.RichTextStyle{Inline: true, ColorName: theme.ColorNameForeground}})
+			r.cur = append(r.cur, &widget.TextSegment{Text: marker, Style: widget.RichTextStyle{Inline: true, ColorName: r.colorName(nil, r.effBg(st))}})
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				r.walk(c, st)
 			}
@@ -324,6 +408,10 @@ func (r *htmlRenderer) walk(n *html.Node, st textStyle) {
 // rows; cells with block content (layout tables) stack as before.
 func (r *htmlRenderer) walkRow(tr *html.Node, st textStyle) {
 	r.flush()
+	var closeBand func()
+	if st, closeBand = r.rowBand(tr, st); closeBand != nil {
+		defer closeBand()
+	}
 	prevInline := false
 	for c := tr.FirstChild; c != nil; c = c.NextSibling {
 		if c.Type != html.ElementNode || (c.Data != "td" && c.Data != "th") || skipElement(c) {
@@ -339,7 +427,7 @@ func (r *htmlRenderer) walkRow(tr *html.Node, st textStyle) {
 			continue
 		}
 		if prevInline {
-			r.text(" │ ", textStyle{pre: true, quote: st.quote})
+			r.text(" │ ", textStyle{pre: true, quote: st.quote, bg: st.bg})
 		}
 		cs := r.styleFor(c, st)
 		for cc := c.FirstChild; cc != nil; cc = cc.NextSibling {

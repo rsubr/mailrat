@@ -3,6 +3,9 @@ package ui
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
+
+	"github.com/rivo/uniseg"
 )
 
 // Pure-Go document model for the WYSIWYG editor (see wysiwyg.go). It has no Fyne
@@ -35,6 +38,12 @@ const (
 type wyParagraph struct {
 	Kind wyKind
 	Runs []wyRun
+	// Fold marks the first paragraph of the quoted original in a reply/forward:
+	// it and everything after it form the quote, which the editor can hide.
+	Fold bool
+	// Sig marks the first paragraph of the signature (the "-- " line); the
+	// signature runs to the quote or the end. It round-trips as gmail_signature.
+	Sig bool
 }
 
 // wyDoc always holds at least one paragraph.
@@ -42,10 +51,21 @@ type wyDoc struct{ Paras []wyParagraph }
 
 func newWyDoc() wyDoc { return wyDoc{Paras: []wyParagraph{{}}} }
 
+// foldAt is the index of the first quote paragraph, or -1 when there is no quote.
+// Index 0 never counts: the editor always keeps one visible paragraph.
+func (d wyDoc) foldAt() int {
+	for i := 1; i < len(d.Paras); i++ {
+		if d.Paras[i].Fold {
+			return i
+		}
+	}
+	return -1
+}
+
 func (d wyDoc) clone() wyDoc {
 	c := wyDoc{Paras: make([]wyParagraph, len(d.Paras))}
 	for i, p := range d.Paras {
-		c.Paras[i] = wyParagraph{Kind: p.Kind, Runs: append([]wyRun(nil), p.Runs...)}
+		c.Paras[i] = wyParagraph{Kind: p.Kind, Runs: append([]wyRun(nil), p.Runs...), Fold: p.Fold, Sig: p.Sig}
 	}
 	return c
 }
@@ -139,6 +159,7 @@ type wyEditor struct {
 	pending       *wyStyle // style for the next typed text at a collapsed caret
 	undo, redo    []wySnap
 	last          string // kind of the last edit, for coalescing typing
+	collapsed     bool   // the quote (from doc.foldAt) is hidden and out of reach of caret and selection
 }
 
 func newWyEditor() *wyEditor { return &wyEditor{doc: newWyDoc()} }
@@ -149,6 +170,7 @@ func (e *wyEditor) setDoc(d wyDoc) {
 		d = newWyDoc()
 	}
 	e.doc = d
+	e.collapsed = d.foldAt() >= 0
 	e.anchor, e.caret = wyPos{}, wyPos{}
 	e.pending, e.undo, e.redo, e.last = nil, nil, nil, ""
 }
@@ -169,7 +191,23 @@ func (e *wyEditor) begin(kind string) {
 
 func (e *wyEditor) restore(s wySnap) {
 	e.doc, e.anchor, e.caret = s.doc.clone(), s.anchor, s.caret
+	e.anchor, e.caret = e.clamp(e.anchor), e.clamp(e.caret)
 	e.pending, e.last = nil, ""
+}
+
+// visible is the number of paragraphs the caret can reach.
+func (e *wyEditor) visible() int {
+	if f := e.doc.foldAt(); e.collapsed && f >= 0 {
+		return f
+	}
+	return len(e.doc.Paras)
+}
+
+// setCollapsed hides or shows the quote; a caret inside a newly hidden quote moves to the end of the text above.
+func (e *wyEditor) setCollapsed(c bool) {
+	e.collapsed = c && e.doc.foldAt() >= 0
+	e.anchor, e.caret = e.clamp(e.anchor), e.clamp(e.caret)
+	e.pending = nil
 }
 
 func (e *wyEditor) canUndo() bool { return len(e.undo) > 0 }
@@ -219,7 +257,10 @@ func (e *wyEditor) selectedText() string {
 }
 
 func (e *wyEditor) clamp(p wyPos) wyPos {
-	p.P = max(0, min(p.P, len(e.doc.Paras)-1))
+	if n := e.visible() - 1; p.P > n {
+		p = wyPos{n, e.doc.Paras[n].length()}
+	}
+	p.P = max(0, p.P)
 	p.Off = max(0, min(p.Off, e.doc.Paras[p.P].length()))
 	return p
 }
@@ -239,8 +280,41 @@ func (e *wyEditor) selectAll() {
 }
 
 func (e *wyEditor) docEnd() wyPos {
-	n := len(e.doc.Paras) - 1
+	n := e.visible() - 1
 	return wyPos{n, e.doc.Paras[n].length()}
+}
+
+// clusterStarts are the rune offsets where a grapheme cluster (an emoji with its
+// joiners and skin tone, a flag, a letter with its accents) starts, plus len(rs).
+func clusterStarts(rs []rune) []int {
+	b := []int{0}
+	g := uniseg.NewGraphemes(string(rs))
+	for g.Next() {
+		b = append(b, b[len(b)-1]+utf8.RuneCountInString(g.Str()))
+	}
+	return b
+}
+
+// prevCluster is the start of the cluster that ends at or before off.
+func prevCluster(rs []rune, off int) int {
+	prev := 0
+	for _, b := range clusterStarts(rs) {
+		if b >= off {
+			break
+		}
+		prev = b
+	}
+	return prev
+}
+
+// nextCluster is the end of the cluster that starts at or after off.
+func nextCluster(rs []rune, off int) int {
+	for _, b := range clusterStarts(rs) {
+		if b > off {
+			return b
+		}
+	}
+	return len(rs)
 }
 
 func (e *wyEditor) left(p wyPos, word bool) wyPos {
@@ -250,10 +324,10 @@ func (e *wyEditor) left(p wyPos, word bool) wyPos {
 		}
 		return p
 	}
-	if !word {
-		return wyPos{p.P, p.Off - 1}
-	}
 	rs := []rune(e.doc.Paras[p.P].text())
+	if !word {
+		return wyPos{p.P, prevCluster(rs, p.Off)}
+	}
 	i := p.Off
 	for i > 0 && unicode.IsSpace(rs[i-1]) {
 		i--
@@ -267,15 +341,15 @@ func (e *wyEditor) left(p wyPos, word bool) wyPos {
 func (e *wyEditor) right(p wyPos, word bool) wyPos {
 	n := e.doc.Paras[p.P].length()
 	if p.Off >= n {
-		if p.P < len(e.doc.Paras)-1 {
+		if p.P < e.visible()-1 {
 			return wyPos{p.P + 1, 0}
 		}
 		return p
 	}
-	if !word {
-		return wyPos{p.P, p.Off + 1}
-	}
 	rs := []rune(e.doc.Paras[p.P].text())
+	if !word {
+		return wyPos{p.P, nextCluster(rs, p.Off)}
+	}
 	i := p.Off
 	for i < n && !unicode.IsSpace(rs[i]) {
 		i++
@@ -338,6 +412,19 @@ func (e *wyEditor) styleAtCaret() wyStyle {
 	return e.doc.Paras[e.caret.P].styleAt(e.caret.Off)
 }
 
+// typingStyle is the style typed text gets: like styleAtCaret, but text typed
+// right after a link does not extend it.
+func (e *wyEditor) typingStyle() wyStyle {
+	st := e.styleAtCaret()
+	if st.Link != "" && e.pending == nil && !e.hasSel() {
+		p := e.doc.Paras[e.caret.P]
+		if e.caret.Off >= p.length() || p.charStyle(e.caret.Off).Link != st.Link {
+			st.Link = ""
+		}
+	}
+	return st
+}
+
 func (e *wyEditor) blockKind() wyKind { return e.doc.Paras[e.caret.P].Kind }
 
 // insertText types s at the caret, replacing the selection. "\n" starts a new paragraph.
@@ -357,7 +444,7 @@ func (e *wyEditor) insertText(s string) {
 		kind = "paste"
 	}
 	e.begin(kind)
-	st := e.styleAtCaret()
+	st := e.typingStyle()
 	e.deleteSel()
 	for i, line := range strings.Split(s, "\n") {
 		if i > 0 {
@@ -385,7 +472,7 @@ func (e *wyEditor) insertRun(text string, st wyStyle) {
 func (e *wyEditor) split() {
 	i := e.caret.P
 	p := e.doc.Paras[i]
-	head := wyParagraph{Kind: p.Kind, Runs: normRuns(cutRuns(p.Runs, 0, e.caret.Off))}
+	head := wyParagraph{Kind: p.Kind, Runs: normRuns(cutRuns(p.Runs, 0, e.caret.Off)), Fold: p.Fold, Sig: p.Sig}
 	tail := wyParagraph{Kind: p.Kind, Runs: normRuns(cutRuns(p.Runs, e.caret.Off, p.length()))}
 	e.doc.Paras = append(e.doc.Paras[:i+1], e.doc.Paras[i:]...)
 	e.doc.Paras[i], e.doc.Paras[i+1] = head, tail
@@ -396,7 +483,7 @@ func (e *wyEditor) split() {
 // enter starts a new paragraph; on an empty list or quote line it leaves the block instead.
 func (e *wyEditor) enter() {
 	e.begin("enter")
-	st := e.styleAtCaret()
+	st := e.typingStyle()
 	e.deleteSel()
 	p := &e.doc.Paras[e.caret.P]
 	if p.length() == 0 && p.Kind != wyPara {
@@ -419,7 +506,7 @@ func (e *wyEditor) mergeNext(i int) {
 func (e *wyEditor) backspace(word bool) {
 	if !e.hasSel() {
 		p := e.caret
-		if p.Off == 0 && p.P > 0 && e.doc.Paras[p.P].Kind != wyPara {
+		if p.Off == 0 && e.doc.Paras[p.P].Kind != wyPara {
 			e.begin("block")
 			e.doc.Paras[p.P].Kind = wyPara
 			return
@@ -559,7 +646,7 @@ func (e *wyEditor) setSize(px int) {
 }
 
 func (e *wyEditor) clearFormatting() {
-	e.format(func(s *wyStyle) { *s = wyStyle{} })
+	e.format(func(s *wyStyle) { *s = wyStyle{Link: s.Link} }) // links are content, not formatting
 }
 
 // linkExtent returns the range of the link at a collapsed caret.
