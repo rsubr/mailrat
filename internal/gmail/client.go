@@ -58,7 +58,7 @@ func NewClient(ctx context.Context, httpClient *http.Client, accountID string) (
 }
 
 // metaWorkers bounds concurrent per-message requests (Gmail allows ~50 get/s per user).
-const metaWorkers = 10
+const metaWorkers = 4
 
 // ListMessageIDs returns the IDs of messages matching query, newest first.
 // limit caps the total returned; 0 means no cap.

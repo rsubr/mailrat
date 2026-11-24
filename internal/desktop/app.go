@@ -956,7 +956,7 @@ func (a *App) DrainPendingOps() {
 }
 
 // Sync runs an incremental sync. Pass accountID="unified" to sync all accounts.
-// Syncs are serialised; accounts within one sync run concurrently.
+// Syncs are serialised, and so are the accounts within one sync (bounds peak memory).
 func (a *App) Sync(accountID string) error {
 	if a.accountMgr() == nil {
 		a.emitEvent("sync:complete", nil) // clear any "Syncing…" a client already shows
@@ -971,18 +971,12 @@ func (a *App) Sync(accountID string) error {
 		a.emitEvent("sync:complete", nil)
 		return err
 	}
-	var wg sync.WaitGroup
 	for _, acc := range accs {
 		if accountID != "" && accountID != "unified" && acc.ID != accountID {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			a.syncAccount(acc)
-		}()
+		a.syncAccount(acc)
 	}
-	wg.Wait()
 	a.emitEvent("sync:complete", nil)
 	a.emitEvent("inbox:updated", nil)
 	defer debug.FreeOSMemory()

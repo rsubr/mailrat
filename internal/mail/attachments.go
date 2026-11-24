@@ -17,7 +17,7 @@ const prefetchWorkers = 3
 
 // syncPrefetchWorkers bounds the separate pool that caches attachments of
 // synced mail in the background.
-const syncPrefetchWorkers = 2
+const syncPrefetchWorkers = 1
 
 // AttachmentSource downloads attachment bytes (implemented by *gmail.Client).
 type AttachmentSource interface {
