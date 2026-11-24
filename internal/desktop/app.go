@@ -651,6 +651,10 @@ func (a *App) fillReplyHeaders(m storage.Message) storage.Message {
 	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer cancel()
 	meta, err := client.GetMessageMeta(ctx, m.ID)
+	if gmail.IsNotFound(err) { // deleted on the server
+		a.purgeGone(m.AccountID, m.ID, false)
+		return m
+	}
 	if err != nil {
 		return m
 	}
@@ -929,8 +933,30 @@ func (a *App) applyPendingOp(ctx context.Context, op storage.PendingOp) error {
 	return mail.ApplyOpRemote(ctx, client, op)
 }
 
+// purgeGone removes a message (or every message of a thread) that Gmail no
+// longer has and tells the UI to refresh.
+func (a *App) purgeGone(accountID, id string, thread bool) {
+	ids := []string{id}
+	if thread {
+		ids = nil
+		if msgs, err := a.store.ListMessagesByThread(accountID, id); err == nil {
+			for _, m := range msgs {
+				ids = append(ids, m.ID)
+			}
+		}
+	}
+	for _, mid := range ids {
+		_ = a.store.DeleteMessage(accountID, mid)
+	}
+	a.emitEvent("inbox:updated", nil)
+}
+
 // rollbackOp reconciles local state with Gmail after an operation was abandoned.
 func (a *App) rollbackOp(op storage.PendingOp, cause error) {
+	if gmail.IsNotFound(cause) { // target deleted on the server: drop it locally, nothing to undo or report
+		a.purgeGone(op.AccountID, op.MessageID, mail.OpIsThread(op.OpType))
+		return
+	}
 	a.addAPIError(fmt.Sprintf("%s failed and was undone: %v", op.OpType, cause))
 	if mail.IsDraftOp(op.OpType) {
 		return
