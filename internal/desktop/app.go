@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -984,6 +985,7 @@ func (a *App) Sync(accountID string) error {
 	wg.Wait()
 	a.emitEvent("sync:complete", nil)
 	a.emitEvent("inbox:updated", nil)
+	defer debug.FreeOSMemory()
 	for _, acc := range accs {
 		if accountID == "" || accountID == "unified" || acc.ID == accountID {
 			a.prefetchSyncedAttachments(acc.ID)

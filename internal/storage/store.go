@@ -20,6 +20,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
+	db.SetMaxOpenConns(4)
 
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)
@@ -42,9 +43,9 @@ var pragmas = []string{
 	"journal_mode(WAL)",
 	"synchronous(NORMAL)",
 	"foreign_keys(1)",
-	"cache_size(-20000)", // 20 MB
-	"temp_store(MEMORY)",
-	"mmap_size(268435456)", // 256 MB
+	"cache_size(-2000)", // 2 MB
+	"temp_store(FILE)",
+	"mmap_size(0)",
 }
 
 // dsn appends the connection pragmas to path.

@@ -226,7 +226,7 @@ func TestPragmasOnEveryConnection(t *testing.T) {
 	}
 	want := map[string]string{
 		"foreign_keys": "1", "busy_timeout": "5000", "journal_mode": "wal",
-		"synchronous": "1", "cache_size": "-20000", "temp_store": "2", "mmap_size": "268435456",
+		"synchronous": "1", "cache_size": "-2000", "temp_store": "1", "mmap_size": "0",
 	}
 	for i, c := range conns {
 		for k, v := range want {

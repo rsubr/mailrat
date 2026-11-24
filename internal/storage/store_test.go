@@ -221,4 +221,13 @@ func TestGetAttachmentsMetaOmitsData(t *testing.T) {
 	if got[0].Name != "a.pdf" || got[0].AttachmentID != "x" || got[0].Size != 3 || got[0].Data != nil {
 		t.Fatalf("unexpected %+v", got[0])
 	}
+	if ok, err := s.AttachmentCached("acc", "m1", "x"); err != nil || !ok {
+		t.Fatalf("cached = %v, %v", ok, err)
+	}
+	if d, err := s.AttachmentData("acc", "m1", "x"); err != nil || string(d) != "abc" {
+		t.Fatalf("data = %q, %v", d, err)
+	}
+	if ok, _ := s.AttachmentCached("acc", "m1", "nope"); ok {
+		t.Fatal("missing attachment reported cached")
+	}
 }
