@@ -42,7 +42,7 @@ func TestBuildLabelPlansSkipsBackfilledWhenPending(t *testing.T) {
 	}
 }
 
-func TestAllMailDefaultsTo30Days(t *testing.T) {
+func TestAllMailDefaultsTo14Days(t *testing.T) {
 	var cfg storage.SyncConfig
 	for _, c := range defaultBackfillConfigs("a") {
 		if c.LabelID == storage.AllMailLabelID {
@@ -50,7 +50,7 @@ func TestAllMailDefaultsTo30Days(t *testing.T) {
 		}
 	}
 	q, _ := scopeQuery(cfg)
-	if q != "-in:trash -in:spam newer_than:30d" {
+	if q != "-in:trash -in:spam newer_than:14d" {
 		t.Fatalf("query = %q", q)
 	}
 }

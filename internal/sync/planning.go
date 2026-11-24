@@ -8,7 +8,7 @@ import (
 )
 
 // AllMailDefaultDays is how much All Mail syncs until the user picks a scope.
-const AllMailDefaultDays = 30
+const AllMailDefaultDays = 14
 
 // OlderBatch is how many emails (metadata and body, no attachment bytes) one
 // "load older" step fetches; initial sync also pulls one batch past the window.

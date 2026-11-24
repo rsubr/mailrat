@@ -92,7 +92,7 @@ func (a *App) startup(ctx context.Context) {
 		_ = os.Chmod(filepath.Join(dir, "mailrat.db"+suffix), 0600)
 	}
 	a.attachments = mail.NewAttachmentCache(store)
-	// Only the last 30 days of mail get attachments cached in the background;
+	// Only the last 14 days of mail get attachments cached in the background;
 	// older ones download on open.
 	a.attachments.Window = time.Duration(mailsync.AllMailDefaultDays) * 24 * time.Hour
 	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)

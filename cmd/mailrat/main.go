@@ -19,5 +19,6 @@ func main() {
 	debug.SetGCPercent(25)
 	debug.SetMemoryLimit(100 << 20)
 	a := app.NewWithID("com.mailrat.app")
+	ui.RegisterRemoteImages()
 	ui.Run(a, desktop.NewApp())
 }
