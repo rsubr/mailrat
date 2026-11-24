@@ -123,6 +123,7 @@ func Run(a fyne.App, be Backend) {
 	be.Start(context.Background())
 	u.win = a.NewWindow("mailrat")
 	u.win.Resize(fyne.NewSize(1280, 800))
+	u.win.SetFullScreen(true)
 	u.win.SetMaster()
 	u.win.SetContent(u.build())
 	u.installMenu()
@@ -817,9 +818,17 @@ func (u *UI) showErrorLog() {
 		}
 		text = strings.Join(lines, "\n")
 	}
-	l := widget.NewLabel(text)
+	// A Label cannot select text; a multi-line Entry can. Edits are reverted so
+	// it behaves as read-only while still allowing mouse select and Ctrl+C.
+	l := widget.NewMultiLineEntry()
 	l.Wrapping = fyne.TextWrapWord
-	d := dialog.NewCustomConfirm("Error Log", "Clear", "Close", container.NewVScroll(l), func(clear bool) {
+	l.SetText(text)
+	l.OnChanged = func(s string) {
+		if s != text {
+			l.SetText(text)
+		}
+	}
+	d := dialog.NewCustomConfirm("Error Log", "Clear", "Close", l, func(clear bool) {
 		if clear {
 			u.be.ClearAPIErrors()
 			u.errCount, u.loadErrs, u.loadErrAt = 0, nil, nil
