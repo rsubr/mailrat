@@ -551,6 +551,11 @@ func newTestUI(t *testing.T, opts ...testOpt) (*UI, *fakeBackend) {
 	u.win.SetContent(u.build())
 	u.win.Resize(cfg.size)
 	u.reloadAll()
+	t.Cleanup(func() { // a pending undo expiry must not fire during later tests
+		if u.undoTimer != nil {
+			u.undoTimer.Stop()
+		}
+	})
 	return u, cfg.fb
 }
 
