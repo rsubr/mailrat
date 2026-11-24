@@ -670,6 +670,10 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 		if err == nil {
 			svc := mail.NewInboxService(a.store, client)
 			msg, err := svc.GetMessage(a.ctx, accountID, messageID)
+			if errors.Is(err, mail.ErrMessageGone) {
+				a.emitEvent("inbox:updated", nil)
+				return MessageItem{}, err
+			}
 			if err == nil {
 				item := messageToItem(msg)
 				if msg.HasAttachments {

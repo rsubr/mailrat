@@ -147,6 +147,11 @@ func forEachParallel(n int, fn func(i int) error) error {
 
 func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg storage.Message) error {
 	full, err := m.client.GetMessage(ctx, msg.ID)
+	if gmail.IsNotFound(err) { // deleted on the server since it was listed
+		m.writeMu.Lock()
+		defer m.writeMu.Unlock()
+		return m.store.DeleteMessage(accountID, msg.ID)
+	}
 	if err != nil {
 		m.reporter.Warnf("failed to fetch body for %s: %v\n", msg.ID, err)
 		return nil

@@ -2,10 +2,14 @@ package mail
 
 import (
 	"context"
+	"errors"
 
 	"github.com/mailrat/mailrat/internal/gmail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
+
+// ErrMessageGone means Gmail no longer has the message; the local copy was removed.
+var ErrMessageGone = errors.New("message no longer exists")
 
 // InboxService provides inbox-level operations.
 type InboxService struct {
@@ -27,6 +31,13 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 
 	if msg.CacheState == storage.CacheMetadataOnly && s.client != nil {
 		full, err := s.client.GetMessage(ctx, messageID)
+		if gmail.IsNotFound(err) {
+			// Deleted on the server: drop the local row (labels and attachments cascade).
+			if derr := s.store.DeleteMessage(accountID, messageID); derr != nil {
+				return storage.Message{}, derr
+			}
+			return storage.Message{}, ErrMessageGone
+		}
 		if err == nil {
 			msg.Body = full.Body
 			msg.CacheState = storage.CacheBodyCached
