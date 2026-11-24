@@ -58,3 +58,16 @@ func pickSignature(list []storage.SendAs, fromEmail string) string {
 	}
 	return ""
 }
+
+// Aliases returns the account's cached send-as addresses.
+func (a *App) Aliases(accountID string) []string {
+	list, err := a.store.ListSendAs(accountID)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, len(list))
+	for i, s := range list {
+		out[i] = s.Email
+	}
+	return out
+}

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,8 @@ import (
 )
 
 const frequentShown = 8
+
+var errNoContactEmail = errors.New("enter the contact's email address")
 
 // contactRow is one line of the contacts list: a section header or a person.
 // Saved is false for "Other contacts": addresses seen in mail that are not in the address book.
@@ -37,6 +40,9 @@ func buildContactRows(book, frequent []desktop.ContactItem, query string) []cont
 			if strings.Contains(strings.ToLower(c.Name+"\n"+c.Email+"\n"+c.Phone), q) {
 				rows = append(rows, contactRow{C: c, Saved: true})
 			}
+		}
+		if len(rows) == 0 {
+			rows = append(rows, contactRow{Header: "No contacts match"})
 		}
 		return rows
 	}
@@ -80,14 +86,29 @@ func contactDisplayName(c desktop.ContactItem) string {
 
 // openContacts shows the Contacts window (Google Contacts style list + detail pane).
 func (u *UI) openContacts() {
-	if u.contactsWin != nil {
-		u.contactsWin.Show()
-		u.contactsWin.RequestFocus()
-		return
+	title := "Contacts"
+	if u.activeAccount != unified {
+		if n := u.accountName(u.activeAccount); n != "" {
+			title += " – " + n
+		}
 	}
-	w := u.app.NewWindow("Contacts")
+	if u.contactsWin != nil {
+		if u.contactsWin.Title() == title {
+			u.contactsWin.Show()
+			u.contactsWin.RequestFocus()
+			return
+		}
+		old := u.contactsWin // the viewed account changed: start over on the new one
+		u.contactsWin = nil
+		old.Close()
+	}
+	w := u.app.NewWindow(title)
 	w.Resize(fyne.NewSize(960, 620))
-	w.SetOnClosed(func() { u.contactsWin = nil })
+	w.SetOnClosed(func() {
+		if u.contactsWin == w {
+			u.contactsWin = nil
+		}
+	})
 	u.contactsWin = w
 
 	var (
@@ -126,14 +147,20 @@ func (u *UI) openContacts() {
 		u.bg(func() {
 			book, _ = u.be.ListContacts(account)
 			frequent, _ = u.be.FrequentAddresses(account, 200)
-		}, rebuild)
+		}, func() {
+			list.UnselectAll() // rows may now be different contacts
+			rebuild()
+		})
 	}
 	show := func(o fyne.CanvasObject) { detail.Objects = []fyne.CanvasObject{o}; detail.Refresh() }
-	blank := func() { show(container.NewCenter(widget.NewLabel("Select a contact"))) }
+	blank := func() {
+		list.UnselectAll() // a selected row would ignore the next click on it
+		show(container.NewCenter(widget.NewLabel("Select a contact")))
+	}
 
 	var viewContact func(r contactRow)
 	editContact := func(c desktop.ContactItem) {
-		name, email, phone := widget.NewEntry(), widget.NewEntry(), widget.NewEntry()
+		name, email, phone := newEscEntry(w.Close), newEscEntry(w.Close), newEscEntry(w.Close)
 		name.SetText(c.Name)
 		email.SetText(c.Email)
 		phone.SetText(c.Phone)
@@ -168,14 +195,16 @@ func (u *UI) openContacts() {
 		save.Importance = widget.HighImportance
 		save.OnTapped = func() {
 			if strings.TrimSpace(email.Text) == "" {
-				u.showErrorIn(w, errNoRecipient)
+				u.showErrorIn(w, errNoContactEmail)
 				return
 			}
-			c.AccountID, c.Name, c.Email, c.Phone = accID, strings.TrimSpace(name.Text), strings.TrimSpace(email.Text), strings.TrimSpace(phone.Text)
+			// Edit a copy: a failed save must not change what Cancel shows.
+			nc := c
+			nc.AccountID, nc.Name, nc.Email, nc.Phone = accID, strings.TrimSpace(name.Text), strings.TrimSpace(email.Text), strings.TrimSpace(phone.Text)
 			save.Disable()
 			var saved desktop.ContactItem
 			var err error
-			u.bg(func() { saved, err = u.be.SaveContact(c) }, func() {
+			u.bg(func() { saved, err = u.be.SaveContact(nc) }, func() {
 				if err != nil {
 					save.Enable()
 					u.showErrorIn(w, err)
@@ -185,6 +214,7 @@ func (u *UI) openContacts() {
 				viewContact(contactRow{C: saved, Saved: true})
 			})
 		}
+		phone.OnSubmitted = func(string) { save.OnTapped() }
 		cancel := widget.NewButton("Cancel", func() {
 			if c.ID == "" {
 				blank()
@@ -256,7 +286,7 @@ func (u *UI) openContacts() {
 			hdr := bold("")
 			chk := widget.NewCheck("", nil)
 			cells := container.NewGridWithColumns(3, ellipsisLabel(), ellipsisLabel(), ellipsisLabel())
-			row := container.NewBorder(nil, nil, container.NewHBox(chk, container.NewStack()), nil, cells)
+			row := container.NewBorder(nil, nil, container.NewHBox(chk, container.NewGridWrap(fyne.NewSize(28, 28))), nil, cells)
 			return container.NewStack(hdr, row)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
@@ -298,6 +328,8 @@ func (u *UI) openContacts() {
 	list.OnSelected = func(i widget.ListItemID) {
 		if rows[i].Header == "" {
 			viewContact(rows[i])
+		} else {
+			list.UnselectAll()
 		}
 	}
 	search.OnChanged = func(string) { list.UnselectAll(); rebuild() }
@@ -338,20 +370,6 @@ func ellipsisLabel() *widget.Label {
 	l := widget.NewLabel("")
 	l.Truncation = fyne.TextTruncateEllipsis
 	return l
-}
-
-// escEntry is an Entry whose Escape key runs close instead of being swallowed.
-type escEntry struct {
-	widget.Entry
-	close func()
-}
-
-func (e *escEntry) TypedKey(k *fyne.KeyEvent) {
-	if k.Name == fyne.KeyEscape {
-		e.close()
-		return
-	}
-	e.Entry.TypedKey(k)
 }
 
 // closeOnEscape closes w on Escape when no dialog is open and nothing has focus.

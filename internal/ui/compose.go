@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -8,12 +10,20 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
 )
 
 // draftInterval is how often a compose window checks for changes to autosave.
 var draftInterval = 10 * time.Second
+
+// newDraftTicker returns the autosave tick channel and its stop func. Tests
+// replace it to drive ticks deterministically.
+var newDraftTicker = func(d time.Duration) (<-chan time.Time, func()) {
+	t := time.NewTicker(d)
+	return t.C, t.Stop
+}
 
 // compose opens a message window prefilled from draft (empty for a new message).
 func (u *UI) compose(draft desktop.OutboundMsg) {
@@ -36,12 +46,17 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 			selected = a.Email
 		}
 	}
-	var onFrom func() // set once the editor exists; swaps the signature
+	var onFrom func()              // set once the editor exists; swaps the signature
+	var moveDraft func(old string) // set once autosave exists; drops the draft left under the old account
 	from := widget.NewSelect(emails, func(e string) {
+		old := accountID
 		for _, a := range u.accounts {
 			if a.Email == e {
 				accountID = a.ID
 			}
+		}
+		if accountID != old && moveDraft != nil {
+			moveDraft(old)
 		}
 		if onFrom != nil {
 			onFrom()
@@ -83,15 +98,20 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		widget.NewFormItem("Subject", subject),
 	)
 
+	bar := newAttachBar(u, w, draft.Attachments, func() int { return len(body.HTML()) }, body)
+	attach := iconButton("clip", "Attach files", bar.pick)
+	setDropHandler(w, bar.drop)
+	w.Canvas().AddShortcut(cmd(fyne.KeyA, true), func(fyne.Shortcut) { bar.pick() })
+
 	send := widget.NewButtonWithIcon("Send", icon("send", fgOnPrimary), nil)
 	send.Importance = widget.HighImportance
 	// Autosave: every draftInterval, save to local Drafts only if content changed.
 	draftID := draft.DraftID // set when reopening a saved draft
-	var closed atomic.Bool // set on close; read by autosave callbacks
+	var closed atomic.Bool   // set on close; read by autosave callbacks
 	current := func() desktop.OutboundMsg {
 		return desktop.OutboundMsg{
 			AccountID: accountID, To: to.Text, Cc: cc.Text, Bcc: bcc.Text,
-			Subject: subject.Text, Body: body.HTML(), InReplyTo: draft.InReplyTo, ThreadID: draft.ThreadID,
+			Subject: subject.Text, Body: body.HTML(), InReplyTo: draft.InReplyTo, References: draft.References, ThreadID: draft.ThreadID, Attachments: slices.Clone(bar.atts),
 		}
 	}
 	lastSaved := current()
@@ -103,7 +123,7 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 				if closed.Load() || acc != accountID {
 					return
 				}
-				unchanged := current() == lastSaved
+				unchanged := current().Equal(lastSaved)
 				if body.replaceSignature(sig, s, quoteTail) {
 					sig = s
 					if unchanged { // inserting the signature is not a user edit
@@ -114,47 +134,59 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}
 		onFrom()
 	}
+	// Saves and discards run in call order off the UI goroutine, and draftID is
+	// only touched there, so a slow save can never be followed by a second
+	// "first" save (duplicate draft) or by a discard that misses it.
+	saveDraft := func(msg desktop.OutboundMsg) {
+		prev := lastSaved
+		lastSaved = msg
+		var err error
+		u.bgOrdered(func() {
+			var id string
+			if id, err = u.be.SaveDraft(draftID, msg); err == nil {
+				draftID = id
+			}
+		}, func() {
+			if err != nil {
+				lastSaved = prev // retry next tick
+			}
+		})
+	}
+	discardDraft := func(acc string) {
+		u.bgOrdered(func() {
+			if draftID != "" {
+				_ = u.be.DiscardDraft(acc, draftID)
+				draftID = ""
+			}
+		}, nil)
+	}
+	moveDraft = discardDraft // the draft is keyed by account: changing From starts a new one
 	stop := make(chan struct{})
-	interval := draftInterval // read before the goroutine starts
+	ticks, stopTicker := newDraftTicker(draftInterval) // read before the goroutine starts
 	go func() {
-		t := time.NewTicker(interval)
-		defer t.Stop()
+		defer stopTicker()
 		for {
 			select {
 			case <-stop:
 				return
-			case <-t.C:
+			case <-ticks:
 				fyne.Do(func() {
-					msg := current()
-					if closed.Load() || msg == lastSaved {
-						return
+					if msg := current(); !closed.Load() && !msg.Equal(lastSaved) {
+						saveDraft(msg)
 					}
-					prev := lastSaved
-					lastSaved = msg
-					var id string
-					var err error
-					u.bg(func() { id, err = u.be.SaveDraft(draftID, msg) }, func() {
-						if err != nil {
-							lastSaved = prev // retry next tick
-							return
-						}
-						draftID = id
-						if closed.Load() { // closed/sent while the save was in flight
-							u.bg(func() { _ = u.be.DiscardDraft(msg.AccountID, id) }, nil)
-						}
-					})
 				})
 			}
 		}
 	}()
-	finish := func(discardDraft bool) {
+	finish := func(discardIt bool) {
 		if closed.Swap(true) {
 			return
 		}
 		close(stop)
-		if discardDraft && draftID != "" {
-			id, acc := draftID, accountID
-			u.bg(func() { _ = u.be.DiscardDraft(acc, id) }, nil)
+		if discardIt {
+			discardDraft(accountID)
+		} else if msg := current(); !msg.Equal(lastSaved) {
+			saveDraft(msg) // closing must not lose edits made since the last tick
 		}
 	}
 	w.SetOnClosed(func() { finish(false) })
@@ -167,21 +199,31 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		}, w)
 	})
 	send.OnTapped = func() {
-		if strings.TrimSpace(to.Text) == "" {
+		if strings.TrimSpace(to.Text+cc.Text+bcc.Text) == "" {
 			u.showErrorIn(w, errNoRecipient)
 			return
 		}
 		msg := current()
 		send.Disable()
+		discard.Disable() // a send in flight cannot be taken back
 		var err error
 		u.bg(func() { err = u.be.SendMessage(msg) }, func() {
 			if err != nil {
 				send.Enable()
+				discard.Enable()
+				if closed.Load() { // window closed mid-send: its edits were kept as a draft
+					u.showError(fmt.Errorf("%w (the message was kept in Drafts)", err))
+					return
+				}
 				u.showErrorIn(w, err)
 				return
 			}
-			finish(true) // sent mail must not leave a stale draft
-			w.Close()
+			if closed.Load() {
+				discardDraft(msg.AccountID) // sent mail must not leave a stale draft
+			} else {
+				finish(true)
+				w.Close()
+			}
 			u.app.SendNotification(fyne.NewNotification("mailrat", "Message sent"))
 		})
 	}
@@ -194,7 +236,11 @@ func (u *UI) compose(draft desktop.OutboundMsg) {
 		})
 	}
 	buttons := container.NewHBox(discard, widget.NewLabel(""), send)
-	w.SetContent(container.NewBorder(container.NewVBox(container.NewPadded(form), rcpt.box), container.NewPadded(container.NewBorder(nil, nil, nil, buttons)), nil, nil, container.NewPadded(editor)))
+	// Border layout, but with the body listed before the buttons: Fyne tabs in
+	// object order, so this gives To, Cc, Bcc, Subject, body, attach, Discard, Send.
+	top := container.NewVBox(container.NewPadded(form), rcpt.box)
+	bottom := container.NewVBox(container.NewPadded(bar.root), container.NewPadded(container.NewBorder(nil, nil, attach, buttons)))
+	w.SetContent(container.New(layout.NewBorderLayout(top, bottom, nil, nil), top, container.NewPadded(editor), bottom))
 	w.Show()
 	if draft.To == "" {
 		w.Canvas().Focus(to)
@@ -216,11 +262,26 @@ func (u *UI) defaultAccountID() string {
 // splitRecipient splits a comma-separated address field into the finished head
 // (kept verbatim) and the address token being typed.
 func splitRecipient(text string) (head, token string) {
-	i := strings.LastIndex(text, ",")
-	if i < 0 {
+	last, quoted, angle := -1, false, false
+	for i := 0; i < len(text); i++ {
+		switch c := text[i]; {
+		case c == '\\' && quoted:
+			i++
+		case c == '"':
+			quoted = !quoted
+		case quoted:
+		case c == '<':
+			angle = true
+		case c == '>':
+			angle = false
+		case c == ',' && !angle:
+			last = i
+		}
+	}
+	if last < 0 {
 		return "", strings.TrimSpace(text)
 	}
-	return text[:i+1] + " ", strings.TrimSpace(text[i+1:])
+	return text[:last+1] + " ", strings.TrimSpace(text[last+1:])
 }
 
 // recipientEntry is a text entry that suggests contacts for the address being typed.
@@ -230,7 +291,7 @@ func (u *UI) recipientEntry(host *suggestHost, account func() string, name strin
 	e.SetPlaceHolder(name)
 	sg.pick = func(c desktop.ContactItem) {
 		head, _ := splitRecipient(e.Text)
-		e.SetText(head + contactLabel(c) + ", ")
+		e.SetText(head + contactInsert(c) + ", ")
 		e.CursorColumn = len([]rune(e.Text))
 		e.Refresh()
 	}
@@ -251,4 +312,19 @@ func (u *UI) recipientEntry(host *suggestHost, account func() string, name strin
 		})
 	}
 	return e
+}
+
+// ownAddrs lists the user's own addresses: every account plus its send-as aliases.
+func (u *UI) ownAddrs() []string {
+	var out []string
+	al, _ := u.be.(interface {
+		Aliases(accountID string) []string
+	})
+	for _, a := range u.accounts {
+		out = append(out, a.Email)
+		if al != nil {
+			out = append(out, al.Aliases(a.ID)...)
+		}
+	}
+	return out
 }

@@ -63,3 +63,29 @@ func TestExtractBodyUnpaddedBase64(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestExtractBodyUTF8MislabelledAsLatin1(t *testing.T) {
+	// UTF-8 en dash under a windows-1252 header must not become "â€“".
+	for _, ct := range []string{"text/html; charset=windows-1252", "text/html; charset=ISO-8859-1", "text/html; charset=us-ascii"} {
+		msg := part("text/html", ct, []byte("<p>Coimbatore – 641 035</p>"))
+		if got := extractBody(msg); got != "<p>Coimbatore – 641 035</p>" {
+			t.Errorf("%s: got %q", ct, got)
+		}
+	}
+}
+
+func TestExtractBodyMetaCharset(t *testing.T) {
+	// No charset in the header: the HTML meta declaration decides.
+	msg := part("text/html", "text/html", []byte(`<meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><p>caf`+"\xe9 \x96 x</p>"))
+	want := `<meta http-equiv="Content-Type" content="text/html; charset=windows-1252"><p>café – x</p>`
+	if got := extractBody(msg); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestExtractBodyUTF16(t *testing.T) {
+	msg := part("text/plain", "text/plain; charset=utf-16le", []byte("h\x00i\x00 \x00\x13\x20"))
+	if got := extractBody(msg); got != "hi –" {
+		t.Fatalf("got %q", got)
+	}
+}

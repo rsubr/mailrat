@@ -3,7 +3,6 @@ package ui
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -114,9 +113,7 @@ func closeComposeWindows(t *testing.T, u *UI) {
 }
 
 func TestComposeReplyInsertsSignatureAboveQuote(t *testing.T) {
-	old := draftInterval
-	draftInterval = 20 * time.Millisecond
-	t.Cleanup(func() { draftInterval = old })
+	tick := compflowTicks(t)
 	u, fb, _ := testUI(t)
 	fb.sig = "<p>Best, Me</p>"
 	u.accounts = []desktop.AccountItem{{ID: "a1", Email: "a@x.com"}}
@@ -127,15 +124,16 @@ func TestComposeReplyInsertsSignatureAboveQuote(t *testing.T) {
 	if !strings.HasPrefix(got, "\n-- \nBest, Me\n") || strings.Index(got, "Best") > strings.Index(got, "original") {
 		t.Fatalf("document: %q", got)
 	}
-	if !strings.Contains(ed.HTML(), "<p>--\u00a0</p>") {
+	if !strings.Contains(ed.HTML(), "<p>-- </p>") {
 		t.Fatalf("separator lost in HTML: %q", ed.HTML())
 	}
 	if ed.ed.caret != (wyPos{}) {
 		t.Fatalf("caret not at top: %+v", ed.ed.caret)
 	}
-	time.Sleep(150 * time.Millisecond)
-	if len(fb.drafts) != 0 {
-		t.Fatalf("signature insertion triggered %d autosaves", len(fb.drafts))
+	tick()
+	tick()
+	if n := fb.draftCount(); n != 0 {
+		t.Fatalf("signature insertion triggered %d autosaves", n)
 	}
 }
 
@@ -154,9 +152,7 @@ func TestComposeNewWithoutSignatureAndLegacyDraft(t *testing.T) {
 }
 
 func TestEditDraftOpensPrefilledAndUpdatesSameDraft(t *testing.T) {
-	old := draftInterval
-	draftInterval = 20 * time.Millisecond
-	t.Cleanup(func() { draftInterval = old })
+	tick := compflowTicks(t)
 	u, fb, _ := testUI(t)
 	fb.sig = "<p>SIG</p>"
 	closeComposeWindows(t, u)
@@ -173,12 +169,11 @@ func TestEditDraftOpensPrefilledAndUpdatesSameDraft(t *testing.T) {
 		t.Fatalf("body %q", got)
 	}
 	ed.SetHTML("<p>edited</p>")
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) && len(fb.savedIDs) == 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if len(fb.savedIDs) == 0 || fb.savedIDs[0] != "local-7" || fb.drafts[0].InReplyTo != "<irt@y>" {
-		t.Fatalf("autosave ids %v drafts %+v", fb.savedIDs, fb.drafts)
+	tick()
+	compflowUntil(t, "autosave", func() bool { return fb.draftCount() > 0 })
+	drafts, ids := fb.savedDrafts()
+	if len(ids) == 0 || ids[0] != "local-7" || drafts[0].InReplyTo != "<irt@y>" {
+		t.Fatalf("autosave ids %v drafts %+v", ids, drafts)
 	}
 }
 

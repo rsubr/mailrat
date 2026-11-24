@@ -20,6 +20,7 @@ var iconPaths = map[string]string{
 	"spam":        `<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.2v.3"/>`,
 	"trash":       `<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>`,
 	"important":   `<path d="M4 5h11l5 7-5 7H4z"/>`,
+	"starfill":    `<path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9l-5.2 2.8 1-5.9L3.5 9.7l5.9-.8z" fill="currentColor"/>`,
 	"tag":         `<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1"/>`,
 	"unread":      `<rect x="3" y="6" width="16" height="13" rx="2"/><path d="M3.5 7.5L11 13l7.5-5.5"/><circle cx="20" cy="5" r="2.2" fill="currentColor"/>`,
 	"reply":       `<path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 0 1 6 6v1"/>`,

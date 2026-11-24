@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
+	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -14,7 +15,8 @@ import (
 
 const (
 	manualAuthTimeout   = 10
-	callbackSuccessPage = `<html><body style="font-family:sans-serif;padding:2em"><h2>✓ Authentication successful</h2><p>You can close this tab and return to the terminal.</p></body></html>`
+	exchangeTimeout     = 30 * time.Second
+	callbackSuccessPage = `<html><body style="font-family:sans-serif;padding:2em"><h2>✓ Authentication successful</h2><p>You can close this tab and return to mailrat.</p></body></html>`
 )
 
 var scopes = []string{
@@ -62,8 +64,10 @@ func oauthConfig(credentials []byte) (*oauth2.Config, error) {
 	return cfg, nil
 }
 
-func exchangeCode(cfg *oauth2.Config, code string) (*oauth2.Token, error) {
-	token, err := cfg.Exchange(oauthContext(), code)
+func exchangeCode(ctx context.Context, cfg *oauth2.Config, code string) (*oauth2.Token, error) {
+	ctx, cancel := context.WithTimeout(ctx, exchangeTimeout)
+	defer cancel()
+	token, err := cfg.Exchange(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}

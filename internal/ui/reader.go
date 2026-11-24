@@ -17,17 +17,23 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
+	"github.com/mailrat/mailrat/internal/richclip"
 )
 
 func (u *UI) refreshReader() {
 	if u.reader == nil {
 		return
 	}
+	prev := u.convScroll
 	u.reader.Objects = []fyne.CanvasObject{u.buildReader()}
+	if prev != nil && u.convScroll != nil { // rebuilt in place (expand, images): stay where the user was
+		u.convScroll.Offset = prev.Offset
+	}
 	u.reader.Refresh()
 }
 
 func (u *UI) buildReader() fyne.CanvasObject {
+	u.convScroll = nil
 	return container.NewBorder(u.toolbar(), nil, nil, nil, u.conversation())
 }
 
@@ -47,7 +53,11 @@ func (u *UI) toolbar() fyne.CanvasObject {
 		btn("unread", "Mark unread", u.markUnread),
 		gap(),
 		btn("spam", "Spam", u.spam),
+		gap(),
+		u.starButton(),
+		btn("tag", "Labels", u.labelPicker),
 	)
+	buttons = append(buttons, u.starBtn)
 	if u.selected == nil {
 		for _, b := range buttons {
 			b.Disable()
@@ -61,8 +71,10 @@ func (u *UI) toolbar() fyne.CanvasObject {
 			u.runSearch("")
 		}
 	}
-	field := container.New(layout.NewGridWrapLayout(fyne.NewSize(250, u.search.MinSize().Height)), u.search)
-	return container.NewVBox(container.NewPadded(container.NewBorder(nil, nil, btns, field)), hline())
+	toggle := u.mailToggle() // the mail-view light/dark switch is right-most; it takes its width from the field so the pane's minimum width is unchanged
+	field := container.New(layout.NewGridWrapLayout(fyne.NewSize(250-toggle.MinSize().Width-theme.Padding(), u.search.MinSize().Height)), u.search)
+	right := container.NewHBox(field, toggle)
+	return container.NewVBox(container.NewPadded(container.NewBorder(nil, nil, btns, right)), hline())
 }
 
 func (u *UI) conversation() fyne.CanvasObject {
@@ -250,7 +262,7 @@ func (u *UI) messageCard(m desktop.MessageItem, last, cursor bool) fyne.CanvasOb
 		Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: true}, ColorName: theme.ColorNameForeground, SizeName: theme.SizeNameSubHeadingText, Inline: true},
 	})
 	nameL.Truncation = fyne.TextTruncateEllipsis
-	when := widget.NewLabel(formatMessageDate(m.Date, time.Now()))
+	when := widget.NewLabel(formatMessageDate(m.Date, now()))
 	when.Importance = widget.LowImportance
 
 	var sub fyne.CanvasObject
@@ -266,7 +278,7 @@ func (u *UI) messageCard(m desktop.MessageItem, last, cursor bool) fyne.CanvasOb
 	}
 	var right fyne.CanvasObject = when
 	if open {
-		reply := iconButton("reply", "Reply", func() { u.compose(replyDraft(m, false)) })
+		reply := iconButton("reply", "Reply", func() { u.compose(replyDraft(m, false, u.ownAddrs()...)) })
 		right = container.NewHBox(when, reply)
 	}
 	header := container.NewBorder(nil, nil, container.NewVBox(avatar(initials(name), 40, avatarColor(m.FromAddr))), nil,
@@ -305,12 +317,15 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 	if strings.TrimSpace(htmlToText(src)) == "" {
 		src = m.Snippet
 	}
-	res := renderMail(src, renderOpts{bg: col(theme.ColorNameBackground), fg: fg(), images: u.images[m.ID]})
-	body := widget.NewRichText(res.segments...)
-	body.Wrapping = fyne.TextWrapWord
+	th := newMailTheme(u.mailLight())
+	text := th.Color(theme.ColorNameForeground, theme.VariantLight)
+	res := mailRender(src, th, u.images[m.ID])
+	body := u.newBody(res.segments)
+	body.th = th
+	body.setBands(res.bands)
 	items := []fyne.CanvasObject{}
 	if res.blocked > 0 {
-		load := widget.NewButtonWithIcon(fmt.Sprintf("Load %d remote image(s)", res.blocked), icon("image", fg()), func() {
+		load := widget.NewButtonWithIcon(fmt.Sprintf("Load %d remote image(s)", res.blocked), icon("image", text), func() {
 			u.images[m.ID] = true
 			u.refreshReader()
 		})
@@ -335,11 +350,35 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 		var cards []fyne.CanvasObject
 		for _, a := range m.Attachments {
 			a := a
-			cards = append(cards, u.attachmentCard(a, func() { u.openAttachment(m, a) }, func(p fyne.Position) { u.attachmentMenu(m, a, p) }))
+			cards = append(cards, u.attachmentCard(a, th, func() { u.openAttachment(m, a) }, func(p fyne.Position) { u.attachmentMenu(m, a, p) }))
 		}
 		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(cards...)))
 	}
-	return container.NewVBox(items...)
+	return mailSurface(th, container.NewVBox(items...))
+}
+
+// richClipboard writes HTML + plain text copies; tests swap in a fake.
+var richClipboard richclip.Clipboard = richclip.System()
+
+// selOwner is the body holding the current text selection; starting another clears it.
+var selOwner *selBody
+
+// newBody is a selectable message body whose copies carry text/html and text/plain.
+func (u *UI) newBody(segs []widget.RichTextSegment) *selBody {
+	b := newSelBody(segs)
+	b.copyFn = func(h, t string) {
+		if err := richClipboard.Set(h, t); err != nil {
+			u.app.Clipboard().SetContent(t) // no rich clipboard on this platform
+		}
+	}
+	b.active = func(n *selBody) {
+		if selOwner != nil && selOwner != n {
+			selOwner.setSel(0, 0)
+		}
+		selOwner = n
+	}
+	b.key, b.rune = u.typedKey, u.typedRune
+	return b
 }
 
 // attachmentIcon picks the card icon: image for pictures, a document otherwise.
@@ -351,18 +390,18 @@ func attachmentIcon(a desktop.AttachmentItem) string {
 }
 
 // attachmentCard is Gmail's bordered tile: icon, filename and size; tap opens, right-click saves.
-func (u *UI) attachmentCard(a desktop.AttachmentItem, onTap func(), onMenu func(fyne.Position)) fyne.CanvasObject {
+func (u *UI) attachmentCard(a desktop.AttachmentItem, th mailTheme, onTap func(), onMenu func(fyne.Position)) fyne.CanvasObject {
 	name := widget.NewLabel(a.Name)
 	name.Truncation = fyne.TextTruncateEllipsis
 	size := widget.NewLabel(humanSize(a.Size))
 	size.Importance = widget.LowImportance
-	ic := widget.NewIcon(icon(attachmentIcon(a), fg()))
+	ic := widget.NewIcon(icon(attachmentIcon(a), th.Color(theme.ColorNameForeground, theme.VariantLight)))
 	text := container.NewVBox(name, size)
 	inner := container.NewBorder(nil, nil, container.NewCenter(ic), nil, text)
 	border := canvas.NewRectangle(color.Transparent)
 	border.CornerRadius = 8
 	border.StrokeWidth = 1
-	border.StrokeColor = col(theme.ColorNameSeparator)
+	border.StrokeColor = th.Color(theme.ColorNameSeparator, theme.VariantLight)
 	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(2, 2, 8, 8), inner), false, onTap)
 	tap.onSecondary = onMenu
 	return container.NewGridWrap(fyne.NewSize(220, 58), container.NewStack(border, tap))
@@ -399,6 +438,7 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 		u.readTimer.Stop()
 	}
 	u.selected = &t
+	u.convScroll = nil // a different conversation starts at the top
 	u.messages = nil
 	u.msgCursor = 0
 	u.collapsed = map[string]bool{}
@@ -432,6 +472,8 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 		}
 		u.threadLoading = false
 		if err != nil {
+			u.selected = nil // so clicking the row again retries
+			u.list.UnselectAll()
 			u.refreshReader()
 			u.showError(err)
 			return
@@ -455,13 +497,21 @@ func (u *UI) markRead() {
 	}
 	t := *u.selected
 	msgs := append([]desktop.MessageItem(nil), u.messages...)
+	var first error
 	u.bg(func() {
 		for _, m := range msgs {
 			if m.IsUnread {
-				_ = u.be.MarkMessageRead(m.AccountID, m.ID)
+				if err := u.be.MarkMessageRead(m.AccountID, m.ID); err != nil && first == nil {
+					first = err
+				}
 			}
 		}
 	}, func() {
+		if first != nil { // the thread is still unread on the server: do not show it read
+			u.noteErr("could not mark as read", first)
+			u.refreshSidebar()
+			return
+		}
 		if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
 			for i := range u.messages {
 				u.messages[i].IsUnread = false

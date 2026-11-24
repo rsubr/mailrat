@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -33,7 +34,6 @@ func (u *UI) openSettings() {
 	if u.settingsWin != nil {
 		u.settingsWin.Show()
 		u.settingsWin.RequestFocus()
-		u.settingsWin.SetContent(u.buildSettings())
 		return
 	}
 	w := u.app.NewWindow("Settings")
@@ -51,6 +51,15 @@ func (u *UI) buildSettings() fyne.CanvasObject {
 		container.NewTabItem("Labels", u.labelsTab()),
 		container.NewTabItem("General", u.generalTab()),
 	)
+	if u.settingsWin != nil { // a rebuild must not bounce the user back to the first tab
+		if old := u.settingsWin.Content(); old != nil {
+			if p, ok := old.(*fyne.Container); ok && len(p.Objects) == 1 {
+				if prev, ok := p.Objects[0].(*container.AppTabs); ok {
+					tabs.SelectIndex(prev.SelectedIndex())
+				}
+			}
+		}
+	}
 	return container.NewPadded(tabs)
 }
 
@@ -68,24 +77,25 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 			var err error
 			u.bgOrdered(func() { err = u.be.SetAccountSettings(s) }, func() {
 				if err != nil {
-					u.showError(err)
+					u.showErrorIn(u.settingsWin, err)
 				}
 			})
 		}
 		period.OnChanged = func(string) { save() }
-		nameEntry := widget.NewEntry()
+		nameEntry := newEscEntry(u.settingsWin.Close)
 		nameEntry.SetPlaceHolder("Display name")
 		nameEntry.SetText(a.DisplayName)
 		rename := widget.NewButton("Rename", func() {
 			var err error
 			u.bgOrdered(func() { err = u.be.RenameAccount(a.ID, nameEntry.Text) }, func() {
 				if err != nil {
-					u.showError(err)
+					u.showErrorIn(u.settingsWin, err)
 					return
 				}
 				u.reloadAccounts()
 			})
 		})
+		nameEntry.OnSubmitted = func(string) { rename.OnTapped() }
 		remove := widget.NewButton("Remove", func() {
 			dialog.ShowConfirm("Remove account", "Delete "+a.Email+" and all its local mail?", func(ok bool) {
 				if !ok {
@@ -94,7 +104,7 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 				var err error
 				u.bgOrdered(func() { err = u.be.RemoveAccount(a.ID) }, func() {
 					if err != nil {
-						u.showError(err)
+						u.showErrorIn(u.settingsWin, err)
 						return
 					}
 					if u.activeAccount == a.ID {
@@ -111,9 +121,11 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 					return
 				}
 				if err := u.be.RefetchAccount(a.ID); err != nil {
-					u.showError(err)
+					u.showErrorIn(u.settingsWin, err)
 					return
 				}
+				// The reset runs in the background; say so, and the modal also stops a second click.
+				dialog.ShowInformation("Refetching", "Downloading all mail for "+a.Email+" again. This can take a while; progress shows in the sidebar.", u.settingsWin)
 				u.reloadAll()
 			}, u.settingsWin)
 		})
@@ -126,7 +138,7 @@ func (u *UI) accountsTab() fyne.CanvasObject {
 				widget.NewFormItem("Name", container.NewBorder(nil, nil, nil, rename, nameEntry)),
 				widget.NewFormItem("Sync mail from", period),
 			),
-			container.NewHBox(layout.NewSpacer(), refetch, remove),
+			container.NewHBox(layout.NewSpacer(), refetch, spacer(16, 0), remove),
 		))
 		rows.Add(card)
 	}
@@ -171,7 +183,7 @@ func (u *UI) generalTab() fyne.CanvasObject {
 		var err error
 		u.bgOrdered(func() { err = u.be.SetGlobalSettings(out) }, func() {
 			if err != nil {
-				u.showError(err)
+				u.showErrorIn(u.settingsWin, err)
 			}
 		})
 	}
@@ -182,6 +194,9 @@ func (u *UI) generalTab() fyne.CanvasObject {
 		widget.NewFormItem("Send new mail from", acct),
 	))
 }
+
+// scopeSaveDelay is how long a typed sync value rests before it is saved.
+var scopeSaveDelay = 700 * time.Millisecond
 
 var (
 	scopeModes = []string{"Everything", "Last N days", "Last N emails"}
@@ -225,8 +240,11 @@ func (u *UI) labelScopeList(accountID string) fyne.CanvasObject {
 		it := it
 		mode := widget.NewSelect(scopeModes, nil)
 		mode.SetSelectedIndex(indexOf(scopeCodes, it.Mode))
-		val := widget.NewEntry()
-		val.SetText(strconv.Itoa(max(it.Value, 30)))
+		val := newEscEntry(u.settingsWin.Close)
+		if it.Value < 1 {
+			it.Value = 30 // suggested starting point when switching from Everything
+		}
+		val.SetText(strconv.Itoa(it.Value))
 		val.Validator = func(s string) error {
 			if n, err := strconv.Atoi(s); err != nil || n < 1 {
 				return fmt.Errorf("enter a number of 1 or more")
@@ -255,14 +273,36 @@ func (u *UI) labelScopeList(accountID string) fyne.CanvasObject {
 			var saveErr error
 			u.bgOrdered(func() { saveErr = u.be.SetSyncConfig(accountID, item) }, func() {
 				if saveErr != nil {
-					u.showError(saveErr)
+					u.showErrorIn(u.settingsWin, saveErr)
 				}
 			})
 		}
-		mode.OnChanged = func(string) { refresh(); save() }
-		val.OnChanged = func(string) { save() }
+		// Typing a number saves once it stops, not on every keystroke: each save
+		// restarts a sync and half-typed values would be persisted.
+		var pending *time.Timer
+		mode.OnChanged = func(string) {
+			if pending != nil {
+				pending.Stop()
+			}
+			refresh()
+			save()
+		}
+		val.OnChanged = func(string) {
+			if pending != nil {
+				pending.Stop()
+			}
+			if scopeSaveDelay <= 0 {
+				save()
+				return
+			}
+			pending = time.AfterFunc(scopeSaveDelay, func() { fyne.Do(save) })
+		}
 		refresh()
-		rows.Add(container.NewBorder(nil, nil, nil, container.NewHBox(mode, valBox), widget.NewLabel(it.LabelName)))
+		label := it.LabelName
+		if n, ok := fallbackNames[it.LabelID]; ok {
+			label = n
+		}
+		rows.Add(container.NewBorder(nil, nil, nil, container.NewHBox(mode, valBox), widget.NewLabel(label)))
 	}
-	return container.NewVScroll(rows)
+	return container.NewVScroll(container.NewPadded(rows))
 }

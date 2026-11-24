@@ -50,9 +50,12 @@ func colourOf(t *testing.T, name string) color.Color {
 func TestDarkModeFixesBlackText(t *testing.T) {
 	src := `<html><body style="background:#fff"><p style="color:#000000">Black text</p><p><font color="#111">dim</font></p><p style="color:#336699">Blue ok?</p></body></html>`
 	res := renderMail(src, renderOpts{bg: darkBG, fg: darkFG})
+	if len(res.bands) != 1 { // the white body is painted, so text only has to read on white
+		t.Fatalf("bands %v, want the white body", res.bands)
+	}
 	for _, p := range texts(res) {
-		if c := contrast(colourOf(t, p[1]), darkBG); c < minContrast {
-			t.Errorf("%q: contrast %.2f on dark bg (colour %s)", p[0], c, p[1])
+		if c := contrast(colourOf(t, p[1]), res.bands[0].col); c < minContrast {
+			t.Errorf("%q: contrast %.2f on the white band (colour %s)", p[0], c, p[1])
 		}
 	}
 }

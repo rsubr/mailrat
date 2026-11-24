@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/net/html/charset"
 	gmailv1 "google.golang.org/api/gmail/v1"
@@ -31,6 +32,9 @@ const (
 	headerCC        = "Cc"
 	headerBCC       = "Bcc"
 	headerMessageID = "Message-ID"
+	headerReplyTo   = "Reply-To"
+	headerRefs      = "References"
+	headerInReplyTo = "In-Reply-To"
 
 	retryTooManyRequests = "429"
 	retryInternalError   = "500"
@@ -128,7 +132,7 @@ func (c *Client) GetMessageMeta(ctx context.Context, id string) (MessageMeta, er
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Get("me", id).
 			Format("metadata").
-			MetadataHeaders(headerSubject, headerFrom, headerTo, headerCC, headerBCC, headerMessageID).
+			MetadataHeaders(headerSubject, headerFrom, headerTo, headerCC, headerBCC, headerMessageID, headerReplyTo, headerRefs, headerInReplyTo).
 			Context(ctx).Do()
 	})
 	if err != nil {
@@ -284,12 +288,15 @@ func (c *Client) TrashThread(ctx context.Context, threadID string) error {
 
 // SendMessage sends a raw RFC 2822 message (base64url encoded).
 // threadID is optional; when non-empty it tells Gmail which thread to attach the message to.
+// Messages over mediaThreshold are sent through the media upload endpoint.
 func (c *Client) SendMessage(ctx context.Context, rawBase64, threadID string) (string, error) {
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
-		return c.svc.Users.Messages.Send("me", &gmailv1.Message{
-			Raw:      rawBase64,
-			ThreadId: threadID,
-		}).Context(ctx).Do()
+		m := &gmailv1.Message{Raw: rawBase64, ThreadId: threadID}
+		call := c.svc.Users.Messages.Send("me", m).Context(ctx)
+		if r := mediaBody(m); r != nil {
+			call.Media(r, googleapi.ContentType(rfc822))
+		}
+		return call.Do()
 	})
 	if err != nil {
 		return "", fmt.Errorf("send message: %w", err)
@@ -300,9 +307,12 @@ func (c *Client) SendMessage(ctx context.Context, rawBase64, threadID string) (s
 // CreateDraft creates a draft and returns its ID.
 func (c *Client) CreateDraft(ctx context.Context, rawBase64 string) (string, error) {
 	draft, err := withRetry(ctx, func() (*gmailv1.Draft, error) {
-		return c.svc.Users.Drafts.Create("me", &gmailv1.Draft{
-			Message: &gmailv1.Message{Raw: rawBase64},
-		}).Context(ctx).Do()
+		d := &gmailv1.Draft{Message: &gmailv1.Message{Raw: rawBase64}}
+		call := c.svc.Users.Drafts.Create("me", d).Context(ctx)
+		if r := mediaBody(d.Message); r != nil {
+			call.Media(r, googleapi.ContentType(rfc822))
+		}
+		return call.Do()
 	})
 	if err != nil {
 		return "", fmt.Errorf("create draft: %w", err)
@@ -311,15 +321,15 @@ func (c *Client) CreateDraft(ctx context.Context, rawBase64 string) (string, err
 }
 
 // FindDraft returns the Gmail draft ID behind a draft message, plus the
-// message's In-Reply-To header.
-func (c *Client) FindDraft(ctx context.Context, messageID string) (draftID, inReplyTo string, err error) {
+// message's In-Reply-To and References headers.
+func (c *Client) FindDraft(ctx context.Context, messageID string) (draftID, inReplyTo, references string, err error) {
 	page := ""
 	for draftID == "" {
 		resp, e := withRetry(ctx, func() (*gmailv1.ListDraftsResponse, error) {
 			return c.svc.Users.Drafts.List("me").PageToken(page).Context(ctx).Do()
 		})
 		if e != nil {
-			return "", "", fmt.Errorf("list drafts: %w", e)
+			return "", "", "", fmt.Errorf("list drafts: %w", e)
 		}
 		draftID = matchDraft(resp.Drafts, messageID)
 		if page = resp.NextPageToken; page == "" {
@@ -327,16 +337,16 @@ func (c *Client) FindDraft(ctx context.Context, messageID string) (draftID, inRe
 		}
 	}
 	if draftID == "" {
-		return "", "", fmt.Errorf("no draft for message %s", messageID)
+		return "", "", "", fmt.Errorf("no draft for message %s", messageID)
 	}
 	msg, err := withRetry(ctx, func() (*gmailv1.Message, error) {
 		return c.svc.Users.Messages.Get("me", messageID).Format("metadata").
-			MetadataHeaders("In-Reply-To").Context(ctx).Do()
+			MetadataHeaders(headerInReplyTo, headerRefs).Context(ctx).Do()
 	})
 	if err != nil {
-		return "", "", fmt.Errorf("get draft message %s: %w", messageID, err)
+		return "", "", "", fmt.Errorf("get draft message %s: %w", messageID, err)
 	}
-	return draftID, headerValue(msg, "In-Reply-To"), nil
+	return draftID, headerValue(msg, headerInReplyTo), firstValue("", headerValue(msg, headerRefs)), nil
 }
 
 func matchDraft(drafts []*gmailv1.Draft, messageID string) string {
@@ -351,7 +361,7 @@ func matchDraft(drafts []*gmailv1.Draft, messageID string) string {
 func headerValue(m *gmailv1.Message, name string) string {
 	if m.Payload != nil {
 		for _, h := range m.Payload.Headers {
-			if h.Name == name {
+			if strings.EqualFold(h.Name, name) {
 				return h.Value
 			}
 		}
@@ -362,9 +372,12 @@ func headerValue(m *gmailv1.Message, name string) string {
 // UpdateDraft updates an existing draft.
 func (c *Client) UpdateDraft(ctx context.Context, draftID, rawBase64 string) error {
 	_, err := withRetry(ctx, func() (*gmailv1.Draft, error) {
-		return c.svc.Users.Drafts.Update("me", draftID, &gmailv1.Draft{
-			Message: &gmailv1.Message{Raw: rawBase64},
-		}).Context(ctx).Do()
+		d := &gmailv1.Draft{Message: &gmailv1.Message{Raw: rawBase64}}
+		call := c.svc.Users.Drafts.Update("me", draftID, d).Context(ctx)
+		if r := mediaBody(d.Message); r != nil {
+			call.Media(r, googleapi.ContentType(rfc822))
+		}
+		return call.Do()
 	})
 	if err != nil {
 		return fmt.Errorf("update draft %s: %w", draftID, err)
@@ -473,6 +486,27 @@ func (c *Client) GetProfile(ctx context.Context) (uint64, error) {
 	return uint64(profile.HistoryId), nil
 }
 
+// mediaThreshold is the encoded size above which a message is uploaded as
+// message/rfc822 media (multipart, or resumable in chunks) instead of as a
+// base64 JSON field, which Gmail only accepts for small requests.
+const mediaThreshold = 5 << 20
+
+const rfc822 = "message/rfc822"
+
+// mediaBody moves a large message's Raw into an upload body (clearing Raw on m)
+// and returns it, or returns nil when m is small enough to send as JSON.
+func mediaBody(m *gmailv1.Message) io.Reader {
+	if len(m.Raw) <= mediaThreshold {
+		return nil
+	}
+	raw, err := base64.URLEncoding.DecodeString(m.Raw)
+	if err != nil {
+		return nil // let Gmail report the bad encoding
+	}
+	m.Raw = ""
+	return bytes.NewReader(raw)
+}
+
 // EncodeRaw base64url-encodes a raw RFC 2822 message.
 func EncodeRaw(raw string) string {
 	return base64.URLEncoding.EncodeToString([]byte(raw))
@@ -510,10 +544,29 @@ func parseMessageMeta(m *gmailv1.Message) MessageMeta {
 				meta.Bcc = h.Value
 			case headerMessageID:
 				meta.MessageID = h.Value
+			default:
+				// Header names are case-insensitive and Gmail echoes them as sent.
+				// A repeated header keeps its first value.
+				switch {
+				case strings.EqualFold(h.Name, headerReplyTo):
+					meta.ReplyTo = firstValue(meta.ReplyTo, h.Value)
+				case strings.EqualFold(h.Name, headerRefs):
+					meta.References = firstValue(meta.References, h.Value)
+				case strings.EqualFold(h.Name, headerInReplyTo):
+					meta.InReplyTo = firstValue(meta.InReplyTo, h.Value)
+				}
 			}
 		}
 	}
 	return meta
+}
+
+// firstValue keeps cur when set, else the unfolded v.
+func firstValue(cur, v string) string {
+	if cur != "" {
+		return cur
+	}
+	return strings.Join(strings.Fields(v), " ")
 }
 
 func extractBody(payload *gmailv1.MessagePart) string {
@@ -546,30 +599,42 @@ func extractPart(part *gmailv1.MessagePart, mimeType string) string {
 	return ""
 }
 
-// decodePartBody base64url-decodes a part body and converts it from the
-// charset declared in its Content-Type header to UTF-8.
+// decodePartBody base64url-decodes a part body and converts it to UTF-8 using
+// the charset in its Content-Type header, else the HTML meta declaration.
 func decodePartBody(part *gmailv1.MessagePart) (string, bool) {
 	data := strings.TrimRight(part.Body.Data, "=")
 	b, err := base64.RawURLEncoding.DecodeString(data)
 	if err != nil {
 		return "", false
 	}
+	ctype := part.MimeType
 	for _, h := range part.Headers {
-		if !strings.EqualFold(h.Name, "Content-Type") {
-			continue
-		}
-		_, params, err := mime.ParseMediaType(h.Value)
-		if err != nil || params["charset"] == "" {
+		if strings.EqualFold(h.Name, "Content-Type") {
+			ctype = h.Value
 			break
 		}
-		if r, err := charset.NewReaderLabel(params["charset"], bytes.NewReader(b)); err == nil {
-			if conv, err := io.ReadAll(r); err == nil {
-				b = conv
-			}
-		}
-		break
 	}
-	return string(b), true
+	return toUTF8(b, ctype), true
+}
+
+// toUTF8 converts b to UTF-8. Bytes that already are valid UTF-8 are kept
+// whatever the declared legacy charset says: senders routinely label UTF-8 as
+// windows-1252 or us-ascii, and decoding it again yields "â€"" for a dash.
+func toUTF8(b []byte, ctype string) string {
+	label := ""
+	if _, params, err := mime.ParseMediaType(ctype); err == nil {
+		label = strings.ToLower(params["charset"])
+	}
+	wide := strings.HasPrefix(label, "utf-16") || strings.HasPrefix(label, "utf-32")
+	if utf8.Valid(b) && !wide {
+		return string(b)
+	}
+	if r, err := charset.NewReader(bytes.NewReader(b), ctype); err == nil {
+		if conv, err := io.ReadAll(r); err == nil {
+			return string(conv)
+		}
+	}
+	return string(b)
 }
 
 // extractAttachments walks the MIME part tree and returns attachment metadata.

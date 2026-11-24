@@ -151,7 +151,11 @@ func (u *UI) buildMiniSidebar(bg fyne.CanvasObject) fyne.CanvasObject {
 	for _, l := range favs {
 		nav = append(nav, u.miniNavRow(l))
 	}
-	footer := container.NewVBox(hline(), container.NewCenter(iconButton("person", "Contacts", u.openContacts)), container.NewCenter(iconButton("settings", "Settings", u.openSettings)), container.NewCenter(u.darkToggle()), container.NewCenter(u.syncButton()))
+	footer := container.NewVBox(hline(), container.NewCenter(iconButton("person", "Contacts", u.openContacts)), container.NewCenter(iconButton("settings", "Settings", u.openSettings)), container.NewCenter(u.darkToggle()))
+	if u.errCount > 0 { // the Error Log is otherwise unreachable in icon-only mode
+		footer.Add(container.NewCenter(u.errBadge()))
+	}
+	footer.Add(container.NewCenter(u.syncButton()))
 	body := container.NewBorder(head, footer, nil, nil, container.NewVScroll(container.NewVBox(nav...)))
 	return container.NewStack(bg, body)
 }
@@ -277,12 +281,17 @@ func (u *UI) sidebarFooter() fyne.CanvasObject {
 	var items []fyne.CanvasObject
 	items = append(items, iconButton("person", "Contacts", u.openContacts), settings, u.darkToggle(), status, layout.NewSpacer())
 	if u.errCount > 0 {
-		warn := widget.NewButtonWithIcon(strconv.Itoa(u.errCount), icon("warning", color.NRGBA{0xff, 0x9f, 0x0a, 0xff}), u.showErrorLog)
-		warn.Importance = widget.LowImportance
-		items = append(items, warn)
+		items = append(items, u.errBadge())
 	}
 	items = append(items, u.syncButton())
 	return container.NewVBox(hline(), container.NewPadded(container.NewHBox(items...)))
+}
+
+// errBadge is the warning button with the error count; it opens the Error Log.
+func (u *UI) errBadge() fyne.CanvasObject {
+	warn := widget.NewButtonWithIcon(strconv.Itoa(u.errCount), icon("warning", color.NRGBA{0xff, 0x9f, 0x0a, 0xff}), u.showErrorLog)
+	warn.Importance = widget.LowImportance
+	return warn
 }
 
 // darkToggle shows the glyph for the mode a tap switches to.
@@ -291,7 +300,7 @@ func (u *UI) darkToggle() fyne.CanvasObject {
 	if isDark() {
 		glyph = "sun"
 	}
-	return iconButton(glyph, "Toggle dark/light mode", u.toggleDark)
+	return iconButton(glyph, "Toggle app theme", u.toggleDark)
 }
 
 // syncButton is the sync glyph; it spins while a sync is in progress.

@@ -33,6 +33,11 @@ type Wysiwyg struct {
 	shift, ctrl bool
 	dragging    bool
 	width       float32
+	more        *moreButton                    // the "…" toggle that sits between the text and the quote
+	moreY       float32                        // page y of the toggle row, set by layoutLines
+	lcache      map[string][]wyLine            // wrapped lines per paragraph, see wyParaKey
+	ocache      map[string][]fyne.CanvasObject // drawn objects per unselected paragraph, see draw
+	ostamp      [4]any
 }
 
 const (
@@ -41,12 +46,17 @@ const (
 	wyListIndex = 26
 	wyQuoteDent = 16
 	wyParaGap   = 3
+	wyMoreGap   = 4
 )
 
 // NewWysiwyg returns an empty editor; win hosts its link dialog.
 func NewWysiwyg(win fyne.Window) *Wysiwyg {
 	w := &Wysiwyg{win: win, ed: newWyEditor(), pageLay: &wyPageLayout{}}
 	w.page = container.New(w.pageLay)
+	w.more = &moreButton{}
+	w.more.tip, w.more.OnTapped = "Show trimmed content", w.ToggleQuote
+	w.more.Text, w.more.Importance = "…", widget.LowImportance
+	w.more.ExtendBaseWidget(w.more)
 	w.scroll = container.NewVScroll(w.page)
 	w.ExtendBaseWidget(w)
 	return w
@@ -57,6 +67,33 @@ func (w *Wysiwyg) SetHTML(html string) {
 	w.ed.setDoc(parseHTML(html))
 	w.rebuild()
 	w.notifyCursor()
+}
+
+// moreButton is the "…" toggle; unlike a plain Button it also answers Enter.
+type moreButton struct{ tooltipButton }
+
+func (b *moreButton) TypedKey(k *fyne.KeyEvent) {
+	if k.Name == fyne.KeyReturn || k.Name == fyne.KeyEnter {
+		b.Tapped(nil)
+		return
+	}
+	b.tooltipButton.TypedKey(k)
+}
+
+// QuoteCollapsed reports whether a reply/forward quote is present and hidden.
+func (w *Wysiwyg) QuoteCollapsed() bool { return w.ed.collapsed }
+
+// HasQuote reports whether the document holds a foldable quote.
+func (w *Wysiwyg) HasQuote() bool { return w.ed.doc.foldAt() >= 0 }
+
+// ToggleQuote shows or hides the quote. The hidden quote stays in the document, so
+// HTML() always includes it; only caret, selection and copy skip it while hidden.
+func (w *Wysiwyg) ToggleQuote() {
+	if !w.HasQuote() {
+		return
+	}
+	w.ed.setCollapsed(!w.ed.collapsed)
+	w.after(false)
 }
 
 // HTML returns the content as clean, escaped, sanitised HTML.
@@ -77,6 +114,7 @@ type wySeg struct {
 	text string
 	st   wyStyle
 	x, w float32
+	h    float32 // rendered height, so draw need not measure again
 }
 
 type wyLine struct {
@@ -89,6 +127,7 @@ type wyLine struct {
 	marker     string
 	quote      bool
 	last       bool
+	pkey       string // wyParaKey of the paragraph, set by layoutLines
 }
 
 type wyPageLayout struct{ h float32 }
@@ -137,12 +176,93 @@ func pieces(p wyParagraph) []wyPiece {
 	return out
 }
 
+// wyParaKey identifies everything a paragraph's wrapped lines depend on.
+func wyParaKey(p wyParagraph, x0, avail float32) string {
+	b := make([]byte, 0, 32+len(p.Runs)*24)
+	b = strconv.AppendInt(b, int64(p.Kind), 10)
+	b = strconv.AppendFloat(b, float64(x0), 'g', -1, 32)
+	b = append(b, '|')
+	b = strconv.AppendFloat(b, float64(avail), 'g', -1, 32)
+	for _, r := range p.Runs {
+		var f byte
+		for i, on := range []bool{r.Bold, r.Italic, r.Underline, r.Strike} {
+			if on {
+				f |= 1 << i
+			}
+		}
+		b = append(b, 0, f)
+		b = strconv.AppendInt(b, int64(r.Size), 10)
+		for _, f := range []string{r.Color, r.Link, r.Text} { // length-prefixed, so runs cannot blur together
+			b = strconv.AppendInt(append(b, '|'), int64(len(f)), 10)
+			b = append(append(b, ':'), f...)
+		}
+	}
+	return string(b)
+}
+
+// wyWrap wraps one paragraph into lines; the caller fills in p, y (the lines here
+// are laid out from y=0 and only their heights matter) and the list marker.
+func wyWrap(p wyParagraph, x0, avail, def float32) []wyLine {
+	var lines []wyLine
+	cur := wyLine{x0: x0, first: true, quote: p.Kind == wyQuote}
+	x := x0
+	flush := func(end int) {
+		cur.end = end
+		if cur.h == 0 {
+			cur.h = def
+		}
+		lines = append(lines, cur)
+		cur = wyLine{x0: x0, start: end, quote: p.Kind == wyQuote}
+		x = x0
+	}
+	for _, pc := range pieces(p) {
+		text, off := pc.text, pc.off
+		for {
+			sz := measure(text, pc.st)
+			if x+sz.Width-x0 > avail && len(cur.segs) > 0 {
+				flush(off)
+				continue
+			}
+			if x+sz.Width-x0 > avail && len([]rune(text)) > 1 { // single word wider than the line
+				rs := []rune(text)
+				n := 1
+				for n < len(rs) && x+measure(string(rs[:n+1]), pc.st).Width-x0 <= avail {
+					n++
+				}
+				sz = measure(string(rs[:n]), pc.st)
+				cur.segs = append(cur.segs, wySeg{off, string(rs[:n]), pc.st, x, sz.Width, sz.Height})
+				cur.h = max(cur.h, sz.Height)
+				flush(off + n)
+				text, off = string(rs[n:]), off+n
+				continue
+			}
+			cur.segs = append(cur.segs, wySeg{off, text, pc.st, x, sz.Width, sz.Height})
+			cur.h = max(cur.h, sz.Height)
+			x += sz.Width
+			break
+		}
+	}
+	cur.last = true
+	flush(p.length())
+	return lines
+}
+
 func (w *Wysiwyg) layoutLines(width float32) []wyLine {
 	var lines []wyLine
 	y := float32(wyPad)
 	num := 0
 	def := measure("Ag", wyStyle{}).Height
+	fold, vis := w.ed.doc.foldAt(), w.ed.visible()
+	next := map[string][]wyLine{} // paragraphs seen now; the rest drop out of the cache
+	defer func() { w.lcache = next }()
 	for pi, p := range w.ed.doc.Paras {
+		if pi == fold { // reserve the row for the "…" toggle
+			w.moreY = y + wyMoreGap
+			y += w.more.MinSize().Height + 2*wyMoreGap
+		}
+		if pi >= vis {
+			break
+		}
 		x0 := float32(wyPad)
 		marker := ""
 		if p.Kind == wyNumber {
@@ -159,47 +279,20 @@ func (w *Wysiwyg) layoutLines(width float32) []wyLine {
 			x0 = wyPad + wyQuoteDent
 		}
 		avail := width - x0 - wyPad
-		cur := wyLine{p: pi, y: y, x0: x0, first: true, marker: marker, quote: p.Kind == wyQuote}
-		x := x0
-		flush := func(end int) {
-			cur.end = end
-			if cur.h == 0 {
-				cur.h = def
-			}
-			lines = append(lines, cur)
-			y += cur.h
-			cur = wyLine{p: pi, y: y, x0: x0, start: end, quote: p.Kind == wyQuote}
-			x = x0
+		key := wyParaKey(p, x0, avail)
+		pl, ok := w.lcache[key]
+		if !ok {
+			pl = wyWrap(p, x0, avail, def)
 		}
-		for _, pc := range pieces(p) {
-			text, off := pc.text, pc.off
-			for {
-				sz := measure(text, pc.st)
-				if x+sz.Width-x0 > avail && len(cur.segs) > 0 {
-					flush(off)
-					continue
-				}
-				if x+sz.Width-x0 > avail && len([]rune(text)) > 1 { // single word wider than the line
-					rs := []rune(text)
-					n := 1
-					for n < len(rs) && x+measure(string(rs[:n+1]), pc.st).Width-x0 <= avail {
-						n++
-					}
-					sz = measure(string(rs[:n]), pc.st)
-					cur.segs = append(cur.segs, wySeg{off, string(rs[:n]), pc.st, x, sz.Width})
-					cur.h = max(cur.h, sz.Height)
-					flush(off + n)
-					text, off = string(rs[n:]), off+n
-					continue
-				}
-				cur.segs = append(cur.segs, wySeg{off, text, pc.st, x, sz.Width})
-				cur.h = max(cur.h, sz.Height)
-				x += sz.Width
-				break
+		next[key] = pl
+		for i, l := range pl {
+			l.p, l.y, l.pkey = pi, y, key
+			if i == 0 {
+				l.marker = marker
 			}
+			lines = append(lines, l)
+			y += l.h
 		}
-		cur.last = true
-		flush(p.length())
 		y += wyParaGap
 	}
 	return lines
@@ -280,70 +373,125 @@ func (w *Wysiwyg) rebuild() {
 	w.lines = w.layoutLines(w.width - wyScrollBar)
 	last := w.lines[len(w.lines)-1]
 	w.pageLay.h = last.y + last.h + wyPad
+	if w.ed.collapsed {
+		w.pageLay.h = w.moreY + w.more.MinSize().Height + wyMoreGap + wyPad
+	}
 	w.page.Objects = w.draw()
 	w.page.Refresh()
 	w.scroll.Refresh()
 }
 
+// wyThemeStamp changes whenever a theme value used by lineObjs changes.
+func wyThemeStamp() [4]any {
+	r := func(c color.Color) [4]uint32 { a, b, c2, d := c.RGBA(); return [4]uint32{a, b, c2, d} }
+	return [4]any{r(fg()), r(col(theme.ColorNameHyperlink)), r(col(theme.ColorNameDisabled)), theme.TextSize()}
+}
+
+// lineObjs builds the quote bar, list marker, text and decorations of l (not the selection).
+func lineObjs(l wyLine) []fyne.CanvasObject {
+	var objs []fyne.CanvasObject
+	if l.quote {
+		bar := canvas.NewRectangle(col(theme.ColorNameDisabled))
+		bar.Move(fyne.NewPos(l.x0-10, l.y))
+		bar.Resize(fyne.NewSize(3, l.h))
+		objs = append(objs, bar)
+	}
+	if l.first && l.marker != "" {
+		ts := measure(l.marker, wyStyle{})
+		m := canvas.NewText(l.marker, fg())
+		m.TextSize = wySize(wyStyle{})
+		m.Move(fyne.NewPos(l.x0-ts.Width-6, l.y+l.h-ts.Height))
+		objs = append(objs, m)
+	}
+	for _, sg := range l.segs {
+		c := fg()
+		if sg.st.Color != "" {
+			c = wyColor(sg.st.Color)
+		}
+		if sg.st.Link != "" {
+			c = col(theme.ColorNameHyperlink)
+		}
+		tx := canvas.NewText(sg.text, c)
+		tx.TextSize, tx.TextStyle = wySize(sg.st), wyFont(sg.st)
+		tx.Move(fyne.NewPos(sg.x, l.y+l.h-sg.h))
+		objs = append(objs, tx)
+		if sg.st.Underline || sg.st.Link != "" {
+			ly := l.y + l.h - 2
+			objs = append(objs, wyLineObj(c, sg.x, ly, sg.x+sg.w, ly))
+		}
+		if sg.st.Strike {
+			ly := l.y + l.h - sg.h/2
+			objs = append(objs, wyLineObj(c, sg.x, ly, sg.x+sg.w, ly))
+		}
+	}
+	return objs
+}
+
+// draw builds the page objects. Paragraphs outside the selection reuse the objects of
+// the previous draw when nothing they depend on changed (see wyParaKey, plus y, list
+// marker and theme); the selection, caret and "…" toggle are always rebuilt.
 func (w *Wysiwyg) draw() []fyne.CanvasObject {
 	var objs []fyne.CanvasObject
 	s, t := w.ed.selRange()
 	selCol := col(theme.ColorNameSelection)
-	for _, l := range w.lines {
-		if w.ed.hasSel() && l.p >= s.P && l.p <= t.P {
-			a, b := l.start, l.end
-			if l.p == s.P {
-				a = max(a, s.Off)
+	stamp := wyThemeStamp()
+	if stamp != w.ostamp {
+		w.ocache, w.ostamp = nil, stamp
+	}
+	next := map[string][]fyne.CanvasObject{}
+	defer func() { w.ocache = next }()
+	for i := 0; i < len(w.lines); {
+		j := i
+		for j < len(w.lines) && w.lines[j].p == w.lines[i].p {
+			j++
+		}
+		group := w.lines[i:j]
+		i = j
+		if w.ed.hasSel() && group[0].p >= s.P && group[0].p <= t.P {
+			for _, l := range group {
+				a, b := l.start, l.end
+				if l.p == s.P {
+					a = max(a, s.Off)
+				}
+				if l.p == t.P {
+					b = min(b, t.Off)
+				}
+				x1, x2 := xAt(l, a), xAt(l, b)
+				if l.last && l.p < t.P {
+					x2 += 4 // show the paragraph break
+				}
+				if x2 > x1 && (b > a || l.last) {
+					r := canvas.NewRectangle(selCol)
+					r.Move(fyne.NewPos(x1, l.y))
+					r.Resize(fyne.NewSize(x2-x1, l.h))
+					objs = append(objs, r)
+				}
+				objs = append(objs, lineObjs(l)...)
 			}
-			if l.p == t.P {
-				b = min(b, t.Off)
-			}
-			x1, x2 := xAt(l, a), xAt(l, b)
-			if l.last && l.p < t.P {
-				x2 += 4 // show the paragraph break
-			}
-			if x2 > x1 && (b > a || l.last) {
-				r := canvas.NewRectangle(selCol)
-				r.Move(fyne.NewPos(x1, l.y))
-				r.Resize(fyne.NewSize(x2-x1, l.h))
-				objs = append(objs, r)
+			continue
+		}
+		key := group[0].pkey + "|" + group[0].marker + "|" + strconv.FormatFloat(float64(group[0].y), 'g', -1, 32)
+		po, ok := w.ocache[key]
+		if !ok {
+			for _, l := range group {
+				po = append(po, lineObjs(l)...)
 			}
 		}
-		if l.quote {
-			bar := canvas.NewRectangle(col(theme.ColorNameDisabled))
-			bar.Move(fyne.NewPos(l.x0-10, l.y))
-			bar.Resize(fyne.NewSize(3, l.h))
-			objs = append(objs, bar)
+		next[key] = po
+		objs = append(objs, po...)
+	}
+	if w.HasQuote() {
+		if w.ed.collapsed {
+			w.more.tip = "Show trimmed content"
+		} else {
+			w.more.tip = "Hide trimmed content"
 		}
-		if l.first && l.marker != "" {
-			ts := measure(l.marker, wyStyle{})
-			m := canvas.NewText(l.marker, fg())
-			m.TextSize = wySize(wyStyle{})
-			m.Move(fyne.NewPos(l.x0-ts.Width-6, l.y+l.h-ts.Height))
-			objs = append(objs, m)
-		}
-		for _, sg := range l.segs {
-			c := fg()
-			if sg.st.Color != "" {
-				c = wyColor(sg.st.Color)
-			}
-			if sg.st.Link != "" {
-				c = col(theme.ColorNameHyperlink)
-			}
-			sz := measure(sg.text, sg.st)
-			tx := canvas.NewText(sg.text, c)
-			tx.TextSize, tx.TextStyle = wySize(sg.st), wyFont(sg.st)
-			tx.Move(fyne.NewPos(sg.x, l.y+l.h-sz.Height))
-			objs = append(objs, tx)
-			if sg.st.Underline || sg.st.Link != "" {
-				ly := l.y + l.h - 2
-				objs = append(objs, wyLineObj(c, sg.x, ly, sg.x+sg.w, ly))
-			}
-			if sg.st.Strike {
-				ly := l.y + l.h - sz.Height/2
-				objs = append(objs, wyLineObj(c, sg.x, ly, sg.x+sg.w, ly))
-			}
-		}
+		w.more.Resize(w.more.MinSize())
+		w.more.Move(fyne.NewPos(wyPad, w.moreY))
+		w.more.Show()
+		objs = append(objs, w.more)
+	} else {
+		w.more.Hide()
 	}
 	if w.focused && !w.ed.hasSel() {
 		x, y, h := w.caretXY()
@@ -532,8 +680,7 @@ func (w *Wysiwyg) TypedShortcut(sh fyne.Shortcut) {
 			w.after(true)
 		}
 	case *fyne.ShortcutPaste:
-		e.insertText(s.Clipboard.Content())
-		w.after(true)
+		w.paste(s.Clipboard, false)
 	case *fyne.ShortcutSelectAll:
 		e.selectAll()
 		w.after(false)
@@ -542,6 +689,10 @@ func (w *Wysiwyg) TypedShortcut(sh fyne.Shortcut) {
 	case *fyne.ShortcutRedo:
 		w.Redo()
 	case *desktop.CustomShortcut:
+		if s.KeyName == fyne.KeyV && s.Modifier == fyne.KeyModifierShortcutDefault|fyne.KeyModifierShift {
+			w.paste(fyne.CurrentApp().Clipboard(), true) // paste as plain text
+			return
+		}
 		if s.Modifier != fyne.KeyModifierControl && s.Modifier != fyne.KeyModifierSuper {
 			return
 		}
@@ -624,10 +775,12 @@ func (w *Wysiwyg) EditLink() {
 	if w.win == nil {
 		return
 	}
-	url := widget.NewEntry()
+	var d dialog.Dialog
+	url := &escEntry{close: func() { d.Hide(); w.win.Canvas().Focus(w) }}
+	url.ExtendBaseWidget(url)
 	url.SetText(w.ed.linkAtCaret())
 	url.SetPlaceHolder("https://example.com (empty removes the link)")
-	dialog.ShowForm("Link", "Apply", "Cancel",
+	d = dialog.NewForm("Link", "Apply", "Cancel",
 		[]*widget.FormItem{widget.NewFormItem("URL", url)},
 		func(ok bool) {
 			if ok && !w.SetLink(url.Text) {
@@ -635,6 +788,8 @@ func (w *Wysiwyg) EditLink() {
 			}
 			w.win.Canvas().Focus(w)
 		}, w.win)
+	d.Show()
+	w.win.Canvas().Focus(url)
 }
 
 // --- toolbar ---------------------------------------------------------------

@@ -126,3 +126,72 @@ func TestBuildRawPlainAndBase64(t *testing.T) {
 		t.Errorf("cte %q", m.Header.Get("Content-Transfer-Encoding"))
 	}
 }
+
+func TestAddrHeaderTable(t *testing.T) {
+	tests := []struct{ name, in, want string }{
+		{"plain", "a@x.com", "<a@x.com>"},
+		{"two", "a@x.com, b@x.com", "<a@x.com>, <b@x.com>"},
+		{"name", "Ann <a@x.com>", `"Ann" <a@x.com>`},
+		{"comma in quoted name", `"Doe, Jane" <j@x.com>, b@x.com`, `"Doe, Jane" <j@x.com>, <b@x.com>`},
+		{"non-ascii name", "Zoë <z@x.com>", "=?utf-8?q?Zo=C3=AB?= <z@x.com>"},
+		{"partial token dropped", "dee", ""},
+		{"partial among valid", "a@x.com, dee", "<a@x.com>"},
+		{"trailing comma", "a@x.com, ", "<a@x.com>"},
+		{"crlf injection", "a@x.com\r\nBcc: evil@x.com", ""},
+		{"empty", "  ", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := addrHeader(tc.in)
+			if got != tc.want {
+				t.Fatalf("addrHeader(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+			if strings.ContainsAny(got, "\r\n") {
+				t.Fatalf("control chars in %q", got)
+			}
+		})
+	}
+}
+
+func TestCheckRecipients(t *testing.T) {
+	if err := checkRecipients(OutboundMessage{To: `"Doe, Jane" <j@x.com>`, Cc: "b@x.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkRecipients(OutboundMessage{Bcc: "b@x.com"}); err != nil {
+		t.Fatalf("bcc-only must be allowed: %v", err)
+	}
+	for _, m := range []OutboundMessage{{To: "dee"}, {To: "a@x.com", Cc: "Doe, Jane <j@x.com>"}, {}, {To: " , "}} {
+		if err := checkRecipients(m); err == nil {
+			t.Errorf("%+v should be rejected", m)
+		}
+	}
+}
+
+func TestDraftWithPartialRecipientBuilds(t *testing.T) {
+	m := parseRaw(t, buildRaw(OutboundMessage{From: "me@x.com", To: "dee", Cc: "c@x.com, ra", Subject: "s", Body: "hi"}))
+	if got := m.Header.Get("To"); got != "" {
+		t.Errorf("To %q", got)
+	}
+	if got := m.Header.Get("Cc"); got != "<c@x.com>" {
+		t.Errorf("Cc %q", got)
+	}
+}
+
+func TestBuildRawReplyHeaders(t *testing.T) {
+	m := parseRaw(t, buildRaw(OutboundMessage{From: "me@x.com", To: "a@x.com", Body: "hi", InReplyTo: "<p@x.com>"}))
+	if m.Header.Get("In-Reply-To") != "<p@x.com>" || m.Header.Get("References") != "<p@x.com>" {
+		t.Errorf("headers %v", m.Header)
+	}
+	m = parseRaw(t, buildRaw(OutboundMessage{From: "me@x.com", To: "a@x.com", Body: "hi"}))
+	if m.Header.Get("In-Reply-To") != "" || m.Header.Get("References") != "" {
+		t.Errorf("fresh message must not carry reply headers: %v", m.Header)
+	}
+}
+
+func TestHTMLToTextQuotesBlockquote(t *testing.T) {
+	got := htmlToText(`<p>mine</p><div class="gmail_quote"><div>On x wrote:</div><blockquote><p>line1</p><blockquote>deep</blockquote></blockquote></div>`)
+	want := "mine\nOn x wrote:\n> line1\n>> deep"
+	if strings.ReplaceAll(got, "\n\n", "\n") != want {
+		t.Fatalf("got %q", got)
+	}
+}

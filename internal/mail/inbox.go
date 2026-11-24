@@ -40,6 +40,7 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 			if full.Bcc != "" {
 				msg.BccAddr = full.Bcc
 			}
+			msg.ReplyTo, msg.References, msg.InReplyTo, msg.HeadersKnown = full.ReplyTo, full.References, full.InReplyTo, true
 			_ = s.store.UpsertMessage(msg)
 			if msg.HasAttachments {
 				atts := make([]storage.Attachment, len(full.Attachments))

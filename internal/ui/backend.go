@@ -26,6 +26,7 @@ type Backend interface {
 	GetInbox(accountID string, limit, offset int) ([]desktop.ThreadItem, error)
 	GetLabelThreads(accountID, labelID string, limit, offset int) ([]desktop.ThreadItem, error)
 	SearchInbox(query string, limit int) ([]desktop.ThreadItem, error)
+	FilterThreads(filter, accountID, labelID, query string, limit, offset int) ([]desktop.ThreadItem, error)
 	GetThread(accountID, threadID string) ([]desktop.MessageItem, error)
 	GetMessage(accountID, messageID string) (desktop.MessageItem, error)
 	GetAttachmentData(accountID, messageID, attachmentID string) (desktop.AttachmentDataItem, error)

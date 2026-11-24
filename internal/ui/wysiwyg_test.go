@@ -329,3 +329,28 @@ func TestWysiwygWidget(t *testing.T) {
 		t.Errorf("lines = %d", len(w.lines))
 	}
 }
+
+func TestWyBackspaceFirstParagraph(t *testing.T) {
+	cases := []struct{ name, in, want string }{
+		{"bullet", `<ul><li>x</li></ul>`, `<p>x</p>`},
+		{"number", `<ol><li>x</li></ol>`, `<p>x</p>`},
+		{"quote", `<blockquote><p>x</p></blockquote>`, `<p>x</p>`},
+		{"plain", `<p>x</p>`, `<p>x</p>`},
+	}
+	for _, c := range cases {
+		e := edWith(c.in)
+		e.moveTo(wyPos{0, 0}, false)
+		e.backspace(false)
+		if got := e.doc.toHTML(); got != c.want {
+			t.Errorf("%s: got %s want %s", c.name, got, c.want)
+		}
+	}
+	// with a selection, Backspace deletes it and leaves the block kind alone
+	e := edWith(`<ul><li>xy</li></ul>`)
+	e.moveTo(wyPos{0, 0}, false)
+	e.moveTo(wyPos{0, 1}, true)
+	e.backspace(false)
+	if got := e.doc.toHTML(); got != `<ul><li>y</li></ul>` {
+		t.Errorf("selection: got %s", got)
+	}
+}

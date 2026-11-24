@@ -50,3 +50,7 @@ cmd/mailrat/mailrat.app/
 
 # Agent worktrees
 .claude/worktrees/
+
+# UX test environment (Xvfb profile, shots, logs)
+.ux/
+internal/ui/testdata/failed/

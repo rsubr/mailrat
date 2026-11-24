@@ -57,7 +57,7 @@ func (a *App) ListContacts(accountID string) ([]ContactItem, error) {
 }
 
 func (a *App) contactsSvc(accountID string) (*contacts.Service, error) {
-	httpClient, err := a.accounts.GetClient(a.ctx, accountID)
+	httpClient, err := a.accountMgr().GetClient(a.ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +68,9 @@ func (a *App) contactsSvc(accountID string) (*contacts.Service, error) {
 func (a *App) SaveContact(c ContactItem) (ContactItem, error) {
 	if strings.TrimSpace(c.Email) == "" {
 		return ContactItem{}, fmt.Errorf("email is required")
+	}
+	if ad, err := mail.ParseAddress(strings.TrimSpace(c.Email)); err != nil || ad.Address != strings.TrimSpace(c.Email) {
+		return ContactItem{}, fmt.Errorf("%q is not a valid email address", strings.TrimSpace(c.Email))
 	}
 	svc, err := a.contactsSvc(c.AccountID)
 	if err != nil {

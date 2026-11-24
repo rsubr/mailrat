@@ -10,6 +10,9 @@ type MessageMeta struct {
 	To           string
 	Cc           string
 	Bcc          string
+	ReplyTo      string // raw Reply-To address list, unfolded
+	References   string // raw References header, unfolded
+	InReplyTo    string // raw In-Reply-To header, unfolded
 	Snippet      string
 	InternalDate int64
 	LabelIDs     []string
