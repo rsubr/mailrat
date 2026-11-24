@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -21,6 +22,9 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	db.SetMaxOpenConns(4)
+	// Close idle connections so their page caches are released between bursts.
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxIdleTime(30 * time.Second)
 
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("apply schema: %w", err)

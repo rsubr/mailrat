@@ -99,6 +99,7 @@ type UI struct {
 	loginDlg    dialog.Dialog
 	mailMode    string          // "", "light" or "dark": the mail view's own mode; empty follows the app theme
 	undoPop     *undoBar        // "moved to Trash" bar with Undo
+	undoTimer   *time.Timer     // expires undoPop; stopped when the bar is replaced or hidden
 	undoHolder  *fyne.Container // overlay-free slot the bar is drawn in
 	listLoading bool            // first page of the current list is in flight
 	emptyLbl    *widget.Label   // "No conversations" / "Loading…" over an empty list
@@ -123,7 +124,6 @@ func Run(a fyne.App, be Backend) {
 	be.Start(context.Background())
 	u.win = a.NewWindow("mailrat")
 	u.win.Resize(fyne.NewSize(1280, 800))
-	u.win.SetFullScreen(true)
 	u.win.SetMaster()
 	u.win.SetContent(u.build())
 	u.installMenu()
@@ -141,6 +141,8 @@ func Run(a fyne.App, be Backend) {
 		<-sig
 		fyne.Do(a.Quit)
 	}()
+	// Window is created by Show; maximize once the loop runs (main thread).
+	a.Lifecycle().SetOnStarted(func() { maximize(u.win) })
 	u.win.ShowAndRun()
 	signal.Stop(sig)
 	cleanAttachTemp()
