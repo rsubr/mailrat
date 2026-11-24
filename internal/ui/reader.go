@@ -533,6 +533,7 @@ func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
 		}
 		full = kept
 		u.messages = full
+		u.msgCursor = min(u.msgCursor, len(full)-1)
 		u.refreshReader()
 	})
 }

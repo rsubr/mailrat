@@ -106,6 +106,9 @@ func (c *Client) GetMessageMetas(ctx context.Context, ids []string) ([]MessageMe
 		go func() {
 			defer func() { <-sem; wg.Done() }()
 			meta, err := c.GetMessageMeta(ctx, id)
+			if IsNotFound(err) { // deleted since it was listed: skip it
+				return
+			}
 			if err != nil {
 				mu.Lock()
 				if firstErr == nil {

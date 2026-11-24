@@ -14,6 +14,7 @@ import (
 
 	"github.com/mailrat/mailrat/internal/accounts"
 	"github.com/mailrat/mailrat/internal/storage"
+	"google.golang.org/api/googleapi"
 )
 
 func appWithStore(t *testing.T) *App {
@@ -308,5 +309,29 @@ func TestGetThreadDoesNotBlockOnReplyHeaderFetch(t *testing.T) {
 	case <-done:
 	case <-time.After(2 * time.Second):
 		t.Fatal("GetThread blocked on reply header fetch")
+	}
+}
+
+// A queued op that 404s (target deleted on Gmail) purges the stale local
+// message or thread quietly instead of logging an API error.
+func TestRollbackOpNotFoundPurgesLocal(t *testing.T) {
+	a := appWithStore(t)
+	addAccount(t, a, "a")
+	for _, id := range []string{"m1", "m2"} {
+		if err := a.store.UpsertMessageMeta(storage.Message{ID: id, ThreadID: "t", AccountID: "a", CacheState: storage.CacheMetadataOnly}, nil, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nf := fmt.Errorf("modify: %w", &googleapi.Error{Code: 404})
+	a.rollbackOp(storage.PendingOp{AccountID: "a", MessageID: "m1", OpType: storage.OpMarkRead}, nf)
+	if a.store.HasMessage("a", "m1") || !a.store.HasMessage("a", "m2") {
+		t.Fatal("message op should delete only m1")
+	}
+	a.rollbackOp(storage.PendingOp{AccountID: "a", MessageID: "t", OpType: storage.OpArchive}, nf)
+	if a.store.HasMessage("a", "m2") {
+		t.Fatal("thread op should delete the whole thread")
+	}
+	if len(a.GetAPIErrors()) != 0 {
+		t.Fatalf("404 must not be logged: %v", a.GetAPIErrors())
 	}
 }
