@@ -63,3 +63,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+## UX testing
+
+To run and click through the app under Xvfb on Linux, see `docs/ux-tests/README.md` (`scripts/ux/`). All UI tests target one display only (MacBook Air 13" M4, 1470x918 usable); see "Display target" in that file and `docs/ux-tests/headless.md`; do not test other resolutions.
