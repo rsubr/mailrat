@@ -123,7 +123,6 @@ func Run(a fyne.App, be Backend) {
 	be.Start(context.Background())
 	u.win = a.NewWindow("mailrat")
 	u.win.Resize(fyne.NewSize(1280, 800))
-	u.win.SetFullScreen(true)
 	u.win.SetMaster()
 	u.win.SetContent(u.build())
 	u.installMenu()
@@ -141,6 +140,8 @@ func Run(a fyne.App, be Backend) {
 		<-sig
 		fyne.Do(a.Quit)
 	}()
+	// Window is created by Show; maximize once the loop runs (main thread).
+	a.Lifecycle().SetOnStarted(func() { maximize(u.win) })
 	u.win.ShowAndRun()
 	signal.Stop(sig)
 	cleanAttachTemp()
