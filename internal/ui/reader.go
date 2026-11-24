@@ -449,37 +449,24 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 	var err error
 	u.bg(func() {
 		msgs, err = u.be.GetThread(t.AccountID, t.ID)
-		// Fetch bodies concurrently: a long thread would otherwise pay one
-		// sequential Gmail round trip per message.
-		var wg sync.WaitGroup
-		sem := make(chan struct{}, 6)
-		for i, m := range msgs {
-			if m.Body == "" {
-				wg.Add(1)
-				sem <- struct{}{}
-				go func() {
-					defer func() { <-sem; wg.Done() }()
-					if full, e := u.be.GetMessage(m.AccountID, m.ID); e == nil {
-						msgs[i] = full
-					}
-				}()
-			}
-		}
-		wg.Wait()
 	}, func() {
 		if gen != u.threadGen {
 			return
 		}
-		u.threadLoading = false
 		if err != nil {
+			u.threadLoading = false
 			u.selected = nil // so clicking the row again retries
 			u.list.UnselectAll()
 			u.refreshReader()
 			u.showError(err)
 			return
 		}
+		// Show what is stored at once (an uncached body renders as its snippet);
+		// bodies still missing are fetched next without holding the reader back.
 		u.messages = msgs
 		u.msgCursor = max(len(msgs)-1, 0)
+		u.threadLoading = false
+		u.fetchBodies(gen, msgs)
 		u.refreshReader()
 		for _, m := range msgs {
 			if m.IsUnread {
@@ -487,6 +474,49 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 				break
 			}
 		}
+	})
+}
+
+// fetchBodies loads, in the background, the bodies of msgs that are not stored
+// yet and redraws the reader when they arrive, showing the progress bar meanwhile.
+func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
+	var missing []int
+	for i, m := range msgs {
+		if m.Body == "" {
+			missing = append(missing, i)
+		}
+	}
+	if len(missing) == 0 {
+		return
+	}
+	u.threadLoading = true
+	full := append([]desktop.MessageItem(nil), msgs...)
+	u.bg(func() {
+		// Concurrent: a long thread would otherwise pay one sequential Gmail
+		// round trip per message.
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 6)
+		for _, i := range missing {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func() {
+				defer func() { <-sem; wg.Done() }()
+				if m, e := u.be.GetMessage(full[i].AccountID, full[i].ID); e == nil {
+					full[i] = m
+				}
+			}()
+		}
+		wg.Wait()
+	}, func() {
+		if gen != u.threadGen {
+			return
+		}
+		u.threadLoading = false
+		for _, i := range missing { // keep the read state the user may have changed meanwhile
+			full[i].IsUnread = u.messages[i].IsUnread
+		}
+		u.messages = full
+		u.refreshReader()
 	})
 }
 
