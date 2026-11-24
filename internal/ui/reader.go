@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"image/color"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
+	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/richclip"
 )
 
@@ -491,6 +493,7 @@ func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
 	}
 	u.threadLoading = true
 	full := append([]desktop.MessageItem(nil), msgs...)
+	gone := make([]bool, len(full)) // deleted on the server
 	u.bg(func() {
 		// Concurrent: a long thread would otherwise pay one sequential Gmail
 		// round trip per message.
@@ -503,6 +506,8 @@ func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
 				defer func() { <-sem; wg.Done() }()
 				if m, e := u.be.GetMessage(full[i].AccountID, full[i].ID); e == nil {
 					full[i] = m
+				} else {
+					gone[i] = errors.Is(e, mail.ErrMessageGone)
 				}
 			}()
 		}
@@ -515,6 +520,18 @@ func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
 		for _, i := range missing { // keep the read state the user may have changed meanwhile
 			full[i].IsUnread = u.messages[i].IsUnread
 		}
+		kept := full[:0]
+		for i, m := range full {
+			if !gone[i] {
+				kept = append(kept, m)
+			}
+		}
+		if len(kept) == 0 { // every message was deleted on the server
+			u.clearSelection()
+			u.reloadThreads()
+			return
+		}
+		full = kept
 		u.messages = full
 		u.refreshReader()
 	})

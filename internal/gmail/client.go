@@ -704,6 +704,13 @@ func (c *Client) GetAttachmentData(ctx context.Context, messageID, attachmentID 
 	return data, nil
 }
 
+// IsNotFound reports whether err is Gmail's 404: the message or thread no
+// longer exists on the server.
+func IsNotFound(err error) bool {
+	var ge *googleapi.Error
+	return errors.As(err, &ge) && ge.Code == http.StatusNotFound
+}
+
 // IsPermanent reports whether err is a Gmail client error (4xx other than rate
 // limiting) that retrying cannot fix, such as a message that no longer exists.
 func IsPermanent(err error) bool {

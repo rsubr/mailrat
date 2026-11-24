@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -90,5 +91,40 @@ func TestOpenLargeThread(t *testing.T) {
 	atts, _ := s.GetAttachments("a", "m0")
 	if len(atts) != 2 {
 		t.Errorf("attachment metadata not stored: %d", len(atts))
+	}
+}
+
+type notFoundGmail struct{}
+
+func (notFoundGmail) RoundTrip(r *http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: 404, Header: http.Header{"Content-Type": {"application/json"}},
+		Body: io.NopCloser(strings.NewReader(`{"error":{"code":404,"message":"Requested entity was not found."}}`)), Request: r}, nil
+}
+
+// A message deleted on Gmail 404s on body fetch: the local copy is removed and
+// the caller gets ErrMessageGone instead of a blank body.
+func TestGetMessageGoneOnServer(t *testing.T) {
+	s, err := storage.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Close() })
+	if err := s.UpsertAccount(storage.Account{ID: "a", Email: "a@x.com", TokenJSON: `{}`}); err != nil {
+		t.Fatal(err)
+	}
+	m := storage.Message{ID: "m1", ThreadID: "t", AccountID: "a", CacheState: storage.CacheMetadataOnly}
+	if err := s.UpsertMessageMeta(m, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	client, err := gmail.NewClient(context.Background(), &http.Client{Transport: notFoundGmail{}}, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewInboxService(s, client).GetMessage(context.Background(), "a", "m1")
+	if !errors.Is(err, ErrMessageGone) {
+		t.Fatalf("err = %v, want ErrMessageGone", err)
+	}
+	if s.HasMessage("a", "m1") {
+		t.Fatal("message still stored")
 	}
 }
