@@ -14,7 +14,11 @@ import (
 // touches the network; the queued op runs on the next drain/sync and updates
 // the same Gmail draft (never a duplicate) once one exists.
 func SaveLocalDraft(store *storage.Store, localID, accountID string, msg OutboundMessage) error {
-	if err := store.UpsertDraft(storage.Draft{ID: localID, AccountID: accountID, Content: buildRaw(msg), UpdatedAt: time.Now().UnixMilli()}); err != nil {
+	raw, err := buildMessage(msg)
+	if err != nil {
+		return err
+	}
+	if err := store.UpsertDraft(storage.Draft{ID: localID, AccountID: accountID, Content: raw, UpdatedAt: time.Now().UnixMilli()}); err != nil {
 		return err
 	}
 	return store.AddPendingOp(storage.OpSyncDraft, accountID, localID)
@@ -31,8 +35,12 @@ func LinkRemoteDraft(store *storage.Store, accountID, remoteID string, msg Outbo
 	if !errors.Is(err, storage.ErrDraftNotFound) {
 		return "", err
 	}
+	raw, err := buildMessage(msg)
+	if err != nil {
+		return "", err
+	}
 	id := fmt.Sprintf("local-%d", time.Now().UnixNano())
-	if err := store.UpsertDraft(storage.Draft{ID: id, AccountID: accountID, Content: buildRaw(msg), UpdatedAt: time.Now().UnixMilli()}); err != nil {
+	if err := store.UpsertDraft(storage.Draft{ID: id, AccountID: accountID, Content: raw, UpdatedAt: time.Now().UnixMilli()}); err != nil {
 		return "", err
 	}
 	return id, store.SetDraftRemoteID(accountID, id, remoteID)

@@ -75,6 +75,11 @@ func migrate(db *sql.DB) error {
 		`ALTER TABLE messages ADD COLUMN message_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN cc_addr TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE messages ADD COLUMN bcc_addr TEXT NOT NULL DEFAULT ''`,
+		// Reply headers are NULL until a message is fetched with them (unknown),
+		// and '' once fetched without the header.
+		`ALTER TABLE messages ADD COLUMN reply_to TEXT`,
+		`ALTER TABLE messages ADD COLUMN references_hdr TEXT`,
+		`ALTER TABLE messages ADD COLUMN in_reply_to TEXT`,
 		`ALTER TABLE labels ADD COLUMN text_color TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE labels ADD COLUMN background_color TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE accounts ADD COLUMN photo_url TEXT NOT NULL DEFAULT ''`,

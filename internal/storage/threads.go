@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -130,6 +131,12 @@ func (s *Store) ListAllThreadSummaries(limit, offset int) ([]ThreadSummary, erro
 // message of the thread: subject, body, from/to/cc/bcc, or an attachment
 // filename. Results are newest first.
 func (s *Store) LocalSearchThreadSummaries(rawQuery string, limit int) ([]ThreadSummary, error) {
+	return s.LocalSearchThreadSummariesFiltered(rawQuery, "", limit)
+}
+
+// LocalSearchThreadSummariesFiltered is LocalSearchThreadSummaries narrowed to
+// threads matching filter (see ThreadFilter; "" keeps every match).
+func (s *Store) LocalSearchThreadSummariesFiltered(rawQuery string, filter ThreadFilter, limit int) ([]ThreadSummary, error) {
 	terms := splitSearchTerms(rawQuery)
 	if len(terms) == 0 {
 		return nil, nil
@@ -147,7 +154,11 @@ func (s *Store) LocalSearchThreadSummaries(rawQuery string, limit int) ([]Thread
 			WHERE instr(lower(a.name), ?) > 0)`)
 		args = append(args, ftsPhrase(term), strings.ToLower(term))
 	}
-	return s.queryThreadPage(strings.Join(parts, " INTERSECT "), args, limit, 0)
+	cand, err := filterCandidates(strings.Join(parts, " INTERSECT "), filter)
+	if err != nil {
+		return nil, err
+	}
+	return s.queryThreadPage(cand, args, limit, 0)
 }
 
 // ftsPhrase turns a user term into a quoted FTS5 prefix phrase so punctuation
@@ -185,6 +196,48 @@ func notTrashed(labelID string) string {
 		return ""
 	}
 	return ` AND NOT EXISTS (SELECT 1 FROM message_labels t WHERE t.message_id = m2.id AND t.account_id = m2.account_id AND t.label_id = 'TRASH')`
+}
+
+// ThreadFilter narrows a thread list to threads where at least one message
+// matches; "" means no filter.
+type ThreadFilter string
+
+const (
+	FilterUnread      ThreadFilter = "unread"
+	FilterStarred     ThreadFilter = "starred"
+	FilterAttachments ThreadFilter = "attachments"
+)
+
+// filterCandidates narrows the candidate query cand (thread_id, account_id) to
+// threads matching f, so paging counts only matching threads.
+func filterCandidates(cand string, f ThreadFilter) (string, error) {
+	var cond string
+	switch f {
+	case "":
+		return cand, nil
+	case FilterUnread:
+		cond = `fm.is_unread = 1`
+	case FilterStarred:
+		cond = `EXISTS (SELECT 1 FROM message_labels fl WHERE fl.message_id = fm.id AND fl.account_id = fm.account_id AND fl.label_id = 'STARRED')`
+	case FilterAttachments:
+		cond = `fm.has_attachments = 1`
+	default:
+		return "", fmt.Errorf("unknown thread filter %q", f)
+	}
+	return `SELECT fc.thread_id, fc.account_id FROM (` + cand + `) fc WHERE EXISTS (
+		SELECT 1 FROM messages fm WHERE fm.account_id = fc.account_id AND fm.thread_id = fc.thread_id AND ` + cond + `)`, nil
+}
+
+// ListThreadSummariesFiltered is the filtered form of the inbox/label lists:
+// accountID "" spans all accounts, and labelID "INBOX" matches the inbox views
+// (which, unlike other labels, do not hide trashed messages).
+func (s *Store) ListThreadSummariesFiltered(accountID, labelID string, filter ThreadFilter, limit, offset int) ([]ThreadSummary, error) {
+	cand, args := labelCandidates(accountID, labelID, labelID != "INBOX")
+	cand, err := filterCandidates(cand, filter)
+	if err != nil {
+		return nil, err
+	}
+	return s.queryThreadPage(cand, args, limit, offset)
 }
 
 // ListThreadSummariesByLabel returns threads carrying a given label for one account.

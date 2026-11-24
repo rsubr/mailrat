@@ -17,14 +17,16 @@ const (
 const (
 	messageSelectColumns = `id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
 	       internal_date, is_unread, cache_state, has_attachments, message_id, cc_addr, bcc_addr,
+	       reply_to, references_hdr, in_reply_to,
 	       (SELECT COUNT(*) FROM message_labels ml WHERE ml.message_id = id AND ml.account_id = account_id AND ml.label_id = 'STARRED')`
 	messageOrderDesc = ` ORDER BY internal_date DESC`
 	messageOrderAsc  = ` ORDER BY internal_date ASC`
 	messageUpsertSQL = `
 		INSERT INTO messages
 			(id, thread_id, account_id, subject, from_addr, to_addr, snippet, body,
-			 internal_date, is_unread, cache_state, has_attachments, message_id, cc_addr, bcc_addr)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 internal_date, is_unread, cache_state, has_attachments, message_id, cc_addr, bcc_addr,
+			 reply_to, references_hdr, in_reply_to)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id, account_id) DO UPDATE SET
 			thread_id       = excluded.thread_id,
 			subject         = excluded.subject,
@@ -38,27 +40,35 @@ const (
 			has_attachments = CASE WHEN excluded.has_attachments = 1 THEN 1 ELSE messages.has_attachments END,
 			message_id      = CASE WHEN excluded.message_id != '' THEN excluded.message_id ELSE messages.message_id END,
 			cc_addr         = CASE WHEN excluded.cc_addr != '' THEN excluded.cc_addr ELSE messages.cc_addr END,
-			bcc_addr        = CASE WHEN excluded.bcc_addr != '' THEN excluded.bcc_addr ELSE messages.bcc_addr END
+			bcc_addr        = CASE WHEN excluded.bcc_addr != '' THEN excluded.bcc_addr ELSE messages.bcc_addr END,
+			reply_to        = COALESCE(excluded.reply_to, messages.reply_to),
+			references_hdr  = COALESCE(excluded.references_hdr, messages.references_hdr),
+			in_reply_to     = COALESCE(excluded.in_reply_to, messages.in_reply_to)
 	`
 )
 
 type Message struct {
-	ID             string
-	ThreadID       string
-	MessageID      string // RFC 2822 Message-ID header value
-	AccountID      string
-	Subject        string
-	FromAddr       string
-	ToAddr         string
-	CcAddr         string
-	BccAddr        string
-	Snippet        string
-	Body           string
-	InternalDate   int64
-	IsUnread       bool
-	IsStarred      bool
-	CacheState     CacheState
-	HasAttachments bool
+	ID        string
+	ThreadID  string
+	MessageID string // RFC 2822 Message-ID header value
+	AccountID string
+	Subject   string
+	FromAddr  string
+	ToAddr    string
+	CcAddr    string
+	BccAddr   string
+	// ReplyTo, References and InReplyTo are the raw (unfolded) reply headers.
+	// HeadersKnown is false for messages synced before they were stored; the
+	// three fields are then empty and mean "unknown", not "absent".
+	ReplyTo, References, InReplyTo string
+	HeadersKnown                   bool
+	Snippet                        string
+	Body                           string
+	InternalDate                   int64
+	IsUnread                       bool
+	IsStarred                      bool
+	CacheState                     CacheState
+	HasAttachments                 bool
 }
 
 func (s *Store) UpsertMessage(m Message) error {
@@ -178,7 +188,18 @@ func messageUpsertArgs(m Message) []any {
 		m.MessageID,
 		m.CcAddr,
 		m.BccAddr,
+		nullIf(m.HeadersKnown, m.ReplyTo),
+		nullIf(m.HeadersKnown, m.References),
+		nullIf(m.HeadersKnown, m.InReplyTo),
 	}
+}
+
+// nullIf is v when known, else NULL (so an upsert keeps the stored value).
+func nullIf(known bool, v string) any {
+	if !known {
+		return nil
+	}
+	return v
 }
 
 func boolToInt(v bool) int {
@@ -197,13 +218,15 @@ type rowScanner interface {
 func scanMessageRow(row rowScanner) (Message, error) {
 	var m Message
 	var isUnread, hasAttachments, isStarred int
+	var replyTo, refs, irt sql.NullString
 	if err := row.Scan(
 		&m.ID, &m.ThreadID, &m.AccountID, &m.Subject, &m.FromAddr, &m.ToAddr,
 		&m.Snippet, &m.Body, &m.InternalDate, &isUnread, &m.CacheState, &hasAttachments, &m.MessageID,
-		&m.CcAddr, &m.BccAddr, &isStarred,
+		&m.CcAddr, &m.BccAddr, &replyTo, &refs, &irt, &isStarred,
 	); err != nil {
 		return Message{}, err
 	}
+	m.ReplyTo, m.References, m.InReplyTo, m.HeadersKnown = replyTo.String, refs.String, irt.String, replyTo.Valid
 	m.IsUnread = intToBool(isUnread)
 	m.HasAttachments = intToBool(hasAttachments)
 	m.IsStarred = intToBool(isStarred)

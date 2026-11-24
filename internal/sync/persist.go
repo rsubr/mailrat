@@ -29,15 +29,16 @@ const maxParallel = 5
 
 func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta) error {
 	msg := storage.Message{
-		ID:           meta.ID,
-		ThreadID:     meta.ThreadID,
-		MessageID:    meta.MessageID,
-		AccountID:    accountID,
-		Subject:      meta.Subject,
-		FromAddr:     meta.From,
-		ToAddr:       meta.To,
-		CcAddr:       meta.Cc,
-		BccAddr:      meta.Bcc,
+		ID:        meta.ID,
+		ThreadID:  meta.ThreadID,
+		MessageID: meta.MessageID,
+		AccountID: accountID,
+		Subject:   meta.Subject,
+		FromAddr:  meta.From,
+		ToAddr:    meta.To,
+		CcAddr:    meta.Cc,
+		BccAddr:   meta.Bcc,
+		ReplyTo:   meta.ReplyTo, References: meta.References, InReplyTo: meta.InReplyTo, HeadersKnown: true,
 		Snippet:      meta.Snippet,
 		InternalDate: meta.InternalDate,
 		IsUnread:     meta.IsUnread,
@@ -152,6 +153,7 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 	}
 
 	msg.Body = full.Body
+	msg.ReplyTo, msg.References, msg.InReplyTo, msg.HeadersKnown = full.ReplyTo, full.References, full.InReplyTo, true
 	msg.CacheState = storage.CacheBodyCached
 	m.writeMu.Lock()
 	err = m.store.UpsertMessage(msg)
