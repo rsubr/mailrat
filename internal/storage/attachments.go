@@ -1,5 +1,10 @@
 package storage
 
+import (
+	"database/sql"
+	"errors"
+)
+
 // Attachment holds metadata and optionally the binary content of a message attachment.
 type Attachment struct {
 	Name         string
@@ -96,6 +101,36 @@ func (s *Store) GetAttachmentsMeta(accountID, messageID string) ([]Attachment, e
 	return out, rows.Err()
 }
 
+// AttachmentData returns the cached bytes of one attachment, or nil if not cached.
+func (s *Store) AttachmentData(accountID, messageID, attachmentID string) ([]byte, error) {
+	var data []byte
+	err := s.db.QueryRow(
+		`SELECT data FROM attachments WHERE message_id = ? AND account_id = ? AND attachment_id = ?`,
+		messageID, accountID, attachmentID,
+	).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	return data, err
+}
+
+// AttachmentCached reports whether the attachment's bytes are stored, without reading them.
+func (s *Store) AttachmentCached(accountID, messageID, attachmentID string) (bool, error) {
+	var cached bool
+	err := s.db.QueryRow(
+		`SELECT data IS NOT NULL FROM attachments WHERE message_id = ? AND account_id = ? AND attachment_id = ?`,
+		messageID, accountID, attachmentID,
+	).Scan(&cached)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return cached, err
+}
+
+// MaxSyncPrefetchSize is the largest attachment (bytes) cached in the background;
+// bigger ones download when opened.
+const MaxSyncPrefetchSize = 2 << 20
+
 // MissingAttachment identifies an attachment row whose binary data has not yet been cached.
 type MissingAttachment struct {
 	MessageID    string
@@ -118,9 +153,10 @@ func (s *Store) ListMissingAttachmentRows(accountID string, sinceMs int64, limit
 		  AND NOT SUBSTR(a.attachment_id, 1, 5) = 'name:'
 		  AND m.cache_state != 'metadata_only'
 		  AND m.internal_date >= ?
+		  AND a.size <= ?
 		LIMIT ?`
 
-	rows, err := s.db.Query(query, accountID, sinceMs, limit)
+	rows, err := s.db.Query(query, accountID, sinceMs, MaxSyncPrefetchSize, limit)
 	if err != nil {
 		return nil, err
 	}

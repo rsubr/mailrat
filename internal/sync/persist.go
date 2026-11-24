@@ -25,7 +25,7 @@ type historyStats struct {
 }
 
 // maxParallel bounds concurrent full-message fetches.
-const maxParallel = 5
+const maxParallel = 2
 
 func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta) error {
 	msg := storage.Message{

@@ -17,7 +17,7 @@ const prefetchWorkers = 3
 
 // syncPrefetchWorkers bounds the separate pool that caches attachments of
 // synced mail in the background.
-const syncPrefetchWorkers = 2
+const syncPrefetchWorkers = 1
 
 // AttachmentSource downloads attachment bytes (implemented by *gmail.Client).
 type AttachmentSource interface {
@@ -53,15 +53,17 @@ func NewAttachmentCache(store *storage.Store) *AttachmentCache {
 // Get returns the attachment bytes and MIME type, from cache when present.
 func (c *AttachmentCache) Get(ctx context.Context, src AttachmentSource, accountID, messageID, attachmentID string) ([]byte, string, error) {
 	var row *storage.Attachment
-	if atts, err := c.store.GetAttachments(accountID, messageID); err == nil {
+	if atts, err := c.store.GetAttachmentsMeta(accountID, messageID); err == nil {
 		for i := range atts {
 			if atts[i].AttachmentID == attachmentID {
-				if atts[i].Data != nil {
-					return atts[i].Data, atts[i].MimeType, nil
-				}
 				row = &atts[i]
 				break
 			}
+		}
+	}
+	if row != nil {
+		if data, err := c.store.AttachmentData(accountID, messageID, attachmentID); err == nil && data != nil {
+			return data, row.MimeType, nil
 		}
 	}
 	mimeType := "application/octet-stream"
@@ -126,12 +128,15 @@ func (c *AttachmentCache) Prefetch(ctx context.Context, src AttachmentSource, ac
 		if !m.HasAttachments {
 			continue
 		}
-		atts, err := c.store.GetAttachments(accountID, m.ID)
+		atts, err := c.store.GetAttachmentsMeta(accountID, m.ID)
 		if err != nil {
 			continue
 		}
 		for _, a := range atts {
-			if a.Data == nil && a.AttachmentID != "" && !strings.HasPrefix(a.AttachmentID, "name:") {
+			if a.AttachmentID == "" || strings.HasPrefix(a.AttachmentID, "name:") {
+				continue
+			}
+			if cached, err := c.store.AttachmentCached(accountID, m.ID, a.AttachmentID); err == nil && !cached {
 				jobs = append(jobs, storage.MissingAttachment{MessageID: m.ID, AttachmentID: a.AttachmentID})
 			}
 		}

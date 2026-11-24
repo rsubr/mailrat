@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -91,7 +92,7 @@ func (a *App) startup(ctx context.Context) {
 		_ = os.Chmod(filepath.Join(dir, "mailrat.db"+suffix), 0600)
 	}
 	a.attachments = mail.NewAttachmentCache(store)
-	// Only the last 30 days of mail get attachments cached in the background;
+	// Only the last 14 days of mail get attachments cached in the background;
 	// older ones download on open.
 	a.attachments.Window = time.Duration(mailsync.AllMailDefaultDays) * 24 * time.Hour
 	a.queue = mail.NewQueue(store, a.applyPendingOp, gmail.IsPermanent, a.rollbackOp)
@@ -955,7 +956,7 @@ func (a *App) DrainPendingOps() {
 }
 
 // Sync runs an incremental sync. Pass accountID="unified" to sync all accounts.
-// Syncs are serialised; accounts within one sync run concurrently.
+// Syncs are serialised, and so are the accounts within one sync (bounds peak memory).
 func (a *App) Sync(accountID string) error {
 	if a.accountMgr() == nil {
 		a.emitEvent("sync:complete", nil) // clear any "Syncing…" a client already shows
@@ -970,20 +971,15 @@ func (a *App) Sync(accountID string) error {
 		a.emitEvent("sync:complete", nil)
 		return err
 	}
-	var wg sync.WaitGroup
 	for _, acc := range accs {
 		if accountID != "" && accountID != "unified" && acc.ID != accountID {
 			continue
 		}
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			a.syncAccount(acc)
-		}()
+		a.syncAccount(acc)
 	}
-	wg.Wait()
 	a.emitEvent("sync:complete", nil)
 	a.emitEvent("inbox:updated", nil)
+	defer debug.FreeOSMemory()
 	for _, acc := range accs {
 		if accountID == "" || accountID == "unified" || acc.ID == accountID {
 			a.prefetchSyncedAttachments(acc.ID)

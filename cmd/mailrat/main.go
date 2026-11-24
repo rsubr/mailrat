@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"runtime/debug"
 
 	"fyne.io/fyne/v2/app"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -15,6 +16,9 @@ func main() {
 	if *dataDir != "" {
 		os.Setenv("MAILRAT_DATA_DIR", *dataDir)
 	}
+	debug.SetGCPercent(25)
+	debug.SetMemoryLimit(100 << 20)
 	a := app.NewWithID("com.mailrat.app")
+	ui.RegisterRemoteImages()
 	ui.Run(a, desktop.NewApp())
 }
