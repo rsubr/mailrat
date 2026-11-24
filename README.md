@@ -2,68 +2,56 @@
 
 > **Alpha software.** mailrat is under active development: expect bugs, breaking changes and possible data issues. Use at your own risk, and back up any important mail before connecting an account.
 
-A native Gmail desktop client built with Go. Backend-driven architecture: Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
+A native Gmail desktop client built with Go and Fyne. Go owns all state, SQLite is the source of truth, and the UI is a thin rendering layer.
 
 ---
 
 ## Features
 
-- **Multi-account** — manage multiple Gmail accounts from one binary
-- **Offline-first** — read cached messages and contacts without a connection
-- **Fast** — inbox loads from local SQLite, not the network
-- **Unified inbox** — threads across all accounts sorted by date
-- **Full Gmail label support** — system and user-defined labels
-- **Contacts** — sync, search, create, edit, and delete Google contacts
-- **No IMAP** — uses the Gmail API directly for reliable sync via `historyId`
-- **Rich text compose** — Gmail-style editor with bold, italic, underline, strikethrough, bullet/numbered lists, and hyperlinks; HTML emails sent as `multipart/alternative` with plain-text fallback
-- **Reply/forward with quoted original** — Gmail-style attribution (`On Mon, Jan 2, 2026 at 3:04 PM, sender wrote:`) with blockquote
-- **Reply threading** — RFC 2822 `In-Reply-To` and `References` headers so replies thread correctly in Gmail
-- **Inline compose** — reply and forward open at the bottom of the thread (new mail takes over the reading pane), no modal
-- **Auto mark-as-read** — threads are marked read automatically after 5 seconds of viewing
-- **Trash and mark-as-unread** — one-click delete (moves to Trash) and mark-as-unread from the toolbar
+- **Desktop app** - native Fyne UI laid out after Mimestream: accounts and mailboxes on the left, thread list in the middle, conversation on the right; follows the system light/dark appearance
+- **Multi-account** - several Gmail accounts in one window, with a unified inbox
+- **Offline-first** - mail and contacts are read from local SQLite; archive, trash, spam and read-state changes made offline are queued and replayed
+- **Gmail API sync** - no IMAP; initial sync by date range, incremental sync via `historyId`, bodies fetched on demand; server-side deletions are removed locally
+- **Sync window** - choose per account (all time, past year, 90 or 30 days) and per label how much mail stays synced
+- **Labels** - system and user labels, label unread counts, create labels, apply labels to threads
+- **Search** - search the local mailbox
+- **Contacts** - sync, search and manage Google contacts, with address suggestions in compose
+- **Rich text compose** - bold, italic, underline, strikethrough, lists and links; sent as `multipart/alternative` with a plain-text fallback; attachments; drafts synced to Gmail
+- **Reply / forward** - quoted original with Gmail-style attribution, correct `In-Reply-To` / `References` threading, send-as aliases and signatures
+- **Attachments** - metadata loads lazily; open on click or save from the context menu
+- **Reading** - threads mark read after a short delay; trash with undo, archive, spam, star, mark unread
 
 ---
 
 ## Requirements
 
-- Go 1.27.4 or newer
-- A Google Cloud OAuth 2.0 credentials file (`credentials.json`) with the scopes:
-  - `gmail.readonly`, `gmail.modify`, `gmail.send`
-  - `contacts` (for the People API)
-
-Place `credentials.json` in `~/.mailrat/credentials.json` before launching the app.
+- Go 1.27.4 or newer, plus cgo (Xcode Command Line Tools on macOS; gcc, `libgl1-mesa-dev` and X11 dev packages on Linux)
+- A Google Cloud OAuth 2.0 client (`credentials.json`) with the Gmail (`gmail.readonly`, `gmail.modify`, `gmail.send`) and Contacts (People API) scopes. The app walks you through importing it on first run; it is copied to `~/.mailrat/credentials.json`.
 
 ---
 
-## Installation
+## Install and run
+
+Homebrew (macOS, Apple silicon):
 
 ```bash
-git clone https://github.com/mailrat/mailrat.git
+brew tap rsubr/mailrat
+brew install --cask mailrat
+```
+
+From source:
+
+```bash
+git clone https://github.com/rsubr/mailrat.git
 cd mailrat
-go build -o mailrat ./cmd/mailrat
+go run ./cmd/mailrat      # or ./build.sh for a binary, ./build.sh app for a macOS .app
 ```
 
-Or run directly without installing:
-
-```bash
-go run ./cmd/mailrat
-```
+Flags and environment: `--data-dir <dir>` (or `MAILRAT_DATA_DIR`) selects the profile directory (default `~/.mailrat`); `MAILRAT_OAUTH_PORT` fixes the OAuth callback port; `MAILRAT_OAUTH_HEADLESS` skips opening a browser.
 
 ---
 
-## Quickstart
-
-```bash
-mailrat    # launch the app, then choose Add Account…
-```
-
----
-
-## Desktop app
-
-```bash
-mailrat
-```
+## Using the app
 
 Launches the native Fyne app, laid out after Mimestream: account tiles and mailboxes on the left, thread list in the middle, conversation and toolbar on the right. Follows the system light/dark appearance.
 
@@ -92,33 +80,14 @@ Not implemented: multi-select (`x`, `*` sequences), mute (`m`), move (`v`), labe
 
 #### Building
 
-Fyne needs cgo, so build natively on the target OS (there is no Linux→macOS cross-compile without an Apple SDK):
+Fyne needs cgo, so build natively on the target OS (no Linux to macOS cross-compile without an Apple SDK):
 
 ```bash
 ./build.sh        # ./mailrat binary
-./build.sh app    # ./mailrat.app bundle (macOS)
+./build.sh app    # ./mailrat.app bundle (macOS; installs the Fyne packager if missing)
 ```
 
-**Prerequisites (macOS, Apple silicon):**
-
-1. Xcode Command Line Tools — `xcode-select --install` (provides clang and the Cocoa/OpenGL headers Fyne needs).
-2. Go 1.27.4 or newer — `brew install go`.
-3. For `.app` bundles only: the Fyne packager — `go install fyne.io/tools/cmd/fyne@latest` (`build.sh app` installs it for you). Make sure `$(go env GOPATH)/bin` is on your `PATH`.
-
-No Homebrew libraries or Node needed.
-
-CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon (`arm64`) `.app` bundle on a macOS runner and publishes it as `mailrat-macos-arm64.zip` (plus a `.sha256`). Intel builds are not produced.
-
-The `.app` binary at `mailrat.app/Contents/MacOS/mailrat` launches the desktop app. This is the artifact for a Homebrew **cask** (`binary "mailrat.app/Contents/MacOS/mailrat"` puts `mailrat` on the `PATH`).
-
-#### Install with Homebrew
-
-```bash
-brew tap rsubr/mailrat
-brew install --cask mailrat
-```
-
-Installs `mailrat.app` and puts `mailrat` on your `PATH`. The cask lives in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat); pushing a `v*` tag updates its version and sha256 automatically (the `update-tap` job in `build-macos.yml`). This needs a repo secret `HOMEBREW_TAP_DEPLOY_KEY`: the private half of a write deploy key on `rsubr/homebrew-mailrat`.
+CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon `.app` on PRs to `main` and on `v*` tags. A tag on `main` publishes `mailrat-macos-arm64.zip` (plus `.sha256`) as a GitHub release and updates the Homebrew cask in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat) (needs repo secret `HOMEBREW_TAP_DEPLOY_KEY`). Intel builds are not produced.
 
 #### Signing in
 
