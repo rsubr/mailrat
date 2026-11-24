@@ -57,7 +57,7 @@ func (u *UI) showUndo(msg string, undo func() error) {
 	bar := &undoBar{Content: container.NewStack(bg, container.NewPadded(container.NewHBox(widget.NewLabel(msg), undoBtn)))}
 	u.undoPop = bar
 	u.showUndoBar()
-	time.AfterFunc(mail.UndoWindow, func() {
+	u.undoTimer = time.AfterFunc(mail.UndoWindow, func() {
 		fyne.Do(func() {
 			if u.undoPop == bar {
 				u.hideUndo()
@@ -67,6 +67,10 @@ func (u *UI) showUndo(msg string, undo func() error) {
 }
 
 func (u *UI) hideUndo() {
+	if u.undoTimer != nil { // an old expiry must not outlive the bar it was set for
+		u.undoTimer.Stop()
+		u.undoTimer = nil
+	}
 	u.undoPop = nil
 	u.showUndoBar()
 }

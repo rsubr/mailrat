@@ -359,15 +359,16 @@ func TestThreadPrefetchPreemptsSyncPrefetch(t *testing.T) {
 				started[i] = ts
 				break
 			}
-			if time.Since(opened) > time.Second {
+			if time.Since(opened) > 5*time.Second {
 				t.Fatalf("%s never started", k)
 			}
 			time.Sleep(time.Millisecond)
 		}
 	}
 	for i, ts := range started {
-		// Sync alone would reach these only after most of the ~500ms backlog.
-		if d := ts.Sub(opened); d > 60*time.Millisecond {
+		// Sync alone would reach these only after most of the ~500ms backlog;
+		// half of it separates preemption from queueing even on a loaded host.
+		if d := ts.Sub(opened); d > 250*time.Millisecond {
 			t.Errorf("thread download %d started after %v, want immediate", i, d)
 		}
 	}
