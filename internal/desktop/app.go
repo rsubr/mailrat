@@ -39,6 +39,9 @@ type App struct {
 
 	attachments *mail.AttachmentCache
 
+	// fillHeaders backfills reply headers; nil means fillReplyHeaders. Tests swap it.
+	fillHeaders func(storage.Message) storage.Message
+
 	// Background attachment caching of synced mail, one run per account. It has
 	// its own cancel scope, separate from the thread-open prefetch above.
 	syncPrefetchMu     sync.Mutex
@@ -613,7 +616,12 @@ func (a *App) GetThread(accountID, threadID string) ([]MessageItem, error) {
 		return nil, err
 	}
 	if n := len(msgs); n > 0 && !msgs[n-1].HeadersKnown {
-		msgs[n-1] = a.fillReplyHeaders(msgs[n-1])
+		// A Gmail round trip (up to 5s): never block opening the thread on it.
+		fill := a.fillReplyHeaders
+		if a.fillHeaders != nil {
+			fill = a.fillHeaders
+		}
+		go fill(msgs[n-1])
 	}
 	items := make([]MessageItem, len(msgs))
 	for i, m := range msgs {

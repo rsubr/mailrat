@@ -291,3 +291,22 @@ func TestSaveContactRejectsMalformedEmail(t *testing.T) {
 		}
 	}
 }
+
+// Opening a thread must not wait on the network backfill of reply headers.
+func TestGetThreadDoesNotBlockOnReplyHeaderFetch(t *testing.T) {
+	a := appWithStore(t)
+	addAccount(t, a, "acc")
+	if err := a.store.UpsertMessage(storage.Message{ID: "m1", ThreadID: "t1", AccountID: "acc"}); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	defer close(release)
+	a.fillHeaders = func(m storage.Message) storage.Message { <-release; return m }
+	done := make(chan struct{})
+	go func() { _, _ = a.GetThread("acc", "t1"); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("GetThread blocked on reply header fetch")
+	}
+}
