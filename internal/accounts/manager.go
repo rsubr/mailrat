@@ -3,6 +3,7 @@ package accounts
 import (
 	"context"
 	"crypto/md5"
+	"encoding/json/v2"
 	"fmt"
 	"net"
 	"net/http"
@@ -56,6 +57,12 @@ func NewManager(store *storage.Store, credentialsPath string) (*Manager, error) 
 
 // ValidateCredentials reports whether data is a usable Google OAuth client file.
 func ValidateCredentials(data []byte) error {
+	var kind map[string]any
+	if err := json.Unmarshal(data, &kind); err == nil {
+		if _, ok := kind["installed"]; !ok {
+			return fmt.Errorf("credentials must be an OAuth client of type \"Desktop app\"")
+		}
+	}
 	_, err := oauthConfig(data)
 	return err
 }

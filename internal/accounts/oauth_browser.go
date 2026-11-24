@@ -1,6 +1,7 @@
 package accounts
 
 import (
+	"os"
 	"os/exec"
 	"runtime"
 )
@@ -8,6 +9,9 @@ import (
 // tryOpenBrowser attempts to open url in the system browser.
 // Returns true if the command launched without error.
 func tryOpenBrowser(url string) bool {
+	if os.Getenv("MAILRAT_OAUTH_HEADLESS") == "1" {
+		return false
+	}
 	var cmd string
 	var args []string
 	switch runtime.GOOS {

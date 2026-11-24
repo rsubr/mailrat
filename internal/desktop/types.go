@@ -1,8 +1,14 @@
 package desktop
 
 import (
+	"bytes"
+	"html"
+	"mime"
+	"path/filepath"
+	"slices"
 	"strings"
 
+	"github.com/mailrat/mailrat/internal/mail"
 	"github.com/mailrat/mailrat/internal/storage"
 )
 
@@ -66,15 +72,20 @@ type AttachmentItem struct {
 
 // MessageItem is the frontend representation of a single message.
 type MessageItem struct {
-	ID             string
-	ThreadID       string
-	MessageID      string // RFC 2822 Message-ID header value
-	AccountID      string
-	Subject        string
-	FromAddr       string
-	ToAddr         string
-	CcAddr         string
-	BccAddr        string
+	ID        string
+	ThreadID  string
+	MessageID string // RFC 2822 Message-ID header value
+	AccountID string
+	Subject   string
+	FromAddr  string
+	ToAddr    string
+	CcAddr    string
+	BccAddr   string
+	// ReplyTo, References and InReplyTo are the raw reply headers (unfolded).
+	// They are empty when absent or not yet fetched.
+	ReplyTo        string
+	References     string
+	InReplyTo      string
 	Body           string
 	Snippet        string
 	Date           int64
@@ -116,15 +127,72 @@ type APIError struct {
 
 // OutboundMsg is the frontend payload for sending an email.
 type OutboundMsg struct {
-	AccountID string
-	To        string
-	Cc        string
-	Bcc       string
-	Subject   string
-	Body      string
-	InReplyTo string
-	ThreadID  string
-	DraftID   string // local draft to keep updating; set when a saved draft is reopened
+	AccountID  string
+	To         string
+	Cc         string
+	Bcc        string
+	Subject    string
+	Body       string
+	InReplyTo  string
+	References string // space-separated Message-ID chain; empty means just InReplyTo
+	ThreadID   string
+	DraftID    string // local draft to keep updating; set when a saved draft is reopened
+	// Attachments are the files to send. Files from disk are referenced by Path
+	// and read only when sending or saving a draft.
+	Attachments []OutAttachment
+}
+
+// Equal reports whether m and o hold the same content. OutboundMsg holds a
+// slice, so it can no longer be compared with ==.
+func (m OutboundMsg) Equal(o OutboundMsg) bool {
+	return slices.EqualFunc(m.Attachments, o.Attachments, func(a, b OutAttachment) bool {
+		return a.Filename == b.Filename && a.MIMEType == b.MIMEType && a.Size == b.Size && a.Path == b.Path && bytes.Equal(a.Data, b.Data)
+	}) && m.AccountID == o.AccountID && m.To == o.To && m.Cc == o.Cc && m.Bcc == o.Bcc && m.Subject == o.Subject &&
+		m.Body == o.Body && m.InReplyTo == o.InReplyTo && m.References == o.References && m.ThreadID == o.ThreadID && m.DraftID == o.DraftID
+}
+
+// OutAttachment is a file attached to a message being composed. Set Path for a
+// file on disk, or Data for content already in memory (such as the attachments
+// of a reopened draft); Size is informational (see StatAttachment).
+type OutAttachment struct {
+	Filename string
+	MIMEType string
+	Size     int64
+	Path     string
+	Data     []byte
+}
+
+// MaxAttachmentBytes is Gmail's 25 MB message limit, which the base64-encoded
+// attachments and body must fit in.
+const MaxAttachmentBytes = mail.MaxMessageBytes
+
+// StatAttachment describes the file at path for display in the compose window.
+// It fails for missing, unreadable, non-regular or oversized files.
+func StatAttachment(path string) (OutAttachment, error) {
+	a := mail.Attachment{Path: path}
+	n, err := mail.AttachmentSize(a)
+	if err != nil {
+		return OutAttachment{}, err
+	}
+	if err := mail.CheckAttachmentsSize([]mail.Attachment{a}, 0); err != nil {
+		return OutAttachment{}, err
+	}
+	name := filepath.Base(path)
+	return OutAttachment{Filename: name, MIMEType: mime.TypeByExtension(strings.ToLower(filepath.Ext(name))), Size: n, Path: path}, nil
+}
+
+// CheckAttachments reports whether atts plus a body of bodyLen bytes fit in a
+// single Gmail message, so the compose window can refuse a file when it is added.
+func CheckAttachments(atts []OutAttachment, bodyLen int) error {
+	return mail.CheckAttachmentsSize(toMailAttachments(atts), bodyLen)
+}
+
+func toMailAttachments(in []OutAttachment) []mail.Attachment {
+	out := make([]mail.Attachment, len(in))
+	for i, a := range in {
+		out[i] = mail.Attachment{Filename: a.Filename, MIMEType: a.MIMEType, Path: a.Path, Data: a.Data}
+	}
+	return out
 }
 
 // draftOutbound builds the compose prefill for a saved draft message. The body is
@@ -146,7 +214,7 @@ func threadSummaryToItem(t storage.ThreadSummary) ThreadItem {
 		AccountID:      t.AccountID,
 		Subject:        t.Subject,
 		Participants:   t.Participants,
-		Snippet:        t.Snippet,
+		Snippet:        html.UnescapeString(t.Snippet), // Gmail sends snippets HTML-escaped
 		Date:           t.LastDate,
 		IsUnread:       t.UnreadCount > 0,
 		IsStarred:      t.IsStarred,
@@ -167,8 +235,11 @@ func messageToItem(m storage.Message) MessageItem {
 		ToAddr:         m.ToAddr,
 		CcAddr:         m.CcAddr,
 		BccAddr:        m.BccAddr,
-		Body:           m.Body,
-		Snippet:        m.Snippet,
+		ReplyTo:        m.ReplyTo,
+		References:     m.References,
+		InReplyTo:      m.InReplyTo,
+		Body:           mail.RepairMojibake(m.Body),
+		Snippet:        html.UnescapeString(m.Snippet),
 		Date:           m.InternalDate,
 		IsUnread:       m.IsUnread,
 		HasAttachments: m.HasAttachments,

@@ -26,7 +26,7 @@ func TestDraftOutbound(t *testing.T) {
 	m := MessageItem{AccountID: "a", ThreadID: "t", ToAddr: "b@x.com", CcAddr: "c@x.com", BccAddr: "d@x.com", Subject: "S", Body: "<p>hi</p>"}
 	got := draftOutbound(m, "local-1", "<p@x>")
 	want := OutboundMsg{AccountID: "a", To: "b@x.com", Cc: "c@x.com", Bcc: "d@x.com", Subject: "S", Body: "<p>hi</p>", InReplyTo: "<p@x>", ThreadID: "t", DraftID: "local-1"}
-	if got != want {
+	if !got.Equal(want) {
 		t.Fatalf("got %+v", got)
 	}
 }

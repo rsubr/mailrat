@@ -8,7 +8,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 )
@@ -25,7 +27,12 @@ type oauthFlow struct {
 }
 
 func newOAuthFlow(cfg *oauth2.Config) (*oauthFlow, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// MAILRAT_OAUTH_PORT pins the loopback port (e.g. for SSH port forwarding).
+	port := os.Getenv("MAILRAT_OAUTH_PORT")
+	if port == "" {
+		port = "0"
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
 	if err != nil {
 		return nil, fmt.Errorf("start local listener: %w", err)
 	}
@@ -53,7 +60,7 @@ func newOAuthFlow(cfg *oauth2.Config) (*oauthFlow, error) {
 func (f *oauthFlow) startCallbackServer() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/callback", f.handleCallback)
-	f.server = &http.Server{Handler: mux}
+	f.server = &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 
 	go func() {
 		if err := f.server.Serve(f.listener); err != nil && err != http.ErrServerClosed {
@@ -97,15 +104,24 @@ func (f *oauthFlow) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// parseCodeFromRedirectURL extracts the ?code= parameter from a redirect URL.
-// Accepts both a full URL and a bare code string.
-func parseCodeFromRedirectURL(raw string) (string, error) {
+// parseCodeFromRedirectURL extracts the code from a pasted redirect URL and
+// checks its state against this flow's, so a URL minted for another sign-in
+// cannot be pasted in. A bare code (no URL) is accepted but cannot be verified.
+func (f *oauthFlow) parseCodeFromRedirectURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "http") {
 		u, err := url.Parse(raw)
 		if err != nil {
 			return "", fmt.Errorf("invalid URL: %w", err)
 		}
-		code := u.Query().Get("code")
+		q := u.Query()
+		if reason := q.Get("error"); reason != "" {
+			return "", fmt.Errorf("sign-in failed: %s", reason)
+		}
+		if q.Get("state") != f.state {
+			return "", fmt.Errorf("that address belongs to a different sign-in attempt")
+		}
+		code := q.Get("code")
 		if code == "" {
 			return "", fmt.Errorf("no 'code' parameter in URL")
 		}
@@ -115,10 +131,6 @@ func parseCodeFromRedirectURL(raw string) (string, error) {
 		return raw, nil
 	}
 	return "", fmt.Errorf("empty input")
-}
-
-func oauthContext() context.Context {
-	return context.Background()
 }
 
 func randomState() (string, error) {
