@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	fdesktop "fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -304,6 +305,11 @@ func (u *UI) newThreadList() *keyList {
 			l.Unselect(i)
 			return
 		}
+		if mods := currentModifiers(); mods&(fyne.KeyModifierShift|fyne.KeyModifierControl|fyne.KeyModifierSuper) != 0 {
+			l.Unselect(i) // a modifier click ticks rows; it must not open the thread
+			u.modClick(i, mods)
+			return
+		}
 		u.cursor, u.cursorNext = i, false
 		t := u.threads[i]
 		if u.selected != nil && u.selected.ID == t.ID && u.selected.AccountID == t.AccountID {
@@ -312,4 +318,59 @@ func (u *UI) newThreadList() *keyList {
 		u.openThread(t)
 	}
 	return l
+}
+
+func currentModifiers() fyne.KeyModifier {
+	if d, ok := fyne.CurrentApp().Driver().(fdesktop.Driver); ok {
+		return d.CurrentKeyModifiers()
+	}
+	return 0
+}
+
+// anchorRow is where a shift-click range starts: the last clicked row, else
+// the open thread, else -1.
+func (u *UI) anchorRow() int {
+	if c := u.cursor; c >= 0 {
+		if u.cursorNext {
+			c++
+		}
+		if c < len(u.threads) {
+			return c
+		}
+	}
+	if u.selected != nil {
+		for i, t := range u.threads {
+			if threadKey(t) == threadKey(*u.selected) {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+// modClick handles a modifier-click on row i: Ctrl/Cmd toggles it and moves
+// the anchor; Shift ticks anchor..i (replacing the ticks, or adding with
+// Ctrl/Cmd) and leaves the anchor where it was.
+func (u *UI) modClick(i int, mods fyne.KeyModifier) {
+	additive := mods&(fyne.KeyModifierControl|fyne.KeyModifierSuper) != 0
+	if mods&fyne.KeyModifierShift == 0 {
+		u.cursor, u.cursorNext = i, false
+		t := u.threads[i]
+		u.setChecked(t, !u.checked[threadKey(t)])
+		return
+	}
+	a := u.anchorRow()
+	if a < 0 {
+		a = i
+		u.cursor, u.cursorNext = i, false
+	}
+	lo, hi := min(a, i), max(a, i)
+	if !additive || u.checked == nil {
+		u.checked = map[string]bool{}
+	}
+	for _, t := range u.threads[lo : hi+1] {
+		u.checked[threadKey(t)] = true
+	}
+	u.list.Refresh()
+	u.refreshListBar()
 }

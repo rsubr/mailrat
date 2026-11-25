@@ -581,3 +581,28 @@ func TestF1MiniSidebarShowsErrorBadge(t *testing.T) {
 		t.Fatal("no error badge in the mini sidebar")
 	}
 }
+
+func TestShiftClickRange(t *testing.T) {
+	u, _ := f1UI(t)
+	n := len(u.threads)
+	if n < 5 {
+		t.Skip("need 5 threads")
+	}
+	u.cursor, u.cursorNext = 1, false
+	u.modClick(3, fyne.KeyModifierShift)
+	if got := len(u.checkedThreads()); got != 3 || u.cursor != 1 {
+		t.Fatalf("range 1..3: %d checked, anchor %d", got, u.cursor)
+	}
+	u.modClick(0, fyne.KeyModifierShift) // replaces; anchor unchanged
+	if got := len(u.checkedThreads()); got != 2 || !u.checked[threadKey(u.threads[0])] || u.checked[threadKey(u.threads[3])] {
+		t.Fatalf("replace 0..1: %d checked", got)
+	}
+	u.modClick(4, fyne.KeyModifierShift|fyne.KeyModifierControl) // adds 1..4
+	if got := len(u.checkedThreads()); got != 5 {
+		t.Fatalf("ctrl+shift add: %d checked", got)
+	}
+	u.modClick(2, fyne.KeyModifierControl) // toggles off, moves anchor
+	if u.checked[threadKey(u.threads[2])] || u.cursor != 2 {
+		t.Fatalf("ctrl toggle failed, anchor %d", u.cursor)
+	}
+}
