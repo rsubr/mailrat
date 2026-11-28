@@ -84,7 +84,7 @@ Fyne needs cgo, so build natively on the target OS (no Linux to macOS cross-comp
 
 ```bash
 ./build.sh        # ./mailrat binary
-./build.sh app    # ./mailrat.app bundle (macOS; installs the Fyne packager if missing)
+./build.sh app    # ./MailRat.app bundle (macOS; installs the Fyne packager if missing)
 ```
 
 CI (`.github/workflows/build-macos.yml`) builds an Apple-silicon `.app` on PRs to `main` and on `v*` tags. A tag on `main` publishes `mailrat-macos-arm64.zip` (plus `.sha256`) as a GitHub release and updates the Homebrew cask in [rsubr/homebrew-mailrat](https://github.com/rsubr/homebrew-mailrat) (needs repo secret `HOMEBREW_TAP_DEPLOY_KEY`). Intel builds are not produced.

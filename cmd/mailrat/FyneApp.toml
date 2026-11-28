@@ -1,6 +1,6 @@
 [Details]
 Icon = "icon.png"
-Name = "mailrat"
+Name = "MailRat"
 ID = "com.mailrat.app"
 Version = "0.1.0"
 Build = 1

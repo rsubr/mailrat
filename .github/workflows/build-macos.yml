@@ -50,7 +50,7 @@ jobs:
 
       - name: Zip app bundle
         working-directory: cmd/mailrat
-        run: ditto -c -k --keepParent mailrat.app ../../mailrat-macos-arm64.zip
+        run: ditto -c -k --keepParent MailRat.app ../../mailrat-macos-arm64.zip
 
       - name: Checksum
         run: shasum -a 256 mailrat-macos-arm64.zip | tee mailrat-macos-arm64.zip.sha256
