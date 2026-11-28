@@ -69,7 +69,7 @@ func (u *UI) refreshListHeader() {
 // threadRow is one cell of the list, shaped like Gmail's. With the sidebar
 // expanded it has two lines (sender + time; "subject - snippet" + chips); with
 // the sidebar minimal it is a single wide line (sender | subject - snippet | time).
-// Unread rows are bold on a clear background; read rows are tinted.
+// Unread rows are bold and tinted; read rows are on a clear background.
 type threadRow struct {
 	widget.BaseWidget
 	bg      *canvas.Rectangle
@@ -137,12 +137,12 @@ func (u *UI) setRow(r *threadRow, t desktop.ThreadItem) {
 	r.check.OnChanged = func(on bool) { u.setChecked(t, on) }
 	if t.IsUnread {
 		r.dotFill.FillColor = col(theme.ColorNamePrimary)
-		r.bg.FillColor = color.Transparent
-	} else {
-		r.dotFill.FillColor = color.Transparent
 		c := color.NRGBAModel.Convert(col(colorChip)).(color.NRGBA)
 		c.A = 0x70
 		r.bg.FillColor = c
+	} else {
+		r.dotFill.FillColor = color.Transparent
+		r.bg.FillColor = color.Transparent
 	}
 	if u.checked[threadKey(t)] {
 		r.bg.FillColor = col(theme.ColorNameSelection)
