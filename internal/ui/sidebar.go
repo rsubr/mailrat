@@ -135,7 +135,7 @@ func (u *UI) buildMiniSidebar(bg fyne.CanvasObject) fyne.CanvasObject {
 		return newTapRow(container.NewCenter(badge), u.activeAccount == id, func() { u.selectAccount(id) })
 	}
 	head := container.NewVBox(
-		container.NewCenter(iconButton("menu", "Expand sidebar", u.toggleSidebar)),
+		container.NewPadded(container.NewBorder(nil, nil, iconButton("menu", "Expand sidebar", u.toggleSidebar), nil, spacer(1, 1))), // same slot as the expanded sidebar's menu button
 		container.NewCenter(iconButton("compose", "New message", func() { u.compose(desktop.OutboundMsg{}) })),
 		pick(unified, u.accountBadge("Unified", "inbox", color.NRGBA{0x0a, 0x84, 0xff, 0xff})),
 	)
