@@ -24,7 +24,7 @@ const (
 	unified      = "unified"
 	pageSize     = 60
 	searchLimit  = 50
-	markReadWait = 5 * time.Second
+	markReadWait = 3 * time.Second
 )
 
 // UI holds all interface state. Fields are touched only on the Fyne main
