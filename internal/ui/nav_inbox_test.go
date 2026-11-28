@@ -874,3 +874,17 @@ func TestNavGoldens(t *testing.T) {
 		})
 	}
 }
+
+func TestLaunchSyncAfterAccountsLoad(t *testing.T) {
+	u, fb := navUI(t)
+	before := fb.syncs
+	u.launchSync = true
+	u.reloadAccounts()
+	if fb.syncs != before+1 || u.launchSync {
+		t.Fatalf("syncs=%d launchSync=%v", fb.syncs, u.launchSync)
+	}
+	u.reloadAccounts() // only once per launch
+	if fb.syncs != before+1 {
+		t.Fatalf("second load synced: %d", fb.syncs)
+	}
+}
