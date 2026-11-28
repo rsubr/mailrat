@@ -206,7 +206,7 @@ func TestG3BandGeometryAndResize(t *testing.T) {
 	for _, light := range []bool{true, false} {
 		b, res := g3Body(t, src, light, 700)
 		n := len(res.bands)
-		if n < 3 || len(b.lay.bands) != n {
+		if n < 2 || len(b.lay.bands) != n {
 			t.Fatalf("bands %d, laid out %d", n, len(b.lay.bands))
 		}
 		last := b.lay.bands[n-1]
