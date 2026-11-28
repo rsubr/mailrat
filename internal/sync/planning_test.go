@@ -87,8 +87,8 @@ func TestSyncSkipsLabelsOfHeldThread(t *testing.T) {
 	if err := m.storeMessageMetadata("a1", gmail.MessageMeta{ID: "m1", ThreadID: "t1", LabelIDs: []string{"INBOX"}}); err != nil {
 		t.Fatal(err)
 	}
-	_, err := m.applyHistoryEvents("a1", []gmail.HistoryEvent{{LabelsAdded: &gmail.LabelChange{MessageID: "m1", LabelIDs: []string{"INBOX"}}}}, nil)
-	if err != nil {
+	edits, _ := m.historyEdits("a1", []gmail.HistoryEvent{{LabelsAdded: &gmail.LabelChange{MessageID: "m1", LabelIDs: []string{"INBOX"}}}}, nil)
+	if err := s.ApplySyncBatch("a1", storage.SyncBatch{Edits: edits}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := s.GetMessageLabelIDs("a1", "m1"); !slices.Contains(got, "TRASH") || slices.Contains(got, "INBOX") {
@@ -106,8 +106,7 @@ func TestSyncSkipsLabelsOfHeldThread(t *testing.T) {
 
 func TestApplyDeletions(t *testing.T) {
 	s := heldStore(t, []string{"INBOX"})
-	m := &Manager{store: s}
-	if err := m.applyDeletions("a1", []string{"unknown", "m1"}); err != nil {
+	if err := s.ApplySyncBatch("a1", storage.SyncBatch{DeleteIDs: []string{"unknown", "m1"}}); err != nil {
 		t.Fatal(err)
 	}
 	if s.HasMessage("a1", "m1") {
@@ -120,8 +119,7 @@ func TestApplyDeletions(t *testing.T) {
 
 func TestApplyDeletionsHeldThread(t *testing.T) {
 	s := heldStore(t, []string{"TRASH"})
-	m := &Manager{store: s, held: func(a, th string) bool { return th == "t1" }}
-	if err := m.applyDeletions("a1", []string{"m1"}); err != nil {
+	if err := s.ApplySyncBatch("a1", storage.SyncBatch{DeleteIDs: []string{"m1"}}); err != nil {
 		t.Fatal(err)
 	}
 	if s.HasMessage("a1", "m1") {

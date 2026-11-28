@@ -38,37 +38,38 @@ func (s *InboxService) GetMessage(ctx context.Context, accountID, messageID stri
 			}
 			return storage.Message{}, ErrMessageGone
 		}
-		if err == nil {
-			msg.Body = full.Body
-			msg.CacheState = storage.CacheBodyCached
-			msg.HasAttachments = len(full.Attachments) > 0
-			if full.MessageID != "" {
-				msg.MessageID = full.MessageID
-			}
-			if full.Cc != "" {
-				msg.CcAddr = full.Cc
-			}
-			if full.Bcc != "" {
-				msg.BccAddr = full.Bcc
-			}
-			msg.ReplyTo, msg.References, msg.InReplyTo, msg.HeadersKnown = full.ReplyTo, full.References, full.InReplyTo, true
-			_ = s.store.UpsertMessage(msg)
-			if msg.HasAttachments {
-				atts := make([]storage.Attachment, len(full.Attachments))
-				for i, a := range full.Attachments {
-					// Bytes of large attachments are not downloaded here: that
-					// would block opening the thread. They are fetched and
-					// cached when the attachment is saved.
-					atts[i] = storage.Attachment{
-						Name:         a.Name,
-						MimeType:     a.MimeType,
-						Size:         a.Size,
-						AttachmentID: a.AttachmentID,
-						Data:         a.InlineData,
-					}
+		if err != nil {
+			return storage.Message{}, err // no body to show: let the caller report it
+		}
+		msg.Body = full.Body
+		msg.CacheState = storage.CacheBodyCached
+		msg.HasAttachments = len(full.Attachments) > 0
+		if full.MessageID != "" {
+			msg.MessageID = full.MessageID
+		}
+		if full.Cc != "" {
+			msg.CcAddr = full.Cc
+		}
+		if full.Bcc != "" {
+			msg.BccAddr = full.Bcc
+		}
+		msg.ReplyTo, msg.References, msg.InReplyTo, msg.HeadersKnown = full.ReplyTo, full.References, full.InReplyTo, true
+		_ = s.store.UpsertMessage(msg)
+		if msg.HasAttachments {
+			atts := make([]storage.Attachment, len(full.Attachments))
+			for i, a := range full.Attachments {
+				// Bytes of large attachments are not downloaded here: that
+				// would block opening the thread. They are fetched and
+				// cached when the attachment is saved.
+				atts[i] = storage.Attachment{
+					Name:         a.Name,
+					MimeType:     a.MimeType,
+					Size:         a.Size,
+					AttachmentID: a.AttachmentID,
+					Data:         a.InlineData,
 				}
-				_ = s.store.UpsertAttachments(accountID, messageID, atts)
 			}
+			_ = s.store.UpsertAttachments(accountID, messageID, atts)
 		}
 	}
 

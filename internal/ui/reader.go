@@ -316,8 +316,12 @@ func displayRecipients(s string) string {
 
 func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 	src := m.Body
-	if strings.TrimSpace(htmlToText(src)) == "" {
-		src = m.Snippet
+	_, waiting := u.bodyWait[m.ID]
+	if waiting || strings.TrimSpace(htmlToText(src)) == "" {
+		if waiting || strings.TrimSpace(m.Snippet) == "" {
+			return u.bodyPlaceholder(m)
+		}
+		src = m.Snippet // body parses to nothing: show the snippet
 	}
 	th := newMailTheme(u.mailLight())
 	text := th.Color(theme.ColorNameForeground, theme.VariantLight)
@@ -343,9 +347,11 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 		})
 		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 4, 52, 8), container.NewHBox(more)))
 		if u.collapsed[key] {
-			q := widget.NewRichText(res.quoted...)
+			q := widget.NewRichText(quotedNoBars(res.quoted)...)
 			q.Wrapping = fyne.TextWrapWord
-			items = append(items, container.New(layout.NewCustomPaddedLayout(0, 8, 52, 8), q))
+			// One solid bar for the whole block instead of a "▎" glyph per paragraph, which left gaps.
+			quote := container.NewBorder(nil, nil, container.New(layout.NewCustomPaddedLayout(0, 0, quoteBarPad, quoteBarGap), quoteBar()), nil, q)
+			items = append(items, container.New(layout.NewCustomPaddedLayout(0, 8, 52, 8), quote))
 		}
 	}
 	if len(m.Attachments) > 0 {
@@ -368,6 +374,32 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), panel))
 	}
 	return mailSurface(th, container.NewVBox(items...))
+}
+
+// Gmail quote bar: margin-left .8ex, 1px #ccc, padding-left 1ex. Shared by the
+// expanded folded quote and inline quotes drawn by selBody.
+const (
+	quoteBarPad = 7 // left of the bar
+	quoteBarGap = 8 // bar to text
+)
+
+func quoteBar() *canvas.Rectangle {
+	line := canvas.NewRectangle(color.NRGBA{R: 204, G: 204, B: 204, A: 255})
+	line.SetMinSize(fyne.NewSize(1, 1))
+	return line
+}
+
+// quotedNoBars drops the per-paragraph "▎" glyph prefixes; the expanded quote
+// draws a single continuous bar instead.
+func quotedNoBars(segs []widget.RichTextSegment) []widget.RichTextSegment {
+	out := make([]widget.RichTextSegment, 0, len(segs))
+	for _, s := range segs {
+		if t, ok := s.(*widget.TextSegment); ok && t.Style.ColorName == theme.ColorNamePlaceHolder && barRe.MatchString(t.Text) {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 // richClipboard writes HTML + plain text copies; tests swap in a fake.
@@ -454,6 +486,7 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 	u.messages = nil
 	u.msgCursor = 0
 	u.collapsed = map[string]bool{}
+	u.bodyWait = map[string]error{}
 	u.threadLoading = true
 	u.refreshReader()
 
@@ -491,34 +524,33 @@ func (u *UI) openThread(t desktop.ThreadItem) {
 
 // fetchBodies loads, in the background, the bodies of msgs that are not stored
 // yet and redraws the reader when they arrive, showing the progress bar meanwhile.
+// A message whose fetch fails is flagged in bodyWait so the reader shows the
+// error with a Retry button instead of a blank body.
 func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
-	var missing []int
-	for i, m := range msgs {
+	var missing []desktop.MessageItem
+	for _, m := range msgs {
 		if m.Body == "" {
-			missing = append(missing, i)
+			missing = append(missing, m)
+			u.bodyWait[m.ID] = nil
 		}
 	}
 	if len(missing) == 0 {
 		return
 	}
 	u.threadLoading = true
-	full := append([]desktop.MessageItem(nil), msgs...)
-	gone := make([]bool, len(full)) // deleted on the server
+	got := make([]desktop.MessageItem, len(missing))
+	errs := make([]error, len(missing))
 	u.bg(func() {
 		// Concurrent: a long thread would otherwise pay one sequential Gmail
 		// round trip per message.
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, 6)
-		for _, i := range missing {
+		for i, m := range missing {
 			wg.Add(1)
 			sem <- struct{}{}
 			go func() {
 				defer func() { <-sem; wg.Done() }()
-				if m, e := u.be.GetMessage(full[i].AccountID, full[i].ID); e == nil {
-					full[i] = m
-				} else {
-					gone[i] = errors.Is(e, mail.ErrMessageGone)
-				}
+				got[i], errs[i] = u.be.GetMessage(m.AccountID, m.ID)
 			}()
 		}
 		wg.Wait()
@@ -527,25 +559,63 @@ func (u *UI) fetchBodies(gen int, msgs []desktop.MessageItem) {
 			return
 		}
 		u.threadLoading = false
-		for _, i := range missing { // keep the read state the user may have changed meanwhile
-			full[i].IsUnread = u.messages[i].IsUnread
-		}
-		kept := full[:0]
-		for i, m := range full {
-			if !gone[i] {
-				kept = append(kept, m)
+		gone := map[string]bool{} // deleted on the server
+		fresh := map[string]desktop.MessageItem{}
+		for i, m := range missing {
+			switch {
+			case errs[i] == nil:
+				delete(u.bodyWait, m.ID)
+				fresh[m.ID] = got[i]
+			case errors.Is(errs[i], mail.ErrMessageGone):
+				delete(u.bodyWait, m.ID)
+				gone[m.ID] = true
+			default:
+				u.bodyWait[m.ID] = errs[i]
 			}
+		}
+		kept := u.messages[:0:0]
+		for _, m := range u.messages {
+			if gone[m.ID] {
+				continue
+			}
+			if f, ok := fresh[m.ID]; ok {
+				f.IsUnread = m.IsUnread // keep the read state the user may have changed meanwhile
+				m = f
+			}
+			kept = append(kept, m)
 		}
 		if len(kept) == 0 { // every message was deleted on the server
 			u.clearSelection()
 			u.reloadThreads()
 			return
 		}
-		full = kept
-		u.messages = full
-		u.msgCursor = min(u.msgCursor, len(full)-1)
+		u.messages = kept
+		u.msgCursor = min(u.msgCursor, len(kept)-1)
 		u.refreshReader()
 	})
+}
+
+// bodyPlaceholder is what an open message shows when it has no body text:
+// "Loading", the fetch error with Retry, or an explicit note. Never blank.
+func (u *UI) bodyPlaceholder(m desktop.MessageItem) fyne.CanvasObject {
+	pad := func(o fyne.CanvasObject) fyne.CanvasObject {
+		return container.New(layout.NewCustomPaddedLayout(4, 8, 52, 8), o)
+	}
+	lbl := func(s string) *widget.Label {
+		l := widget.NewLabel(s)
+		l.Importance = widget.LowImportance
+		l.Wrapping = fyne.TextWrapWord
+		return l
+	}
+	err, waiting := u.bodyWait[m.ID]
+	switch {
+	case waiting && err == nil:
+		return pad(lbl("Loading message…"))
+	case waiting:
+		retry := widget.NewButton("Retry", func() { u.fetchBodies(u.threadGen, []desktop.MessageItem{m}); u.refreshReader() })
+		return pad(container.NewVBox(lbl("Could not load this message: "+err.Error()), container.NewHBox(retry)))
+	}
+	return pad(lbl("(This message has no content.)"))
 }
 
 // markRead marks every unread message of the open thread read.

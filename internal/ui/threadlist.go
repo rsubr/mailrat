@@ -304,7 +304,7 @@ func (u *UI) newThreadList() *keyList {
 			l.Unselect(i)
 			return
 		}
-		if mods := currentModifiers(); mods&(fyne.KeyModifierShift|fyne.KeyModifierControl|fyne.KeyModifierSuper) != 0 {
+		if mods := currentModifiers(); !u.keySelect && mods&(fyne.KeyModifierShift|fyne.KeyModifierControl|fyne.KeyModifierSuper) != 0 {
 			l.Unselect(i) // a modifier click ticks rows; it must not open the thread
 			u.modClick(i, mods)
 			return
@@ -319,7 +319,15 @@ func (u *UI) newThreadList() *keyList {
 	return l
 }
 
-func currentModifiers() fyne.KeyModifier {
+// selectRow opens row i from code or the keyboard. A still-held Shift (as in
+// "#") must not turn it into a modifier-click that ticks the row.
+func (u *UI) selectRow(i int) {
+	u.keySelect = true
+	defer func() { u.keySelect = false }()
+	u.list.Select(i)
+}
+
+var currentModifiers = func() fyne.KeyModifier {
 	if d, ok := fyne.CurrentApp().Driver().(fdesktop.Driver); ok {
 		return d.CurrentKeyModifiers()
 	}

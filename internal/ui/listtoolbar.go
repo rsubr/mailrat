@@ -282,10 +282,13 @@ func (u *UI) bulkSetSpam(spam bool) {
 }
 
 func (u *UI) bulkTrash() {
-	u.bulk(func(t mailrat.ThreadItem) error { return u.be.TrashThread(t.AccountID, t.ID) }, func(ok []mailrat.ThreadItem) {
-		u.removeThreads(ok)
-		u.undoTrash(ok)
-	})
+	sel := u.checkedThreads()
+	if len(sel) == 0 {
+		return
+	}
+	u.removeThreads(sel)
+	u.trashThreads(sel)
+	u.reloadLabels()
 }
 
 // bulkRead marks every message of the ticked threads read, or their latest unread.

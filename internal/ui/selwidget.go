@@ -403,6 +403,12 @@ func (r *selRenderer) Refresh() {
 		rc.Resize(fyne.NewSize(b.layW, br.h))
 		bands = append(bands, rc)
 	}
+	for _, q := range b.lay.quotes {
+		rc := quoteBar()
+		rc.Move(fyne.NewPos(quoteBarPad, q.y))
+		rc.Resize(fyne.NewSize(1, q.h))
+		bands = append(bands, rc)
+	}
 	a, c := b.sel()
 	selCol := b.col(theme.ColorNameSelection)
 	for li, ln := range b.lay.lines {
@@ -425,6 +431,9 @@ func (r *selRenderer) Refresh() {
 		runs := b.doc.paras[ln.para].runs
 		for _, f := range ln.frags {
 			run := runs[f.run]
+			if run.kind == runBar {
+				continue
+			}
 			sz, st := runStyle(run)
 			cn := run.color
 			if cn == "" {

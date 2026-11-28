@@ -67,3 +67,21 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## UX testing
 
 To run and click through the app under Xvfb on Linux, see `docs/ux-tests/README.md` (`scripts/ux/`). All UI tests target one display only (MacBook Air 13" M4, 1470x918 usable); see "Display target" in that file and `docs/ux-tests/headless.md`; do not test other resolutions.
+
+## Release procedure
+
+When the user asks for a new release, run these steps in order. Stop and report on any failure.
+
+1. Commit all intended changes with a conventional-style message (`feat:`, `fix(ui):`, ...) ending with the attribution lines from the session reminder.
+2. Push to a branch named `release/vX.Y.Z` (as in past PRs, e.g. `release/v0.3.10`).
+3. Open the PR against `main`: `gh pr create --base main`. The local git config shows `dev` as the main branch; the user wants release PRs to `main`, so always pass `--base main`. The PR build runs on PRs to `main`.
+4. Merge it: `gh pr merge`.
+5. Tag the merge commit on `main` as `vX.Y.Z` (plain `vX.Y.Z` style, see `git tag`) and push the tag. The tag must be reachable from `main` or CI rejects it.
+   - Bugfix or minor release: bump Z.
+   - Large feature release: bump Y and reset Z to 0.
+   - If an X bump seems implied, ask the user first.
+6. Wait for the tag-triggered workflow (`.github/workflows/build-macos.yml`: build, release, update-tap) to finish: `gh run list` / `gh run watch`. If any job fails, report and stop. Delete nothing.
+7. Only after CI succeeds, delete OLD release artefacts, never the new release's:
+   - Run `gh release delete <old-tag> --yes` for each old GitHub release. NEVER pass `--cleanup-tag`. Alternatively `gh release delete-asset <tag> <asset>` removes only the assets.
+   - Never delete git tags. Verify with `git ls-remote --tags origin` that all old tags and the new tag remain.
+   - The Homebrew cask in `rsubr/homebrew-mailrat` points at the newest release only, so deleting older releases is safe.

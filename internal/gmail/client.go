@@ -154,6 +154,11 @@ func (c *Client) GetMessage(ctx context.Context, id string) (Message, error) {
 	}
 
 	meta := parseMessageMeta(msg)
+	if err := fillLargeBodyParts(msg.Payload, func(attID string) ([]byte, error) {
+		return c.GetAttachmentData(ctx, id, attID)
+	}); err != nil {
+		return Message{}, fmt.Errorf("get full message %s: %w", id, err)
+	}
 	body := extractBody(msg.Payload)
 	attachments := extractAttachments(msg.Payload)
 	return Message{MessageMeta: meta, Body: body, Attachments: attachments}, nil
@@ -583,6 +588,30 @@ func extractBody(payload *gmailv1.MessagePart) string {
 		return h
 	}
 	return extractPart(payload, mimeTextPlain)
+}
+
+// fillLargeBodyParts loads text/html and text/plain body parts that Gmail
+// returns with body.attachmentId and no inline data, so extractBody sees the
+// complete text. Any fetch failure is returned: an empty body must never be
+// cached as if it were the message.
+func fillLargeBodyParts(part *gmailv1.MessagePart, fetch func(attachmentID string) ([]byte, error)) error {
+	if part == nil {
+		return nil
+	}
+	if part.Filename == "" && part.Body != nil && part.Body.AttachmentId != "" && part.Body.Data == "" &&
+		(strings.EqualFold(part.MimeType, mimeTextHTML) || strings.EqualFold(part.MimeType, mimeTextPlain)) {
+		b, err := fetch(part.Body.AttachmentId)
+		if err != nil {
+			return err
+		}
+		part.Body.Data = base64.RawURLEncoding.EncodeToString(b)
+	}
+	for _, p := range part.Parts {
+		if err := fillLargeBodyParts(p, fetch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func extractPart(part *gmailv1.MessagePart, mimeType string) string {

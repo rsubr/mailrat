@@ -179,6 +179,8 @@ func ftsChanged() string {
 	return strings.Join(cols, " OR ")
 }
 
+// Close folds the WAL into the main database file (best effort) and closes it.
 func (s *Store) Close() error {
+	s.db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`) //nolint:errcheck
 	return s.db.Close()
 }

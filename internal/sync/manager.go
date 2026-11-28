@@ -60,6 +60,14 @@ func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays
 	if err != nil {
 		return err
 	}
+	// The cursor is read before listing so mail arriving during the sync is
+	// replayed by the first incremental sync (dedupe by ID) instead of lost. It
+	// is stored only once the sync has finished, so an interrupted initial sync
+	// leaves no cursor and simply runs again, skipping messages already stored.
+	startHistoryID, err := m.client.GetProfile(ctx)
+	if err != nil {
+		return fmt.Errorf("get history id: %w", err)
+	}
 	m.reporter.Printf("Starting initial sync for account %s (base: last %d days)...\n", accountID, defaultDays)
 
 	seen := make(seenMessages)
@@ -74,6 +82,9 @@ func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays
 		if plan.query != "" {
 			m.reporter.Printf("Fetching label %q (%s)...\n", plan.config.LabelName, plan.query)
 			if _, err := m.fetchAndStore(ctx, accountID, plan.query, plan.limit, seen); err != nil {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
 				m.reporter.Warnf("failed to fetch label %q: %v\n", plan.config.LabelName, err)
 				continue
 			}
@@ -92,7 +103,10 @@ func (m *Manager) InitialSync(ctx context.Context, accountID string, defaultDays
 		m.reporter.Warnf("fetch bodies for labels: %v\n", err)
 	}
 
-	if err := m.storeLatestHistoryID(ctx, accountID); err != nil {
+	if err := ctx.Err(); err != nil {
+		return err // interrupted: leave no cursor so the next start resumes
+	}
+	if err := m.updateHistoryID(accountID, startHistoryID); err != nil {
 		return err
 	}
 
@@ -121,29 +135,33 @@ func (m *Manager) IncrementalSync(ctx context.Context, accountID string) error {
 			fresh = append(fresh, id)
 		}
 	}
-	fetched, err := m.fetchAndStoreMetas(ctx, accountID, fresh)
-	if err != nil {
-		return fmt.Errorf("fetch new messages: %w", err)
+	var metas []gmail.MessageMeta
+	if len(fresh) > 0 {
+		var fetchErr error
+		metas, fetchErr = m.client.GetMessageMetas(ctx, fresh)
+		if fetchErr != nil {
+			// Keep what was fetched, but not the cursor: the next sync replays.
+			if err := m.storeMessageMetadata(accountID, metas...); err != nil {
+				return err
+			}
+			return fmt.Errorf("fetch new messages: %w", fetchErr)
+		}
 	}
 	skip := make(map[string]struct{}, len(fresh))
 	for _, id := range fresh {
 		skip[id] = struct{}{}
 	}
+	edits, stats := m.historyEdits(accountID, resp.Events, skip)
+	stats.added = len(metas)
 
-	stats, err := m.applyHistoryEvents(accountID, resp.Events, skip)
-	if err != nil {
-		return err
-	}
-	stats.added = fetched
-
-	if err := m.applyDeletions(accountID, resp.DeletedIDs); err != nil {
-		return err
-	}
-
+	// New messages, label changes, deletions and the cursor commit together, so
+	// a crash replays the whole batch from the old cursor (all steps idempotent).
+	batch := storage.SyncBatch{Metas: m.syncMetas(accountID, metas), Edits: edits, DeleteIDs: resp.DeletedIDs}
 	if resp.HistoryID > 0 {
-		if err := m.updateHistoryID(accountID, resp.HistoryID); err != nil {
-			return err
-		}
+		batch.HistoryID = strconv.FormatUint(resp.HistoryID, 10)
+	}
+	if err := m.storeBatch(accountID, batch); err != nil {
+		return err
 	}
 
 	m.reporter.Printf("Incremental sync complete: %d new messages, %d label changes\n", stats.added, stats.labelChanges)
@@ -224,10 +242,8 @@ func (m *Manager) fetchAndStoreMetas(ctx context.Context, accountID string, ids 
 		return 0, nil
 	}
 	metas, fetchErr := m.client.GetMessageMetas(ctx, ids)
-	for _, meta := range metas {
-		if err := m.storeMessageMetadata(accountID, meta); err != nil {
-			return 0, err
-		}
+	if err := m.storeMessageMetadata(accountID, metas...); err != nil {
+		return 0, err
 	}
 	return len(metas), fetchErr
 }
@@ -260,12 +276,7 @@ func (m *Manager) RefreshThread(ctx context.Context, accountID, threadID string)
 	if err != nil {
 		return err
 	}
-	for _, meta := range t.Messages {
-		if err := m.storeMessageMetadata(accountID, meta); err != nil {
-			return err
-		}
-	}
-	return nil
+	return m.storeMessageMetadata(accountID, t.Messages...)
 }
 
 // RefreshMessage is RefreshThread for a single message.
@@ -297,14 +308,6 @@ func (m *Manager) syncLabels(ctx context.Context, accountID string) error {
 	return m.store.UpsertLabel(storage.Label{ID: storage.AllMailLabelID, AccountID: accountID, Name: "All Mail", LabelType: "system"})
 }
 
-func (m *Manager) fetchHistoryID(ctx context.Context) (uint64, error) {
-	profile, err := m.client.GetProfile(ctx)
-	if err != nil {
-		return 0, err
-	}
-	return profile, nil
-}
-
 func (m *Manager) storedHistoryID(accountID string) (uint64, error) {
 	acc, err := m.store.GetAccount(accountID)
 	if err != nil {
@@ -319,14 +322,6 @@ func (m *Manager) storedHistoryID(accountID string) (uint64, error) {
 		return 0, fmt.Errorf("parse history id: %w", err)
 	}
 	return startHistoryID, nil
-}
-
-func (m *Manager) storeLatestHistoryID(ctx context.Context, accountID string) error {
-	historyID, err := m.fetchHistoryID(ctx)
-	if err != nil {
-		return nil
-	}
-	return m.updateHistoryID(accountID, historyID)
 }
 
 func (m *Manager) updateHistoryID(accountID string, historyID uint64) error {

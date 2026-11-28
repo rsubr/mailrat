@@ -22,6 +22,13 @@ func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Att
 	}
 	defer tx.Rollback() //nolint:errcheck
 
+	if err := upsertAttachmentsTx(tx, accountID, messageID, attachments); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func upsertAttachmentsTx(tx *sql.Tx, accountID, messageID string, attachments []Attachment) error {
 	if _, err := tx.Exec(
 		`DELETE FROM attachments WHERE message_id = ? AND account_id = ?`,
 		messageID, accountID,
@@ -48,8 +55,7 @@ func (s *Store) UpsertAttachments(accountID, messageID string, attachments []Att
 			return err
 		}
 	}
-
-	return tx.Commit()
+	return nil
 }
 
 // GetAttachments returns all attachments for a message, including cached binary data.

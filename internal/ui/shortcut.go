@@ -423,7 +423,7 @@ func (u *UI) moveCursor(dir int) {
 		i += dir
 	}
 	i = max(0, min(i, len(u.threads)-1))
-	u.list.Select(i)
+	u.selectRow(i)
 	u.list.ScrollTo(i)
 }
 
@@ -439,7 +439,7 @@ func (u *UI) openOrToggle() {
 			i++
 		}
 		i = max(0, min(i, len(u.threads)-1))
-		u.list.Select(i)
+		u.selectRow(i)
 		u.list.ScrollTo(i)
 		return
 	}
