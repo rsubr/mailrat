@@ -333,6 +333,7 @@ type selLayout struct {
 	lines  []selLine
 	height float32
 	bands  []bandRect
+	quotes []bandRect // one continuous quote bar per run of quoted paragraphs
 }
 
 // bandRect is a band's full-width rectangle: y and height.
@@ -352,6 +353,9 @@ func runStyle(r selRun) (float32, fyne.TextStyle) {
 func (d *selDoc) measure(r selRun, from, to int) float32 {
 	if to <= from {
 		return 0
+	}
+	if r.kind == runBar { // the bar is drawn as a rectangle: one fixed indent, whatever the depth
+		return float32(quoteBarPad+1+quoteBarGap) * float32(to-from) / float32(len(r.text))
 	}
 	sz, st := runStyle(r)
 	k := mwKey{string(r.text[from:to]), sz, st}
@@ -437,7 +441,11 @@ func (d *selDoc) layout(width float32) *selLayout {
 			continue
 		}
 		cur := selLine{para: pi, y: y, start: p.start, end: p.start, textEnd: p.start}
-		x := ox
+		x, startX := ox, ox
+		contX := ox // wrapped lines of a quoted paragraph hang under the text, right of the bar
+		if len(p.runs) > 0 && p.runs[0].kind == runBar {
+			contX += quoteBarPad + 1 + quoteBarGap
+		}
 		made := 0
 		finish := func() {
 			made++
@@ -447,7 +455,7 @@ func (d *selDoc) layout(width float32) *selLayout {
 			l.lines = append(l.lines, cur)
 			y += cur.h
 			cur = selLine{para: pi, y: y, start: cur.end, end: cur.end, textEnd: cur.end}
-			x = ox
+			x, startX = contX, contX
 		}
 		put := func(a selAtom, w float32) {
 			r := p.runs[a.run]
@@ -469,7 +477,7 @@ func (d *selDoc) layout(width float32) *selLayout {
 			if len(word) == 0 {
 				return
 			}
-			if x > ox && x+wordW > width+ox {
+			if x > startX && x+wordW > width+ox {
 				finish()
 			}
 			if wordW > width { // longer than the line: break between characters
@@ -477,7 +485,7 @@ func (d *selDoc) layout(width float32) *selLayout {
 					r := p.runs[a.run]
 					for k := a.from; k < a.to; k++ {
 						rw := d.measure(r, k, k+1)
-						if x > ox && x+rw > width+ox {
+						if x > startX && x+rw > width+ox {
 							finish()
 						}
 						put(selAtom{a.run, k, k + 1}, rw)
@@ -522,5 +530,26 @@ func (d *selDoc) layout(width float32) *selLayout {
 		closeBands()
 	}
 	l.height = y + ox
+	var open *bandRect
+	for pi, p := range d.paras {
+		if len(p.runs) == 0 || p.runs[0].kind != runBar {
+			open = nil
+			continue
+		}
+		top, bot := float32(-1), float32(0)
+		for _, ln := range l.lines {
+			if ln.para == pi {
+				if top < 0 {
+					top = ln.y
+				}
+				bot = ln.y + ln.h
+			}
+		}
+		if open == nil {
+			l.quotes = append(l.quotes, bandRect{y: top})
+			open = &l.quotes[len(l.quotes)-1]
+		}
+		open.h = bot - open.y
+	}
 	return l
 }

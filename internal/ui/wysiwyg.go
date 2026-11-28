@@ -126,6 +126,7 @@ type wyLine struct {
 	first      bool
 	marker     string
 	quote      bool
+	gap        float32 // quote bar extension over the paragraph gap to a following quote paragraph
 	last       bool
 	pkey       string // wyParaKey of the paragraph, set by layoutLines
 }
@@ -287,6 +288,9 @@ func (w *Wysiwyg) layoutLines(width float32) []wyLine {
 		next[key] = pl
 		for i, l := range pl {
 			l.p, l.y, l.pkey = pi, y, key
+			if l.quote && l.last && pi+1 < vis && pi+1 < len(w.ed.doc.Paras) && w.ed.doc.Paras[pi+1].Kind == wyQuote {
+				l.gap = wyParaGap
+			}
 			if i == 0 {
 				l.marker = marker
 			}
@@ -393,7 +397,7 @@ func lineObjs(l wyLine) []fyne.CanvasObject {
 	if l.quote {
 		bar := canvas.NewRectangle(col(theme.ColorNameDisabled))
 		bar.Move(fyne.NewPos(l.x0-10, l.y))
-		bar.Resize(fyne.NewSize(3, l.h))
+		bar.Resize(fyne.NewSize(3, l.h+l.gap))
 		objs = append(objs, bar)
 	}
 	if l.first && l.marker != "" {
@@ -470,7 +474,7 @@ func (w *Wysiwyg) draw() []fyne.CanvasObject {
 			}
 			continue
 		}
-		key := group[0].pkey + "|" + group[0].marker + "|" + strconv.FormatFloat(float64(group[0].y), 'g', -1, 32)
+		key := group[0].pkey + "|" + group[0].marker + "|" + strconv.FormatFloat(float64(group[0].y), 'g', -1, 32) + "|" + strconv.FormatFloat(float64(group[len(group)-1].gap), 'g', -1, 32)
 		po, ok := w.ocache[key]
 		if !ok {
 			for _, l := range group {

@@ -62,11 +62,12 @@ type UI struct {
 
 	selected     *desktop.ThreadItem
 	messages     []desktop.MessageItem
-	openGroups   map[string]bool // expanded nested labels, by full name
-	sidebarMini  bool            // sidebar shows icons only (persisted)
-	labelsHidden bool            // sidebar Labels section collapsed (persisted)
-	images       map[string]bool // messages whose remote images the user chose to load
-	collapsed    map[string]bool // message IDs the user toggled away from default
+	openGroups   map[string]bool  // expanded nested labels, by full name
+	sidebarMini  bool             // sidebar shows icons only (persisted)
+	labelsHidden bool             // sidebar Labels section collapsed (persisted)
+	bodyWait     map[string]error // open messages whose body is loading (nil) or failed to load
+	images       map[string]bool  // messages whose remote images the user chose to load
+	collapsed    map[string]bool  // message IDs the user toggled away from default
 	readTimer    *time.Timer
 	threadGen    int
 	syncStatus   string
@@ -92,6 +93,7 @@ type UI struct {
 	// msgCursor is the message n/p act on; pendingKey is a "g" awaiting its pair.
 	cursor      int
 	cursorNext  bool
+	keySelect   bool // list.Select came from code/keys, never a modifier-click
 	msgCursor   int
 	pendingKey  rune
 	pendingAt   time.Time
@@ -112,7 +114,7 @@ const (
 	prefDarkMode     = "theme.mode" // "", "dark" or "light"; empty follows the OS
 
 	sidebarWidth     float32 = 240 // expanded: icons + text
-	sidebarMiniWidth float32 = 64  // minimal: icons only
+	sidebarMiniWidth float32 = 48  // minimal: icons only
 	listMinWidth     float32 = 200 // thread list pane; below this rows cannot fit star, clip and date
 )
 
@@ -202,6 +204,7 @@ func newUI(a fyne.App, be Backend) *UI {
 		unread:        map[string]int{},
 		collapsed:     map[string]bool{},
 		images:        map[string]bool{},
+		bodyWait:      map[string]error{},
 		openGroups:    map[string]bool{},
 		cursor:        -1,
 		cursorNext:    true,
@@ -630,7 +633,7 @@ func (u *UI) removeThread(acct, id string) {
 	u.refreshListBar()
 	if wasOpen && at >= 0 && len(kept) > 0 { // Gmail: open the next conversation, else the previous
 		next := min(at, len(kept)-1)
-		u.list.Select(next)
+		u.selectRow(next)
 		u.list.ScrollTo(next)
 	}
 	u.reloadLabels()
@@ -658,7 +661,41 @@ func (u *UI) threadAction(call func(accountID, threadID string) error, then func
 }
 
 func (u *UI) archive() { u.threadAction(u.be.ArchiveThread, u.undoArchive) }
-func (u *UI) trash()   { u.threadAction(u.be.TrashThread, u.undoTrash) }
+
+// trash is optimistic: the row goes at once and the backend call (which may
+// wait on a running sync) is reconciled in the background.
+func (u *UI) trash() {
+	if u.selected == nil {
+		return
+	}
+	t := *u.selected
+	u.removeThread(t.AccountID, t.ID)
+	u.trashThreads([]desktop.ThreadItem{t})
+}
+
+// trashThreads trashes already-hidden threads in the background; on failure the
+// list is reloaded so the rows that were not trashed come back.
+func (u *UI) trashThreads(ts []desktop.ThreadItem) {
+	var ok []desktop.ThreadItem
+	var first error
+	u.bg(func() {
+		for _, t := range ts {
+			if err := u.be.TrashThread(t.AccountID, t.ID); err != nil {
+				if first == nil {
+					first = err
+				}
+				continue
+			}
+			ok = append(ok, t)
+		}
+	}, func() {
+		if first != nil {
+			u.showError(first)
+			u.reloadThreads()
+		}
+		u.undoTrash(ok)
+	})
+}
 func (u *UI) spam() {
 	if u.activeLabel == "SPAM" {
 		u.threadAction(u.be.MarkThreadNotSpam, nil)

@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	"github.com/mailrat/mailrat/internal/desktop"
@@ -135,7 +134,7 @@ func (u *UI) buildMiniSidebar(bg fyne.CanvasObject) fyne.CanvasObject {
 		return newTapRow(container.NewCenter(badge), u.activeAccount == id, func() { u.selectAccount(id) })
 	}
 	head := container.NewVBox(
-		container.NewPadded(container.NewBorder(nil, nil, iconButton("menu", "Expand sidebar", u.toggleSidebar), nil, spacer(1, 1))), // same slot as the expanded sidebar's menu button
+		container.NewCenter(iconButton("menu", "Expand sidebar", u.toggleSidebar)),
 		container.NewCenter(iconButton("compose", "New message", func() { u.compose(desktop.OutboundMsg{}) })),
 		pick(unified, u.accountBadge("Unified", "inbox", color.NRGBA{0x0a, 0x84, 0xff, 0xff})),
 	)
@@ -276,15 +275,17 @@ func (u *UI) pathOpen(name string) bool {
 
 func (u *UI) sidebarFooter() fyne.CanvasObject {
 	settings := iconButton("settings", "Settings", u.openSettings)
-	status := canvas.NewText(u.syncStatus, subtle())
-	status.TextSize = 12
-	var items []fyne.CanvasObject
-	items = append(items, iconButton("person", "Contacts", u.openContacts), settings, u.darkToggle(), status, layout.NewSpacer())
+	// The status label truncates inside the pane instead of spilling into the list.
+	status := widget.NewLabel(u.syncStatus)
+	status.Truncation = fyne.TextTruncateEllipsis
+	status.Importance = widget.LowImportance
+	left := container.NewHBox(iconButton("person", "Contacts", u.openContacts), settings, u.darkToggle())
+	right := container.NewHBox()
 	if u.errCount > 0 {
-		items = append(items, u.errBadge())
+		right.Add(u.errBadge())
 	}
-	items = append(items, u.syncButton())
-	return container.NewVBox(hline(), container.NewPadded(container.NewHBox(items...)))
+	right.Add(u.syncButton())
+	return container.NewVBox(hline(), container.NewPadded(container.NewBorder(nil, nil, left, right, status)))
 }
 
 // errBadge is the warning button with the error count; it opens the Error Log.
@@ -311,6 +312,7 @@ func (u *UI) syncButton() fyne.CanvasObject {
 	}
 	b := iconButton("sync", "Check for new mail", u.syncNow)
 	if u.syncStatus != "" {
+		b.tip = u.syncStatus // full text, since the footer label may be truncated
 		const frames = 12
 		last := -1
 		u.syncAnim = fyne.NewAnimation(time.Second, func(p float32) {
