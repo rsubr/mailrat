@@ -76,7 +76,7 @@ func (u *UI) toolbar() fyne.CanvasObject {
 	toggle := u.mailToggle() // the mail-view light/dark switch is right-most; it takes its width from the field so the pane's minimum width is unchanged
 	field := container.New(layout.NewGridWrapLayout(fyne.NewSize(250-toggle.MinSize().Width-theme.Padding(), u.search.MinSize().Height)), u.search)
 	right := container.NewHBox(field, toggle)
-	return container.NewVBox(container.NewPadded(container.NewBorder(nil, nil, btns, right)), hline())
+	return topBar(container.New(layout.NewCustomPaddedLayout(0, 0, theme.Padding(), theme.Padding()), container.NewBorder(nil, nil, btns, right)))
 }
 
 func (u *UI) conversation() fyne.CanvasObject {
@@ -354,7 +354,18 @@ func (u *UI) messageBody(m desktop.MessageItem) fyne.CanvasObject {
 			a := a
 			cards = append(cards, u.attachmentCard(a, th, func() { u.openAttachment(m, a) }, func(p fyne.Position) { u.attachmentMenu(m, a, p) }))
 		}
-		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), container.NewHBox(cards...)))
+		title := fmt.Sprintf("%d Attachments", len(m.Attachments))
+		if len(m.Attachments) == 1 {
+			title = "1 Attachment"
+		}
+		head := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+		area := canvas.NewRectangle(th.Color(theme.ColorNameInputBackground, theme.VariantLight))
+		area.CornerRadius = 10
+		area.StrokeWidth = 1
+		area.StrokeColor = th.Color(theme.ColorNameSeparator, theme.VariantLight)
+		panel := container.NewStack(area, container.New(layout.NewCustomPaddedLayout(6, 8, 8, 8),
+			container.NewVBox(head, container.NewGridWrap(fyne.NewSize(240, 58), cards...))))
+		items = append(items, container.New(layout.NewCustomPaddedLayout(0, 10, 52, 8), panel))
 	}
 	return mailSurface(th, container.NewVBox(items...))
 }
@@ -383,30 +394,29 @@ func (u *UI) newBody(segs []widget.RichTextSegment) *selBody {
 	return b
 }
 
-// attachmentIcon picks the card icon: image for pictures, a document otherwise.
-func attachmentIcon(a desktop.AttachmentItem) string {
-	if strings.HasPrefix(a.MimeType, "image/") {
-		return "image"
-	}
-	return "file"
-}
-
-// attachmentCard is Gmail's bordered tile: icon, filename and size; tap opens, right-click saves.
+// attachmentCard is a Gmail-style tile: type badge, filename and size; tap opens, right-click saves.
 func (u *UI) attachmentCard(a desktop.AttachmentItem, th mailTheme, onTap func(), onMenu func(fyne.Position)) fyne.CanvasObject {
 	name := widget.NewLabel(a.Name)
 	name.Truncation = fyne.TextTruncateEllipsis
 	size := widget.NewLabel(humanSize(a.Size))
 	size.Importance = widget.LowImportance
-	ic := widget.NewIcon(icon(attachmentIcon(a), th.Color(theme.ColorNameForeground, theme.VariantLight)))
-	text := container.NewVBox(name, size)
-	inner := container.NewBorder(nil, nil, container.NewCenter(ic), nil, text)
-	border := canvas.NewRectangle(color.Transparent)
+	k := attachmentKind(a.Name, a.MimeType)
+	bg := canvas.NewRectangle(k.Color)
+	bg.CornerRadius = 6
+	lbl := canvas.NewText(k.Label, color.White)
+	lbl.TextStyle = fyne.TextStyle{Bold: true}
+	lbl.TextSize = 11
+	lbl.Alignment = fyne.TextAlignCenter
+	badge := container.NewGridWrap(fyne.NewSize(36, 36), container.NewStack(bg, container.NewCenter(lbl)))
+	text := container.New(layout.NewCustomPaddedVBoxLayout(-6), layout.NewSpacer(), name, size, layout.NewSpacer())
+	inner := container.NewBorder(nil, nil, container.NewCenter(badge), nil, text)
+	border := canvas.NewRectangle(th.Color(theme.ColorNameBackground, theme.VariantLight))
 	border.CornerRadius = 8
 	border.StrokeWidth = 1
 	border.StrokeColor = th.Color(theme.ColorNameSeparator, theme.VariantLight)
-	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(2, 2, 8, 8), inner), false, onTap)
+	tap := newTapRow(container.New(layout.NewCustomPaddedLayout(6, 6, 10, 8), inner), false, onTap)
 	tap.onSecondary = onMenu
-	return container.NewGridWrap(fyne.NewSize(220, 58), container.NewStack(border, tap))
+	return container.NewStack(border, tap)
 }
 
 func (u *UI) saveAttachment(m desktop.MessageItem, a desktop.AttachmentItem) {

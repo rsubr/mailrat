@@ -18,18 +18,17 @@ import (
 // now is the clock for relative dates and key-sequence timeouts; tests freeze it.
 var now = time.Now
 
-// listHeader is the bold mailbox title with the filter glyph on the right.
+// listHeader is one row: list controls, the bold mailbox title, and the filter glyph on the right.
 func (u *UI) listHeader() fyne.CanvasObject {
 	u.filterBtn = newTooltipButton(nil, "Filter conversations", func() { u.popMenu(u.filterBtn, u.filterItems()...) })
 	u.filterBtn.Importance = widget.LowImportance
 	u.refreshFilterBtn()
-	row := container.NewBorder(nil, nil, nil, container.NewCenter(u.filterBtn), u.listTitle)
 	u.listBar = container.NewStack()
 	u.refreshListBar()
 	u.listErrLbl = widget.NewLabel("")
 	u.listErrLbl.Wrapping = fyne.TextWrapWord
 	u.listErrLbl.Hide()
-	return container.NewVBox(container.NewPadded(row), u.listBar, u.listErrLbl, hline())
+	return container.NewVBox(topBar(container.New(layout.NewCustomPaddedLayout(0, 0, theme.Padding(), theme.Padding()), u.listBar)), u.listErrLbl)
 }
 
 func (u *UI) refreshListHeader() {

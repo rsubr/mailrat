@@ -6,7 +6,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 	mailrat "github.com/mailrat/mailrat/internal/desktop"
@@ -79,7 +78,7 @@ func (u *UI) popMenu(at fyne.CanvasObject, items ...*fyne.MenuItem) {
 }
 
 // buildListBar is Gmail's list toolbar: select-all checkbox and dropdown,
-// refresh, then bulk actions once rows are ticked, and a More menu.
+// refresh, then bulk actions once rows are ticked, a More menu, and the title.
 func (u *UI) buildListBar() fyne.CanvasObject {
 	sel := u.checkedThreads()
 	n := len(sel)
@@ -149,9 +148,15 @@ func (u *UI) buildListBar() fyne.CanvasObject {
 		)
 	})
 	items = append(items, more)
-	// Scrolls instead of widening: the bar's minimum width would otherwise push
-	// the list/reader divider whenever rows are ticked.
-	return container.New(layout.NewCustomPaddedLayout(0, 2, 4, 4), container.NewHScroll(container.NewHBox(items...)))
+	// With rows ticked the controls take the title's and filter's place and scroll instead of
+	// widening: the bar's minimum width would otherwise push the list/reader
+	// divider.
+	if n > 0 {
+		u.listTitle.Hide()
+		return container.NewHScroll(container.NewHBox(items...))
+	}
+	u.listTitle.Show()
+	return container.NewBorder(nil, nil, container.NewHBox(items...), container.NewCenter(u.filterBtn), u.listTitle)
 }
 
 func (u *UI) moveToItems() []*fyne.MenuItem {

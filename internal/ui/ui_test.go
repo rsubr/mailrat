@@ -283,9 +283,6 @@ func TestAttachmentCard(t *testing.T) {
 	u, _, _ := testUI(t)
 	pic := desktop.AttachmentItem{Name: "p.png", MimeType: "image/png", Size: 2048}
 	doc := desktop.AttachmentItem{Name: "a.pdf", MimeType: "application/pdf", Size: 10}
-	if attachmentIcon(pic) != "image" || attachmentIcon(doc) != "file" {
-		t.Fatal("wrong attachment icons")
-	}
 	tapped := false
 	r := findTapRow(u.attachmentCard(doc, newMailTheme(true), func() { tapped = true }, nil))
 	if r == nil {
