@@ -2,6 +2,7 @@ package gmail
 
 import (
 	"encoding/base64"
+	"errors"
 	"testing"
 
 	gmailv1 "google.golang.org/api/gmail/v1"
@@ -87,5 +88,31 @@ func TestExtractBodyUTF16(t *testing.T) {
 	msg := part("text/plain", "text/plain; charset=utf-16le", []byte("h\x00i\x00 \x00\x13\x20"))
 	if got := extractBody(msg); got != "hi –" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFillLargeBodyPartsFetchesAttachmentBody(t *testing.T) {
+	html := part("text/html", "text/html; charset=utf-8", nil)
+	html.Body = &gmailv1.MessagePartBody{AttachmentId: "att1"}
+	msg := part("multipart/alternative", "", nil, part("text/plain", "", []byte("short")), html)
+	err := fillLargeBodyParts(msg, func(id string) ([]byte, error) {
+		if id != "att1" {
+			t.Fatalf("unexpected attachment %q", id)
+		}
+		return []byte("<p>large body</p>"), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := extractBody(msg); got != "<p>large body</p>" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestFillLargeBodyPartsFetchError(t *testing.T) {
+	p := part("text/plain", "", nil)
+	p.Body = &gmailv1.MessagePartBody{AttachmentId: "att1"}
+	if err := fillLargeBodyParts(p, func(string) ([]byte, error) { return nil, errors.New("boom") }); err == nil {
+		t.Fatal("want error, got nil")
 	}
 }

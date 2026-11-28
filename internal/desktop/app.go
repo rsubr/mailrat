@@ -26,6 +26,7 @@ type EventHandler func(name string, data any)
 // App is the backend facade used by the native UI.
 type App struct {
 	ctx     context.Context
+	cancel  context.CancelFunc // stops sync and queue work on Shutdown
 	onEvent EventHandler
 	store   *storage.Store
 	// accounts is the OAuth manager; nil until credentials.json exists. It is
@@ -74,7 +75,8 @@ func (a *App) Start(ctx context.Context) {
 }
 
 func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+	a.ctx, a.cancel = context.WithCancel(ctx)
+	ctx = a.ctx
 
 	dir, err := dataDir()
 	if err != nil {
@@ -196,8 +198,29 @@ func (a *App) ClearAPIErrors() {
 	a.errMu.Unlock()
 }
 
-// Shutdown closes the database when the app exits.
+// shutdownWait bounds how long Shutdown waits for an in-flight sync to stop.
+const shutdownWait = 5 * time.Second
+
+// Shutdown stops sync cleanly and closes the database when the app exits (menu
+// quit, window close, SIGINT/SIGTERM all end in Run calling it). It cancels the
+// context, then waits up to shutdownWait for a running sync to return; each
+// sync write batch is one transaction, so an unfinished batch is rolled back
+// and the next start resumes from the stored cursor.
 func (a *App) Shutdown() {
+	if a.cancel != nil {
+		a.cancel()
+	}
+	done := make(chan struct{})
+	go func() {
+		a.syncMu.Lock()
+		a.syncMu.Unlock() //nolint:staticcheck // waiting for the sync to finish
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(shutdownWait):
+		a.logWarning("shutdown: sync still running; closing database anyway")
+	}
 	if a.trash != nil {
 		a.trash.Flush() // queue pending deletes so they survive the restart
 	}
@@ -687,12 +710,16 @@ func (a *App) GetMessage(accountID, messageID string) (MessageItem, error) {
 				}
 				return item, nil
 			}
+			return MessageItem{}, err // body fetch failed: the UI shows it with a Retry
 		}
 	}
 
 	msg, err := a.store.GetMessage(accountID, messageID)
 	if err != nil {
 		return MessageItem{}, err
+	}
+	if msg.CacheState == storage.CacheMetadataOnly && msg.Body == "" {
+		return MessageItem{}, fmt.Errorf("message body is not downloaded and Gmail is unavailable")
 	}
 	item := messageToItem(msg)
 	if msg.HasAttachments {
@@ -850,9 +877,8 @@ func (a *App) TrashThread(accountID, threadID string) error {
 	if err != nil {
 		return err
 	}
-	if err := a.store.ModifyLabels(accountID, threadID, true, []string{mail.LabelTrash}, []string{mail.LabelInbox}); err != nil {
-		return err
-	}
+	// Hold first: a sync running now must already see the thread as held, or it
+	// could write the server's INBOX label back over the local trash.
 	a.trash.Hold(trashKey(accountID, threadID),
 		func() { _ = a.enqueue(storage.OpTrashThread, accountID, threadID) },
 		func() {
@@ -862,6 +888,10 @@ func (a *App) TrashThread(accountID, threadID string) error {
 			}
 			a.emitEvent("inbox:updated", nil)
 		})
+	if err := a.store.ModifyLabels(accountID, threadID, true, []string{mail.LabelTrash}, []string{mail.LabelInbox}); err != nil {
+		a.trash.Undo(trashKey(accountID, threadID))
+		return err
+	}
 	a.emitEvent("inbox:updated", nil)
 	return nil
 }

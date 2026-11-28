@@ -27,7 +27,9 @@ type historyStats struct {
 // maxParallel bounds concurrent full-message fetches.
 const maxParallel = 2
 
-func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta) error {
+// syncMeta converts fetched metadata to a store write. Labels of a held thread
+// are kept while its local change is still undoable.
+func (m *Manager) syncMeta(accountID string, meta gmail.MessageMeta) storage.SyncMeta {
 	msg := storage.Message{
 		ID:        meta.ID,
 		ThreadID:  meta.ThreadID,
@@ -50,67 +52,61 @@ func (m *Manager) storeMessageMetadata(accountID string, meta gmail.MessageMeta)
 			keepLabels = true // local trash still undoable; keep its labels
 		}
 	}
-	if err := m.store.UpsertMessageMeta(msg, meta.LabelIDs, !keepLabels); err != nil {
-		return fmt.Errorf("store message %s: %w", meta.ID, err)
+	return storage.SyncMeta{Msg: msg, LabelIDs: meta.LabelIDs, SetLabels: !keepLabels}
+}
+
+// storeMessageMetadata writes metas in one transaction (with the optional
+// cursor), so a batch is stored whole or not at all.
+func (m *Manager) storeMessageMetadata(accountID string, metas ...gmail.MessageMeta) error {
+	return m.storeBatch(accountID, storage.SyncBatch{Metas: m.syncMetas(accountID, metas)})
+}
+
+func (m *Manager) syncMetas(accountID string, metas []gmail.MessageMeta) []storage.SyncMeta {
+	out := make([]storage.SyncMeta, len(metas))
+	for i, meta := range metas {
+		out[i] = m.syncMeta(accountID, meta)
+	}
+	return out
+}
+
+func (m *Manager) storeBatch(accountID string, b storage.SyncBatch) error {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+	if err := m.store.ApplySyncBatch(accountID, b); err != nil {
+		return fmt.Errorf("store sync batch: %w", err)
 	}
 	return nil
 }
 
-// applyHistoryEvents applies label changes; messages in skip were just fetched
-// fresh from Gmail, so their labels are already current.
-func (m *Manager) applyHistoryEvents(accountID string, events []gmail.HistoryEvent, skip map[string]struct{}) (historyStats, error) {
+// historyEdits turns label history events into store edits; messages in skip
+// were just fetched fresh from Gmail, so their labels are already current.
+func (m *Manager) historyEdits(accountID string, events []gmail.HistoryEvent, skip map[string]struct{}) ([]storage.SyncLabelEdit, historyStats) {
 	var stats historyStats
+	var edits []storage.SyncLabelEdit
 	for _, event := range events {
+		var c *gmail.LabelChange
+		var add bool
 		switch {
 		case event.LabelsAdded != nil:
-			if _, fresh := skip[event.LabelsAdded.MessageID]; fresh || m.isHeldMessage(accountID, event.LabelsAdded.MessageID) {
-				continue
-			}
-			if err := m.applyAddedLabels(accountID, event.LabelsAdded.MessageID, event.LabelsAdded.LabelIDs); err != nil {
-				return stats, err
-			}
-			stats.labelChanges++
+			c, add = event.LabelsAdded, true
 		case event.LabelsRemoved != nil:
-			if _, fresh := skip[event.LabelsRemoved.MessageID]; fresh || m.isHeldMessage(accountID, event.LabelsRemoved.MessageID) {
-				continue
-			}
-			if err := m.applyRemovedLabels(accountID, event.LabelsRemoved.MessageID, event.LabelsRemoved.LabelIDs); err != nil {
-				return stats, err
-			}
-			stats.labelChanges++
+			c = event.LabelsRemoved
+		default:
+			continue
 		}
-	}
-	return stats, nil
-}
-
-// applyDeletions removes messages Gmail reports as permanently deleted. Held
-// threads are not skipped: the history cursor moves on, so the delete would be
-// lost, and a pending trash or undo is a no-op on missing messages.
-func (m *Manager) applyDeletions(accountID string, ids []string) error {
-	for _, id := range ids {
-		if err := m.store.DeleteMessage(accountID, id); err != nil {
-			return fmt.Errorf("delete message %s: %w", id, err)
+		if _, fresh := skip[c.MessageID]; fresh || m.isHeldMessage(accountID, c.MessageID) {
+			continue
 		}
+		e := storage.SyncLabelEdit{MessageID: c.MessageID}
+		if add {
+			e.Add = c.LabelIDs
+		} else {
+			e.Remove = c.LabelIDs
+		}
+		edits = append(edits, e)
+		stats.labelChanges++
 	}
-	return nil
-}
-
-func (m *Manager) applyAddedLabels(accountID, messageID string, labelIDs []string) error {
-	existing, err := m.store.GetMessageLabelIDs(accountID, messageID)
-	if err != nil {
-		return nil
-	}
-	_ = m.store.SetMessageLabels(accountID, messageID, mergeLabelIDs(existing, labelIDs))
-	return nil
-}
-
-func (m *Manager) applyRemovedLabels(accountID, messageID string, labelIDs []string) error {
-	existing, err := m.store.GetMessageLabelIDs(accountID, messageID)
-	if err != nil {
-		return nil
-	}
-	_ = m.store.SetMessageLabels(accountID, messageID, removeLabelIDs(existing, labelIDs))
-	return nil
+	return edits, stats
 }
 
 func (m *Manager) fetchBodiesIntoStore(ctx context.Context, accountID string, msgs []storage.Message) error {
@@ -160,16 +156,6 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 	msg.Body = full.Body
 	msg.ReplyTo, msg.References, msg.InReplyTo, msg.HeadersKnown = full.ReplyTo, full.References, full.InReplyTo, true
 	msg.CacheState = storage.CacheBodyCached
-	m.writeMu.Lock()
-	err = m.store.UpsertMessage(msg)
-	m.writeMu.Unlock()
-	if err != nil {
-		return err
-	}
-
-	if len(full.Attachments) == 0 {
-		return nil
-	}
 
 	atts := make([]storage.Attachment, len(full.Attachments))
 	for i, a := range full.Attachments {
@@ -183,36 +169,9 @@ func (m *Manager) fetchAndStoreBody(ctx context.Context, accountID string, msg s
 			Data:         a.InlineData,
 		}
 	}
+	// Body and attachment rows commit together: a body marked cached must never
+	// lack its attachments, since nothing would refetch it.
 	m.writeMu.Lock()
 	defer m.writeMu.Unlock()
-	return m.store.UpsertAttachments(accountID, msg.ID, atts)
-}
-
-func mergeLabelIDs(existing, add []string) []string {
-	set := make(map[string]struct{}, len(existing))
-	for _, id := range existing {
-		set[id] = struct{}{}
-	}
-	for _, id := range add {
-		set[id] = struct{}{}
-	}
-	out := make([]string, 0, len(set))
-	for id := range set {
-		out = append(out, id)
-	}
-	return out
-}
-
-func removeLabelIDs(existing, remove []string) []string {
-	rem := make(map[string]struct{}, len(remove))
-	for _, id := range remove {
-		rem[id] = struct{}{}
-	}
-	var out []string
-	for _, id := range existing {
-		if _, skip := rem[id]; !skip {
-			out = append(out, id)
-		}
-	}
-	return out
+	return m.store.UpsertMessageBody(msg, atts)
 }
