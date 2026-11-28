@@ -50,4 +50,4 @@ Tick each item. "Mac" marks items that need macOS verification.
 - Messages synced before the migration use the old reply headers until they are fetched again.
 
 ## Mac build
-`./build.sh app` then `open mailrat.app` (see README, "Prerequisites (macOS)"). Needs cgo, so build natively on the Mac.
+`./build.sh app` then `open MailRat.app` (see README, "Prerequisites (macOS)"). Needs cgo, so build natively on the Mac.

@@ -4,7 +4,7 @@
 # gcc plus libgl1-mesa-dev and the X11 dev packages.
 #
 #   ./build.sh          → ./mailrat            (binary)
-#   ./build.sh app      → ./mailrat.app        (macOS .app bundle via fyne)
+#   ./build.sh app      → ./MailRat.app        (macOS .app bundle via fyne)
 set -euo pipefail
 
 if [[ "${1:-}" == "app" ]]; then
@@ -13,7 +13,7 @@ if [[ "${1:-}" == "app" ]]; then
   # Version: $VERSION, else latest git tag (sans "v"), else FyneApp.toml's.
   v="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || true)}"
   fyne package -os darwin -release ${v:+-app-version "${v#v}"}
-  rm -rf ../../mailrat.app && mv mailrat.app ../../mailrat.app
+  rm -rf ../../MailRat.app && mv MailRat.app ../../MailRat.app
 else
   CGO_ENABLED=1 go build -ldflags="-s -w" -o mailrat ./cmd/mailrat
 fi

@@ -44,8 +44,8 @@ coverage.out
 coverage.html
 
 # Build output
-mailrat.app/
-cmd/mailrat/mailrat.app/
+MailRat.app/
+cmd/mailrat/MailRat.app/
 .playwright-mcp/
 
 # Agent worktrees
