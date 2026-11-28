@@ -518,7 +518,7 @@ func navTickAll(t *testing.T, u *UI) {
 			check = ch
 		}
 	})
-	test.Tap(check)
+	test.TapAt(check, fyne.NewPos(2, check.Size().Height/2)) // the box is centred in a bar taller than itself
 }
 
 func TestNavBulkToolbarAppearsWithSelection(t *testing.T) {

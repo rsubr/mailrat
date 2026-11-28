@@ -375,7 +375,7 @@ func TestF1BulkBarDoesNotWidenPane(t *testing.T) {
 	u, _ := f1UI(t)
 	before := u.listBar.MinSize().Width
 	u.selectWhere(func(t desktop.ThreadItem) bool { return true })
-	if after := u.listBar.MinSize().Width; after != before {
+	if after := u.listBar.MinSize().Width; after > before { // may shrink: the bulk bar scrolls in place of the title
 		t.Fatalf("min width %v -> %v", before, after)
 	}
 	// At the target size every action is still visible (no horizontal scroll needed).

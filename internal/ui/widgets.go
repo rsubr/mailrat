@@ -138,6 +138,30 @@ func (f fixedWidth) Layout(o []fyne.CanvasObject, s fyne.Size) {
 	o[0].Resize(fyne.NewSize(f.w, s.Height))
 }
 
+// topBarHeight is the height of the list pane's top bar and the reader toolbar,
+// separator line included, so the two lines meet across the panes.
+const topBarHeight float32 = 48
+
+// topBar centres content vertically in a topBarHeight band with a separator
+// line along the bottom edge.
+func topBar(content fyne.CanvasObject) fyne.CanvasObject {
+	return container.New(barLayout{}, content, hline())
+}
+
+type barLayout struct{}
+
+func (barLayout) MinSize(o []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(o[0].MinSize().Width, topBarHeight)
+}
+func (barLayout) Layout(o []fyne.CanvasObject, s fyne.Size) {
+	sep := o[1].MinSize().Height
+	h := min(o[0].MinSize().Height, s.Height-sep)
+	o[0].Move(fyne.NewPos(0, (s.Height-sep-h)/2))
+	o[0].Resize(fyne.NewSize(s.Width, h))
+	o[1].Move(fyne.NewPos(0, s.Height-sep))
+	o[1].Resize(fyne.NewSize(s.Width, sep))
+}
+
 // shrinkable lets its child be narrower than its natural width so truncating
 // text clips with an ellipsis instead of pushing neighbours out.
 type shrinkable struct{}
