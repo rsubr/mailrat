@@ -70,6 +70,7 @@ type UI struct {
 	readTimer    *time.Timer
 	threadGen    int
 	syncStatus   string
+	launchSync   bool            // sync once when the first account load lands (accounts load async)
 	syncAnim     *fyne.Animation // spins the sync icon while syncing
 	errCount     int
 	loadErrs     []string    // load failures shown in the error log beside backend API errors
@@ -129,10 +130,8 @@ func Run(a fyne.App, be Backend) {
 	u.installMenu()
 	u.installShortcuts()
 	u.watchVariant()
+	u.launchSync = true
 	u.reloadAll()
-	if len(u.accounts) > 0 {
-		u.syncNow()
-	}
 	// Quit via the Fyne loop on SIGTERM/SIGINT (e.g. a Homebrew upgrade) so
 	// Shutdown below flushes pending work instead of the process dying.
 	sig := make(chan os.Signal, 1)
@@ -304,6 +303,12 @@ func (u *UI) reloadAccounts() {
 	u.bg(func() { accs, err = u.be.GetAccounts() }, func() {
 		u.accounts = accs
 		u.noteLoadErr("accounts", err)
+		if u.launchSync {
+			u.launchSync = false
+			if len(accs) > 0 {
+				u.syncNow()
+			}
+		}
 		u.refreshSidebar()
 		u.refreshReader()
 		if u.settingsWin != nil { // reload is async; rebuild so Settings shows the new list
